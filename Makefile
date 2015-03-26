@@ -35,6 +35,7 @@ gb-es2-y := es2.o
 gb-db3-y := db3-platform.o
 gb-camera-y := camera.o
 gb-slice-y := slice_i2c.o
+gb-vendor-moto-y := vendor_moto.o
 
 obj-m += greybus.o
 obj-m += gb-phy.o
@@ -48,6 +49,7 @@ obj-m += gb-es2.o
 obj-m += gb-db3.o
 obj-m += gb-camera.o
 obj-m += gb-slice.o
+obj-m += gb-vendor-moto.o
 
 KERNELVER		?= $(shell uname -r)
 KERNELDIR 		?= /lib/modules/$(KERNELVER)/build
