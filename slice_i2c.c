@@ -196,7 +196,7 @@ static irqreturn_t slice_i2c_isr(int irq, void *data)
 		slice_i2c_read_reg(dd, SLICE_REG_UNIPRO,
 				   (uint8_t *)&unipro_hdr, sizeof(unipro_hdr));
 		printk("unipro length = %d\n", unipro_hdr.length);
-		if (svc_hdr.payload_length > 0) {
+		if (unipro_hdr.length > 0) {
 			msg_size = sizeof(unipro_hdr.cport) + unipro_hdr.length;
 			rx_buf = kmalloc(msg_size, GFP_KERNEL);
 			if (rx_buf) {
