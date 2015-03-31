@@ -38,6 +38,8 @@
 #define SR_PAYLOAD_SIZE   (sizeof(struct svc_function_unipro_management))
 #define SR_MSG_SIZE       (sizeof(struct svc_msg_header) + SR_PAYLOAD_SIZE)
 
+#define UNIPRO_RX_MSG_SIZE 2
+
 #define SLICE_REG_INT      0x00
 #define SLICE_REG_SVC      0x01
 #define SLICE_REG_UNIPRO   0x02
@@ -55,6 +57,7 @@ struct slice_i2c_data {
 
 #pragma pack(push, 1)
 struct unipro_header {
+	__u8	checksum;
 	__u8	cport;
 	__le16	length;
 };
@@ -165,6 +168,8 @@ static irqreturn_t slice_i2c_isr(int irq, void *data)
 	uint8_t *rx_buf;
 	int msg_size;
 	struct unipro_header unipro_hdr;
+	int i;
+	uint8_t checksum;
 
 	/* Any interrupt while the slice is not attached would be spurious */
 	if (!dd->present)
@@ -193,24 +198,43 @@ static irqreturn_t slice_i2c_isr(int irq, void *data)
 			}
 		}
 	} else if (reg_int & SLICE_INT_UNIPRO) {
+		/* Read out unipro message header to get message length */
 		slice_i2c_read_reg(dd, SLICE_REG_UNIPRO,
 				   (uint8_t *)&unipro_hdr, sizeof(unipro_hdr));
-		printk("unipro length = %d\n", unipro_hdr.length);
-		if (unipro_hdr.length > 0) {
-			msg_size = sizeof(unipro_hdr.cport) + unipro_hdr.length;
-			rx_buf = kmalloc(msg_size, GFP_KERNEL);
-			if (rx_buf) {
-				slice_i2c_read_reg(dd, SLICE_REG_UNIPRO,
-						   rx_buf, msg_size);
-				greybus_data_rcvd(hd, unipro_hdr.cport,
-						  rx_buf + 1, msg_size - 1);
-				kfree(rx_buf);
-			} else {
-				printk("%s: no memory\n", __func__);
-			}
+
+		/* Sanity check message length */
+		if (unipro_hdr.length <= 0) {
+			printk("%s: no msg length?\n", __func__);
+			goto out;
 		}
+
+		/* Allocate required buffer to receive unipro message */
+		msg_size = UNIPRO_RX_MSG_SIZE + unipro_hdr.length;
+		rx_buf = kmalloc(msg_size, GFP_KERNEL);
+		if (!rx_buf) {
+			printk("%s: no memory\n", __func__);
+			goto out;
+		}
+
+		/* Read out entire unipro message */
+		slice_i2c_read_reg(dd, SLICE_REG_UNIPRO, rx_buf, msg_size);
+
+		/* Calculate the checksum */
+		for (i = 0, checksum = 0; i < msg_size; ++i) {
+			checksum += rx_buf[i];
+		}
+
+		if (checksum)
+			printk("%s: checksum non-zero: 0x%0X\n",
+			       __func__, checksum);
+		else
+			greybus_data_rcvd(hd, unipro_hdr.cport,
+					  rx_buf + UNIPRO_RX_MSG_SIZE,
+					  unipro_hdr.length);
+		kfree(rx_buf);
 	}
 
+out:
 	return IRQ_HANDLED;
 }
 
@@ -300,18 +324,18 @@ static void *slice_i2c_buffer_send(struct greybus_host_device *hd, u16 cport_id,
 	printk("%s: AP (CPort %d) -> Module (CPort %d)\n",
 	       __func__, cport_id, connection->bundle_cport_id);
 
-	/* The slice expects the first byte to be the destination cport, and
-	 * the second byte to be the source cport. */
-	tx_buf--;
-	*tx_buf = cport_id;
-	tx_buf--;
-	*tx_buf = connection->bundle_cport_id;
+	/* The slice expects the first byte to be the checksum, the second byte
+	 * to be the destination cport, and third byte to be the source cport.
+	 */
+	*(--tx_buf) = cport_id;
+	*(--tx_buf) = connection->bundle_cport_id;
+	*(--tx_buf) = 0; // Checksum to be filled in below
+	tx_buf_size = buffer_size + 3;
 
-	tx_buf_size = buffer_size + 2;
-
+	/* Calculate checksum */
 	for (i = 0; i < tx_buf_size; ++i)
-		printk("0x%02X ", tx_buf[i]);
-	printk("\n");
+		*tx_buf += tx_buf[i];
+	*tx_buf = ~(*tx_buf) + 1;
 
 	slice_i2c_write_reg(dd, SLICE_REG_UNIPRO, tx_buf, tx_buf_size);
 
