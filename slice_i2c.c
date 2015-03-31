@@ -23,6 +23,7 @@
 #include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
+#include <linux/slice_attach.h>
 
 #include "greybus.h"
 #include "svc_msg.h"
@@ -51,8 +52,7 @@ struct slice_i2c_data {
 	struct i2c_client *client;
 	struct greybus_host_device *hd;
 	bool present;
-	unsigned int det_gpio;   /* attach detach irq */
-	int det_irq_n;  /* attach detach irq */
+	struct notifier_block attach_nb;   /* attach/detach notifications */
 };
 
 #pragma pack(push, 1)
@@ -238,27 +238,15 @@ out:
 	return IRQ_HANDLED;
 }
 
-/* Determine attach/detach state of slice */
-static irqreturn_t slice_det_isr(int irq, void *data)
+static int slice_attach(struct notifier_block *nb,
+		unsigned long now_present, void *not_used)
 {
-	struct greybus_host_device *hd = data;
-	struct slice_i2c_data *dd = hd_to_dd(hd);
+	struct slice_i2c_data *dd = container_of(nb, struct slice_i2c_data, attach_nb);
+	struct greybus_host_device *hd = dd->hd;
 	struct i2c_client *client = dd->client;
-	int now_present;
-	int still_present;
-
-	now_present = !gpio_get_value(dd->det_gpio);
-	while (true) {
-		usleep_range(500000, 1000000);
-		still_present = !gpio_get_value(dd->det_gpio);
-		if (still_present == now_present)
-			break;
-
-		now_present = still_present;
-	};
 
 	if (now_present != dd->present) {
-		printk("%s: Slice is attach state = %d\n", __func__, now_present);
+		printk("%s: Slice is attach state = %lu\n", __func__, now_present);
 
 		dd->present = now_present;
 
@@ -274,9 +262,8 @@ static irqreturn_t slice_det_isr(int irq, void *data)
 			send_hot_unplug(hd, 1);
 		}
 	}
-	return IRQ_HANDLED;
+	return NOTIFY_OK;
 }
-
 
 static int slice_i2c_submit_svc(struct svc_msg *svc_msg,
 				struct greybus_host_device *hd)
@@ -365,9 +352,6 @@ static int slice_i2c_probe(struct i2c_client *client,
 {
 	struct slice_i2c_data *dd;
 	struct greybus_host_device *hd;
-	int ret;
-	enum of_gpio_flags flags;
-	struct device_node *node = client->dev.of_node;
 
 	if (client->irq < 0) {
 		pr_err("%s: IRQ not defined\n", __func__);
@@ -387,25 +371,11 @@ static int slice_i2c_probe(struct i2c_client *client,
 	dd = hd_to_dd(hd);
 	dd->hd = hd;
 	dd->client = client;
-	dd->det_irq_n = irq_of_parse_and_map(node, 1);
-	dd->det_gpio = of_get_gpio_flags(node, 0, &flags); /* TODO: return */
-						/* from irq array directly */
+	dd->attach_nb.notifier_call = slice_attach;
 
 	i2c_set_clientdata(client, dd);
 
-	if (dd->det_irq_n > 0) {
-		/* FIXME: request irq, then test initial state without debounce */
-		/* detect initial state and register handler for changes */
-		(void) slice_det_isr(dd->det_irq_n, hd);
-
-		ret = request_threaded_irq(dd->det_irq_n, NULL, slice_det_isr,
-					   IRQF_TRIGGER_RISING |
-					   IRQF_TRIGGER_FALLING |
-					   IRQF_ONESHOT,
-					   "slice_det_i2c", hd);
-		if (ret)
-			printk(KERN_ERR "%s: Unable request det_irq (%u).\n", __func__, dd->det_irq_n);
-	}
+	register_slice_attach_notifier(&dd->attach_nb);
 
 	return 0;
 }
@@ -414,6 +384,7 @@ static int slice_i2c_remove(struct i2c_client *client)
 {
 	struct slice_i2c_data *dd = i2c_get_clientdata(client);
 
+	unregister_slice_attach_notifier(&dd->attach_nb);
 	greybus_remove_hd(dd->hd);
 	i2c_set_clientdata(client, NULL);
 
