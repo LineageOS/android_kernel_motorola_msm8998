@@ -112,38 +112,15 @@ static int slice_i2c_read_reg(struct slice_i2c_data *dd, uint8_t reg,
  * which defines a region of memory used by the host driver for
  * transferring the data.  When Greybus allocates a buffer, it must
  * do so subject to the constraints associated with the host driver.
- * These constraints are specified by two parameters: the
- * headroom; and the maximum buffer size.
  *
- *			+------------------+
- *			|    Host driver   | \
- *			|   reserved area  |  }- headroom
- *			|      . . .       | /
- *  buffer pointer ---> +------------------+
- *			| Buffer space for | \
- *			| transferred data |  }- buffer size
- *			|      . . .       | /   (limited to size_max)
- *			+------------------+
- *
- *  headroom:	Every buffer must have at least this much space
- *		*before* the buffer pointer, reserved for use by the
- *		host driver.  I.e., ((char *)buffer - headroom) must
- *		point to valid memory, usable only by the host driver.
- *  size_max:	The maximum size of a buffer (not including the
- *  		headroom) must not exceed this.
+ *  size_max:	The maximum size of a buffer
  */
 static void hd_buffer_constraints(struct greybus_host_device *hd)
 {
-	/*
-	 * Only one byte is required, but this produces a result
-	 * that's better aligned for the user.
-	 */
-	hd->buffer_headroom = sizeof(u32);	/* For cport id */
 	hd->buffer_size_max = SLICE_I2C_GBUF_MSG_SIZE_MAX;
-	BUILD_BUG_ON(hd->buffer_headroom > GB_BUFFER_HEADROOM_MAX);
 }
 
-static void send_hot_unplug(struct greybus_host_device *hd, int mid)
+static void send_hot_unplug(struct greybus_host_device *hd, int iid)
 {
 	struct svc_msg msg;
 
@@ -151,7 +128,7 @@ static void send_hot_unplug(struct greybus_host_device *hd, int mid)
 	msg.header.message_type = SVC_MSG_DATA;
 	msg.header.payload_length = 2;
 	msg.hotplug.hotplug_event = SVC_HOTUNPLUG_EVENT;
-	msg.hotplug.module_id = mid;
+	msg.hotplug.interface_id = iid;
 
 	/* Write out hotplug message */
 	greybus_svc_in(hd, (u8 *)&msg, HP_BASE_SIZE);
@@ -294,14 +271,26 @@ static int slice_i2c_submit_svc(struct svc_msg *svc_msg,
  * error otherwise.  If the caller wishes to cancel the in-flight
  * buffer, it must supply the returned cookie to the cancel routine.
  */
-static void *slice_i2c_buffer_send(struct greybus_host_device *hd, u16 cport_id,
-				   void *buffer, size_t buffer_size, gfp_t gfp_mask)
+static void *slice_i2c_message_send(struct greybus_host_device *hd, u16 dest_cport_id,
+				   struct gb_message *message, gfp_t gfp_mask)
 {
 	struct slice_i2c_data *dd = hd_to_dd(hd);
-	u8 *tx_buf = buffer;
+	void *buffer;
+	size_t buffer_size;
+	u8 *tx_buf;
 	int tx_buf_size;
-	struct gb_connection *connection = gb_hd_connection_find(hd, cport_id);
+	struct gb_connection *connection = gb_bundle_connection_find(hd, dest_cport_id);
 	int i;
+
+	buffer = message->buffer;
+	buffer_size = sizeof(*message->header) + message->payload_size;
+
+	tx_buf_size = buffer_size + 3;
+	tx_buf = kmalloc(tx_buf_size, GFP_KERNEL);
+	if (!tx_buf) {
+		printk("%s: no memory\n", __func__);
+		return ERR_PTR(-ENOMEM);
+	}
 
 	if (!connection) {
 		pr_err("Invalid cport supplied to send\n");
@@ -309,41 +298,43 @@ static void *slice_i2c_buffer_send(struct greybus_host_device *hd, u16 cport_id,
 	}
 
 	printk("%s: AP (CPort %d) -> Module (CPort %d)\n",
-	       __func__, cport_id, connection->bundle_cport_id);
+	       __func__, connection->hd_cport_id, dest_cport_id);
 
 	/* The slice expects the first byte to be the checksum, the second byte
 	 * to be the destination cport, and third byte to be the source cport.
 	 */
-	*(--tx_buf) = cport_id;
-	*(--tx_buf) = connection->bundle_cport_id;
-	*(--tx_buf) = 0; // Checksum to be filled in below
-	tx_buf_size = buffer_size + 3;
+	tx_buf[0] = connection->hd_cport_id;
+	tx_buf[1] = dest_cport_id;
+	tx_buf[2] = 0; // Checksum to be filled in below
+	memcpy(&tx_buf[3], buffer, buffer_size);
 
 	/* Calculate checksum */
-	for (i = 0; i < tx_buf_size; ++i)
-		*tx_buf += tx_buf[i];
-	*tx_buf = ~(*tx_buf) + 1;
+	for (i = 3; i < tx_buf_size; ++i)
+		tx_buf[2] += tx_buf[i];
+	tx_buf[2] = ~tx_buf[2] + 1;
 
 	slice_i2c_write_reg(dd, SLICE_REG_UNIPRO, tx_buf, tx_buf_size);
+
+	kfree(tx_buf);
 
 	return NULL;
 }
 
 /*
- * The cookie value supplied is the value that buffer_send()
+ * The cookie value supplied is the value that message_send()
  * returned to its caller.  It identifies the buffer that should be
  * canceled.  This function must also handle (which is to say,
  * ignore) a null cookie value.
  */
-static void slice_i2c_buffer_cancel(void *cookie)
+static void slice_i2c_message_cancel(void *cookie)
 {
 	printk("%s: enter\n", __func__);
 }
 
 static struct greybus_host_driver slice_i2c_host_driver = {
 	.hd_priv_size		= sizeof(struct slice_i2c_data),
-	.buffer_send		= slice_i2c_buffer_send,
-	.buffer_cancel		= slice_i2c_buffer_cancel,
+	.message_send		= slice_i2c_message_send,
+	.message_cancel		= slice_i2c_message_cancel,
 	.submit_svc		= slice_i2c_submit_svc,
 };
 
