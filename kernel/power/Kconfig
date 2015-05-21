@@ -323,6 +323,10 @@ config PM_GENERIC_DOMAINS_OF
 config CPU_PM
 	bool
 
+config DEDUCE_WAKEUP_REASONS
+	bool
+	default n
+
 config SUSPEND_DEBUG
 	bool "Enable snapshot of regulator and tlmm when suspend"
 	depends on SUSPEND
