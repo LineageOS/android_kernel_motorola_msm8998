@@ -56,10 +56,25 @@ struct slice_i2c_data {
 };
 
 #pragma pack(push, 1)
+/* for messages from bundle -> base                           */
+/* this should match struct slice_unipro_msg_tx on module side */
 struct unipro_header {
 	__u8	checksum;
-	__u8	cport;
+	__u8	hd_cport;
 	__le16	length;
+};
+
+/* for messages from base -> bundle                            */
+/* this should match struct slice_unipro_msg_rx on module side */
+struct slice_i2c_msg_hdr {
+	uint8_t  checksum;
+	uint8_t  bundle_cport_id;
+	uint8_t  hd_cport_id;
+};
+
+struct slice_i2c_msg {
+	struct slice_i2c_msg_hdr hdr;
+	uint8_t data[0];
 };
 #pragma pack(pop)
 
@@ -205,7 +220,7 @@ static irqreturn_t slice_i2c_isr(int irq, void *data)
 			printk("%s: checksum non-zero: 0x%0X\n",
 			       __func__, checksum);
 		else
-			greybus_data_rcvd(hd, unipro_hdr.cport,
+			greybus_data_rcvd(hd, unipro_hdr.hd_cport,
 					  rx_buf + UNIPRO_RX_MSG_SIZE,
 					  unipro_hdr.length);
 		kfree(rx_buf);
@@ -271,22 +286,24 @@ static int slice_i2c_submit_svc(struct svc_msg *svc_msg,
  * error otherwise.  If the caller wishes to cancel the in-flight
  * buffer, it must supply the returned cookie to the cancel routine.
  */
-static void *slice_i2c_message_send(struct greybus_host_device *hd, u16 dest_cport_id,
+static void *slice_i2c_message_send(struct greybus_host_device *hd, u16 hd_cport_id,
 				   struct gb_message *message, gfp_t gfp_mask)
 {
 	struct slice_i2c_data *dd = hd_to_dd(hd);
 	void *buffer;
 	size_t buffer_size;
-	u8 *tx_buf;
+	struct slice_i2c_msg *tx_buf;
 	int tx_buf_size;
-	struct gb_connection *connection = gb_bundle_connection_find(hd, dest_cport_id);
+	struct gb_connection *connection;
 	int i;
+
+	connection = gb_connection_hd_find(hd, hd_cport_id);
 
 	buffer = message->buffer;
 	buffer_size = sizeof(*message->header) + message->payload_size;
 
-	tx_buf_size = buffer_size + 3;
-	tx_buf = kmalloc(tx_buf_size, GFP_KERNEL);
+	tx_buf_size = buffer_size + sizeof(struct slice_i2c_msg_hdr);
+	tx_buf = (struct slice_i2c_msg *)kmalloc(tx_buf_size, GFP_KERNEL);
 	if (!tx_buf) {
 		printk("%s: no memory\n", __func__);
 		return ERR_PTR(-ENOMEM);
@@ -298,22 +315,22 @@ static void *slice_i2c_message_send(struct greybus_host_device *hd, u16 dest_cpo
 	}
 
 	printk("%s: AP (CPort %d) -> Module (CPort %d)\n",
-	       __func__, connection->hd_cport_id, dest_cport_id);
+	       __func__, connection->hd_cport_id, connection->bundle_cport_id);
 
 	/* The slice expects the first byte to be the checksum, the second byte
 	 * to be the destination cport, and third byte to be the source cport.
 	 */
-	tx_buf[0] = connection->hd_cport_id;
-	tx_buf[1] = dest_cport_id;
-	tx_buf[2] = 0; // Checksum to be filled in below
-	memcpy(&tx_buf[3], buffer, buffer_size);
+	tx_buf->hdr.hd_cport_id = connection->hd_cport_id;
+	tx_buf->hdr.bundle_cport_id = connection->bundle_cport_id;
+	tx_buf->hdr.checksum = 0; // Checksum to be filled in below
+	memcpy(&tx_buf->data, buffer, buffer_size);
 
 	/* Calculate checksum */
-	for (i = 3; i < tx_buf_size; ++i)
-		tx_buf[2] += tx_buf[i];
-	tx_buf[2] = ~tx_buf[2] + 1;
+	for (i = 1; i < tx_buf_size; ++i)
+		tx_buf->hdr.checksum += ((uint8_t *)tx_buf)[i];
+	tx_buf->hdr.checksum = ~tx_buf->hdr.checksum + 1;
 
-	slice_i2c_write_reg(dd, SLICE_REG_UNIPRO, tx_buf, tx_buf_size);
+	slice_i2c_write_reg(dd, SLICE_REG_UNIPRO, (uint8_t *)tx_buf, tx_buf_size);
 
 	kfree(tx_buf);
 
@@ -349,7 +366,8 @@ static int slice_i2c_probe(struct i2c_client *client,
 		return -EINVAL;
 	}
 
-	hd = greybus_create_hd(&slice_i2c_host_driver, &client->dev);
+	hd = greybus_create_hd(&slice_i2c_host_driver, &client->dev,
+			       SLICE_I2C_GBUF_MSG_SIZE_MAX);
 	if (!hd) {
 		printk(KERN_ERR "%s: Unable to create greybus host driver.\n",
 		       __func__);
