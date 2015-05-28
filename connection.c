@@ -34,7 +34,7 @@ gb_connection_intf_find(struct gb_interface *intf, u16 cport_id)
 	return NULL;
 }
 
-static struct gb_connection *
+struct gb_connection *
 gb_connection_hd_find(struct gb_host_device *hd, u16 cport_id)
 {
 	struct gb_connection *connection;
@@ -50,6 +50,7 @@ found:
 
 	return connection;
 }
+EXPORT_SYMBOL_GPL(gb_connection_hd_find);
 
 /*
  * Callback from the host driver to let us know that data has been

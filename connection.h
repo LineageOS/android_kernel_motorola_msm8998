@@ -72,4 +72,7 @@ void greybus_data_rcvd(struct gb_host_device *hd, u16 cport_id,
 void gb_connection_latency_tag_enable(struct gb_connection *connection);
 void gb_connection_latency_tag_disable(struct gb_connection *connection);
 
+struct gb_connection *gb_connection_hd_find(struct gb_host_device *hd,
+					u16 cport_id);
+
 #endif /* __CONNECTION_H */
