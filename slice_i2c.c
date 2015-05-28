@@ -243,14 +243,15 @@ static int slice_attach(struct notifier_block *nb,
 		dd->present = now_present;
 
 		if (now_present) {
-			if (request_threaded_irq(client->irq, NULL,
+			if (devm_request_threaded_irq(&client->dev,
+						   client->irq, NULL,
 					           slice_i2c_isr,
 						   IRQF_TRIGGER_LOW |
 						   IRQF_ONESHOT,
 						   "slice_i2c", hd))
 				printk(KERN_ERR "%s: Unable to request irq.\n", __func__);
 		} else {
-			free_irq(client->irq, hd);
+			devm_free_irq(&client->dev, client->irq, hd);
 			send_hot_unplug(hd, 1);
 		}
 	}
