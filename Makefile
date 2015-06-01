@@ -34,6 +34,7 @@ gb-hid-y := hid.o
 gb-es2-y := es2.o
 gb-db3-y := db3-platform.o
 gb-camera-y := camera.o
+gb-muc-y := muc_spi.o
 gb-slice-y := slice_i2c.o
 gb-vendor-moto-y := vendor_moto.o
 
@@ -48,6 +49,7 @@ obj-m += gb-raw.o
 obj-m += gb-es2.o
 obj-m += gb-db3.o
 obj-m += gb-camera.o
+obj-m += gb-muc.o
 obj-m += gb-slice.o
 obj-m += gb-vendor-moto.o
 
