@@ -25,6 +25,7 @@
 #include <linux/of_irq.h>
 #include <linux/slice_attach.h>
 
+#include "endo.h"
 #include "greybus.h"
 #include "svc_msg.h"
 
@@ -361,6 +362,9 @@ static int slice_i2c_probe(struct i2c_client *client,
 {
 	struct slice_i2c_data *dd;
 	struct greybus_host_device *hd;
+	u16 endo_id = 0x4755;
+	u8 ap_intf_id = 0x01;
+	int retval;
 
 	if (client->irq < 0) {
 		pr_err("%s: IRQ not defined\n", __func__);
@@ -374,6 +378,10 @@ static int slice_i2c_probe(struct i2c_client *client,
 		       __func__);
 		return -ENOMEM;
 	}
+
+	retval = greybus_endo_setup(hd, endo_id, ap_intf_id);
+	if (retval)
+		return retval;
 
 	/* Fill in the buffer allocation constraints */
 	hd_buffer_constraints(hd);
