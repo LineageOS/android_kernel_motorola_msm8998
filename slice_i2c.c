@@ -120,22 +120,6 @@ static int slice_i2c_read_reg(struct slice_i2c_data *dd, uint8_t reg,
 	return i2c_transfer(dd->client->adapter, msgs, 2);
 }
 
-/*
- * Buffer constraints for the host driver.
- *
- * A "buffer" is used to hold data to be transferred for Greybus by
- * the host driver.  A buffer is represented by a "buffer pointer",
- * which defines a region of memory used by the host driver for
- * transferring the data.  When Greybus allocates a buffer, it must
- * do so subject to the constraints associated with the host driver.
- *
- *  size_max:	The maximum size of a buffer
- */
-static void hd_buffer_constraints(struct greybus_host_device *hd)
-{
-	hd->buffer_size_max = SLICE_I2C_GBUF_MSG_SIZE_MAX;
-}
-
 static void send_hot_unplug(struct greybus_host_device *hd, int iid)
 {
 	struct svc_msg msg;
@@ -382,9 +366,6 @@ static int slice_i2c_probe(struct i2c_client *client,
 	retval = greybus_endo_setup(hd, endo_id, ap_intf_id);
 	if (retval)
 		return retval;
-
-	/* Fill in the buffer allocation constraints */
-	hd_buffer_constraints(hd);
 
 	dd = hd_to_dd(hd);
 	dd->hd = hd;
