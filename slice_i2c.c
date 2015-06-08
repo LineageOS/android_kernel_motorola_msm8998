@@ -69,7 +69,7 @@ struct unipro_header {
 /* this should match struct slice_unipro_msg_rx on module side */
 struct slice_i2c_msg_hdr {
 	uint8_t  checksum;
-	uint8_t  bundle_cport_id;
+	uint8_t  intf_cport_id;
 	uint8_t  hd_cport_id;
 };
 
@@ -301,13 +301,13 @@ static void *slice_i2c_message_send(struct greybus_host_device *hd, u16 hd_cport
 	}
 
 	printk("%s: AP (CPort %d) -> Module (CPort %d)\n",
-	       __func__, connection->hd_cport_id, connection->bundle_cport_id);
+	       __func__, connection->hd_cport_id, connection->intf_cport_id);
 
 	/* The slice expects the first byte to be the checksum, the second byte
 	 * to be the destination cport, and third byte to be the source cport.
 	 */
 	tx_buf->hdr.hd_cport_id = connection->hd_cport_id;
-	tx_buf->hdr.bundle_cport_id = connection->bundle_cport_id;
+	tx_buf->hdr.intf_cport_id = connection->intf_cport_id;
 	tx_buf->hdr.checksum = 0; // Checksum to be filled in below
 	memcpy(&tx_buf->data, buffer, buffer_size);
 
