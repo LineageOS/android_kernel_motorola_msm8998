@@ -36,6 +36,7 @@ gb-db3-y := db3-platform.o
 gb-camera-y := camera.o
 gb-muc-svc-y := muc_svc.o
 gb-muc-spi-y := muc_spi.o
+gb-muc-i2c-y := muc_i2c.o
 gb-slice-y := slice_i2c.o
 gb-vendor-moto-y := vendor_moto.o
 
@@ -52,6 +53,7 @@ obj-m += gb-db3.o
 obj-m += gb-camera.o
 obj-m += gb-muc-svc.o
 obj-m += gb-muc-spi.o
+obj-m += gb-muc-i2c.o
 obj-m += gb-slice.o
 obj-m += gb-vendor-moto.o
 
