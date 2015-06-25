@@ -27,7 +27,15 @@ $(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-muc.ko
+LOCAL_SRC_FILES := gb-muc-spi.ko
+LOCAL_MODULE := $(LOCAL_SRC_FILES)
+LOCAL_MODULE_CLASS := EXECUTABLES
+LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
+$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES := gb-muc-svc.ko
 LOCAL_MODULE := $(LOCAL_SRC_FILES)
 LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules

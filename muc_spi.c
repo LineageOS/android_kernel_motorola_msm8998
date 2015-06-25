@@ -28,24 +28,19 @@
 #include "endo.h"
 #include "greybus.h"
 #include "svc_msg.h"
+#include "muc_svc.h"
 
-#define MUC_MSG_SIZE_MAX	(1024)
-#define MUC_PAYLOAD_SIZE_MAX	(MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
+#define MUC_MSG_SIZE_MAX        (1024)
+#define MUC_PAYLOAD_SIZE_MAX    (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
 
 /* Size of payload of individual SPI packet (in bytes) */
-#define MUC_SPI_PAYLOAD_SZ_MAX	(32)
+#define MUC_SPI_PAYLOAD_SZ_MAX  (32)
 
-#define HDR_BIT_VALID		(0x01 << 7)
-#define HDR_BIT_MORE		(0x01 << 6)
-#define HDR_BIT_RSVD		(0x3F << 0)
+#define HDR_BIT_VALID           (0x01 << 7)
+#define HDR_BIT_MORE            (0x01 << 6)
+#define HDR_BIT_RSVD            (0x3F << 0)
 
-/* SVC message header + 2 bytes of payload */
-#define HP_BASE_SIZE		(sizeof(struct svc_msg_header) + 2)
-
-#define LU_PAYLOAD_SIZE         (sizeof(struct svc_function_unipro_management))
-#define LU_MSG_SIZE             (sizeof(struct svc_msg_header) + LU_PAYLOAD_SIZE)
-
-#define MIN(a, b)		(((a) < (b)) ? (a) : (b))
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 struct muc_spi_data {
 	struct spi_device *spi;
@@ -86,17 +81,6 @@ struct muc_spi_msg
 };
 #pragma pack(pop)
 
-/* vendor only manifest */
-static unsigned char manifest[] = {
-  0x4c, 0x00, 0x00, 0x01, 0x08, 0x00, 0x01, 0x00, 0x01, 0x02, 0x00, 0x00,
-  0x1c, 0x00, 0x02, 0x00, 0x16, 0x01, 0x4d, 0x6f, 0x74, 0x6f, 0x72, 0x6f,
-  0x6c, 0x61, 0x20, 0x4d, 0x6f, 0x62, 0x69, 0x6c, 0x69, 0x74, 0x79, 0x2c,
-  0x20, 0x4c, 0x4c, 0x43, 0x14, 0x00, 0x02, 0x00, 0x0e, 0x02, 0x45, 0x76,
-  0x65, 0x72, 0x79, 0x64, 0x61, 0x79, 0x20, 0x53, 0x6c, 0x69, 0x63, 0x65,
-  0x08, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0xff, 0x08, 0x00, 0x03, 0x00,
-  0x00, 0x00, 0x00, 0x00
-};
-#define MANIFEST_SIZE 76
 
 static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *rx_buf);
 
@@ -197,61 +181,6 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static void send_hot_plug(struct greybus_host_device *hd, int iid)
-{
-	struct svc_msg *msg;
-
-	msg = kzalloc(HP_BASE_SIZE + MANIFEST_SIZE, GFP_KERNEL);
-	if (!msg)
-		return;
-
-	msg->header.function_id = SVC_FUNCTION_HOTPLUG;
-	msg->header.message_type = SVC_MSG_DATA;
-	msg->header.payload_length = MANIFEST_SIZE + 2;
-	msg->hotplug.hotplug_event = SVC_HOTPLUG_EVENT;
-	msg->hotplug.interface_id = iid;
-	memcpy(msg->hotplug.data, manifest, MANIFEST_SIZE);
-
-	/* Send up hotplug message */
-	greybus_svc_in(hd, (u8 *)msg, HP_BASE_SIZE + MANIFEST_SIZE);
-
-	pr_info("SVC -> AP hotplug event (plug) sent\n");
-	kfree(msg);
-}
-
-static void send_hot_unplug(struct greybus_host_device *hd, int iid)
-{
-	struct svc_msg msg;
-
-	msg.header.function_id = SVC_FUNCTION_HOTPLUG;
-	msg.header.message_type = SVC_MSG_DATA;
-	msg.header.payload_length = 2;
-	msg.hotplug.hotplug_event = SVC_HOTUNPLUG_EVENT;
-	msg.hotplug.interface_id = iid;
-
-	/* Send up hotplug message */
-	greybus_svc_in(hd, (u8 *)&msg, HP_BASE_SIZE);
-
-	pr_info("SVC -> AP hotplug event (unplug) sent\n");
-}
-
-static void send_link_up(struct greybus_host_device *hd, int iid, int did)
-{
-	struct svc_msg msg;
-
-	msg.header.function_id = SVC_FUNCTION_UNIPRO_NETWORK_MANAGEMENT;
-	msg.header.message_type = SVC_MSG_DATA;
-	msg.header.payload_length = LU_PAYLOAD_SIZE;
-	msg.management.management_packet_type = SVC_MANAGEMENT_LINK_UP;
-	msg.management.link_up.interface_id = iid;
-	msg.management.link_up.device_id = did;
-
-	/* Send up link up message */
-	greybus_svc_in(hd, (u8 *)&msg,  LU_MSG_SIZE);
-
-	pr_info("SVC -> AP Link Up (%d:%d) message sent\n", iid, did);
-}
-
 static int muc_attach(struct notifier_block *nb,
 		      unsigned long now_present, void *not_used)
 {
@@ -270,13 +199,11 @@ static int muc_attach(struct notifier_block *nb,
 						      IRQF_TRIGGER_LOW |
 						      IRQF_ONESHOT,
 						      "muc_spi", hd))
-				printk(KERN_ERR "%s: Unable to request irq.\n",
-				       __func__);
-			send_hot_plug(hd, 1);
-			send_link_up(hd, 1, 2);
+				printk(KERN_ERR "%s: Unable to request irq.\n", __func__);
+				muc_svc_attach(hd);
 		} else {
 			devm_free_irq(&spi->dev, spi->irq, hd);
-			send_hot_unplug(hd, 1);
+			muc_svc_detach(hd);
 		}
 	}
 	return NOTIFY_OK;
