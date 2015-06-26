@@ -36,6 +36,7 @@
 static DEFINE_SPINLOCK(gb_snd_list_lock);
 static LIST_HEAD(gb_snd_list);
 static int device_count;
+static struct gb_snd_codec	snd_codec;
 
 static struct gb_snd *gb_find_snd(int bundle_id)
 {
@@ -397,6 +398,31 @@ static int gb_i2s_mgmt_report_event_recv(u8 type, struct gb_operation *op)
 	return 0;
 }
 
+static int gb_audio_register_slice_codec(struct platform_driver *plat)
+{
+	int err;
+
+	err = platform_driver_register(plat);
+	if (err) {
+		pr_err("Can't register slice codec driver: %d\n", -err);
+		return err;
+	}
+
+	snd_codec.codec_dev.name = "slice_codec";
+	snd_codec.codec_dev.id = 0;
+	snd_codec.codec_dev.dev.release = default_release; /* XXX - suspicious */
+	snd_codec.gb_snd_devs = &gb_snd_list;
+	snd_codec.codec_dev.dev.platform_data = &snd_codec;
+
+	err = platform_device_register(&snd_codec.codec_dev);
+	if (err) {
+		pr_err("slice codec platform dev register failed\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static struct gb_protocol gb_i2s_receiver_protocol = {
 	.name			= GB_AUDIO_DATA_DRIVER_NAME,
 	.id			= GREYBUS_PROTOCOL_I2S_RECEIVER,
@@ -450,6 +476,14 @@ int gb_audio_protocol_init(void)
 		goto err_unregister_pcm;
 	}
 
+	/* slice codec is registered with platform and will be used when
+	 * pcm is routed through platform dependent I2S Intf
+	 * instead of pcm tunneling.
+	*/
+	err = gb_audio_register_slice_codec(&gb_audio_slice_driver);
+	if (err) {
+		pr_err("Can't register slice codec driver: %d\n", err);
+	}
 	return 0;
 
 err_unregister_pcm:
@@ -467,4 +501,5 @@ void gb_audio_protocol_exit(void)
 	platform_driver_unregister(&gb_audio_plat_driver);
 	gb_protocol_deregister(&gb_i2s_receiver_protocol);
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);
+	platform_driver_unregister(&gb_audio_slice_driver);
 }

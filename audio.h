@@ -29,7 +29,7 @@
 #define CONFIG_SAMPLES_PER_MSG			48L
 #define CONFIG_PERIOD_NS			1000000 /* send msg every 1ms */
 
-#define CONFIG_COUNT_MAX			20
+#define CONFIG_COUNT_MAX			5
 
 /* Switch between dummy spdif and jetson rt5645 codec */
 #define USE_RT5645				0
@@ -71,6 +71,16 @@ struct gb_snd {
 	spinlock_t			lock;
 };
 
+/*
+ * This codec structure will be passed as platform data
+ * to slice codec when physical I2S interface is used
+ * instead of pcm tunneling.
+ */
+struct gb_snd_codec {
+
+	struct platform_device		codec_dev;
+	struct list_head		*gb_snd_devs;
+};
 
 /*
  * GB I2S cmd functions
@@ -102,12 +112,12 @@ int gb_i2s_send_data(struct gb_connection *connection, void *req_buf,
 void gb_pcm_hrtimer_start(struct gb_snd *snd_dev);
 void gb_pcm_hrtimer_stop(struct gb_snd *snd_dev);
 
-
 /*
  * Platform drivers
  */
 extern struct platform_driver gb_audio_pcm_driver;
 extern struct platform_driver gb_audio_plat_driver;
+extern struct platform_driver gb_audio_slice_driver;
 
 
 #endif /* __GB_AUDIO_H */

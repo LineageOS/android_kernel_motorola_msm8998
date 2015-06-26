@@ -22,7 +22,8 @@ gb-phy-y :=	gpbridge.o	\
 		audio.o		\
 		audio-pcm.o	\
 		audio-dai.o	\
-		audio-gb-cmds.o
+		audio-gb-cmds.o \
+		slice-codec.o
 
 # Prefix all modules with gb-
 gb-vibrator-y := vibrator.o
