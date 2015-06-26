@@ -88,7 +88,6 @@ static int muc_i2c_msg_read(struct muc_i2c_data *dd, struct muc_i2c_msg *msg)
 	i2c_msg.flags = dd->client->flags | I2C_M_RD;
 	i2c_msg.len = sizeof(*msg);
 	i2c_msg.buf = (uint8_t *)msg;
-
 	rv = i2c_transfer(dd->client->adapter, &i2c_msg, 1);
 	return rv;
 }
@@ -109,11 +108,11 @@ static int muc_msg_read(struct muc_i2c_data *dd, struct muc_msg **msg)
 	/* read the first packet and get the number of packts */
 	ret = muc_i2c_msg_read(dd, &i2c_msg);
 		if (ret < 0) {
-			pr_err("i2c tranfer failure\n");
+			pr_err("i2c transfer failure\n");
 			return ret;
 		}
 
-	pkt_cnt = i2c_msg.hdr.hdr_bits && HDR_BIT_PKTS;
+	pkt_cnt = i2c_msg.hdr.hdr_bits & HDR_BIT_PKTS;
 
 	if (pkt_cnt < 1 || pkt_cnt > 32) {
 		pr_err("ERR: no pkts\n");
@@ -127,7 +126,7 @@ static int muc_msg_read(struct muc_i2c_data *dd, struct muc_msg **msg)
 	memcpy(&buf[0], i2c_msg.data, I2C_BUF_SIZE);
 
 	for (i = 1; i < pkt_cnt; i++) {
-		muc_i2c_msg_read(dd, &i2c_msg);
+        ret = muc_i2c_msg_read(dd, &i2c_msg);
 		memcpy(&buf[i * I2C_BUF_SIZE], i2c_msg.data, I2C_BUF_SIZE);
 	}
 	/* TODO Calculate the checksum  */
@@ -145,8 +144,8 @@ static irqreturn_t muc_i2c_isr(int irq, void *data)
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	muc_msg_read(dd, &msg);
-	greybus_data_rcvd(hd, msg->hdr.dest_cport, msg->gb_msg, msg->hdr.size);
+	if (!muc_msg_read(dd, &msg))
+		greybus_data_rcvd(hd, msg->hdr.dest_cport, msg->gb_msg, msg->hdr.size);
 	muc_msg_free(msg);
 	return IRQ_HANDLED;
 }
