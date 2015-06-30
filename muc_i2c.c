@@ -145,9 +145,10 @@ static irqreturn_t muc_i2c_isr(int irq, void *data)
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	if (!muc_msg_read(dd, &msg))
+	if (!muc_msg_read(dd, &msg)) {
 		greybus_data_rcvd(hd, msg->hdr.dest_cport, msg->gb_msg, msg->hdr.size);
-	muc_msg_free(msg);
+        muc_msg_free(msg);
+    }
 	return IRQ_HANDLED;
 }
 
