@@ -129,10 +129,12 @@ static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
 
 static void parse_rx_nw(struct greybus_host_device *hd, uint8_t *buf, int len)
 {
+	struct muc_spi_data *dd = hd_to_dd(hd);
+	struct spi_device *spi = dd->spi;
 	struct muc_msg *m = (struct muc_msg *)buf;
 
 	if (m->size >= len) {
-		printk(KERN_ERR "%s: Received an invalid message\n", __func__);
+		dev_err(&spi->dev, "%s: Received an invalid message\n", __func__);
 		return;
 	}
 
@@ -143,6 +145,7 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 {
 	struct muc_spi_data *dd = hd_to_dd(hd);
 	struct muc_spi_msg *m = (struct muc_spi_msg *)buf;
+	struct spi_device *spi = dd->spi;
 
 	if (!(m->hdr_bits & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
@@ -150,7 +153,7 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 	}
 
 	if (dd->rcvd_payload_idx >= MUC_MSG_SIZE_MAX) {
-		printk(KERN_ERR "%s: Too many packets received!\n", __func__);
+		dev_err(&spi->dev, "%s: Too many packets received!\n", __func__);
 		return;
 	}
 
@@ -190,7 +193,7 @@ static int muc_attach(struct notifier_block *nb,
 	struct spi_device *spi = dd->spi;
 
 	if (now_present != dd->present) {
-		printk("%s: MuC attach state = %lu\n", __func__, now_present);
+		dev_info(&spi->dev, "%s: state = %lu\n", __func__, now_present);
 
 		dd->present = now_present;
 
@@ -200,7 +203,7 @@ static int muc_attach(struct notifier_block *nb,
 						      IRQF_TRIGGER_LOW |
 						      IRQF_ONESHOT,
 						      "muc_spi", hd))
-				printk(KERN_ERR "%s: Unable to request irq.\n", __func__);
+				dev_err(&spi->dev, "%s: Unable to request irq.\n", __func__);
 				muc_svc_attach(hd);
 		} else {
 			devm_free_irq(&spi->dev, spi->irq, hd);
@@ -245,11 +248,12 @@ static int muc_spi_message_send(struct greybus_host_device *hd, u16 hd_cport_id,
 	struct muc_spi_data *dd = hd_to_dd(hd);
 	struct gb_connection *connection;
 	struct muc_msg *m = (struct muc_msg *)dd->network_buffer;
+	struct spi_device *spi = dd->spi;
 
 	connection = gb_connection_hd_find(hd, hd_cport_id);
 
 	if (!connection) {
-		pr_err("Invalid cport supplied to send\n");
+		dev_err(&spi->dev, "Invalid cport supplied to send\n");
 		return -EINVAL;
 	}
 
@@ -258,8 +262,8 @@ static int muc_spi_message_send(struct greybus_host_device *hd, u16 hd_cport_id,
 	m->src_cport = connection->hd_cport_id;
 	memcpy(m->gb_msg, message->buffer, m->size);
 
-	printk("%s: AP (CPort %d) -> Module (CPort %d)\n",
-	       __func__, connection->hd_cport_id, connection->intf_cport_id);
+	dev_info(&spi->dev, "%s: AP (CPort %d) -> Module (CPort %d)\n",
+	         __func__, connection->hd_cport_id, connection->intf_cport_id);
 
 	muc_spi_message_send_dl(hd, m, m->size + sizeof(struct muc_msg));
 	return 0;
@@ -273,7 +277,7 @@ static int muc_spi_message_send(struct greybus_host_device *hd, u16 hd_cport_id,
  */
 static void muc_spi_message_cancel(struct gb_message *message)
 {
-	printk("%s: enter\n", __func__);
+	/* Should never happen */
 }
 
 static int muc_spi_submit_svc(struct svc_msg *svc_msg,
@@ -314,18 +318,18 @@ static int muc_spi_probe(struct spi_device *spi)
 	u8 ap_intf_id = 0x01;
 	int retval;
 
-	pr_info("%s: enter\n", __func__);
+	dev_info(&spi->dev, "%s: enter\n", __func__);
 
 	if (spi->irq < 0) {
-		pr_err("%s: IRQ not defined\n", __func__);
+		dev_err(&spi->dev, "%s: IRQ not defined\n", __func__);
 		return -EINVAL;
 	}
 
 	hd = greybus_create_hd(&muc_spi_host_driver, &spi->dev,
 			       MUC_PAYLOAD_SIZE_MAX);
 	if (IS_ERR(hd)) {
-		printk(KERN_ERR "%s: Unable to create greybus host driver.\n",
-		       __func__);
+		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
+		        __func__);
 		return PTR_ERR(hd);
 	}
 
@@ -350,7 +354,7 @@ static int muc_spi_remove(struct spi_device *spi)
 {
 	struct muc_spi_data *dd = spi_get_drvdata(spi);
 
-	pr_info("%s: enter\n", __func__);
+	dev_info(&spi->dev, "%s: enter\n", __func__);
 
 	gpio_free(dd->gpio_wake_n);
 	gpio_free(dd->gpio_rdy_n);
