@@ -214,21 +214,25 @@ static int muc_spi_message_send_dl(struct greybus_host_device *hd,
 				   const void *buf, size_t len)
 {
 	struct muc_spi_msg *m;
-	size_t remaining = len;
+	int remaining = len;
+	uint8_t *dbuf = (uint8_t *)buf;
+	int pl_size;
 
 	while (remaining > 0) {
 		m = kzalloc(sizeof(struct muc_spi_msg), GFP_KERNEL);
 		if (!m)
 			return -ENOMEM;
 
+		pl_size = MIN(remaining, MUC_SPI_PAYLOAD_SZ_MAX);
 		m->hdr_bits |= HDR_BIT_VALID;
 		m->hdr_bits |= (remaining > MUC_SPI_PAYLOAD_SZ_MAX) ? HDR_BIT_MORE : 0;
-		memcpy(m->data, buf, MIN(len, MUC_SPI_PAYLOAD_SZ_MAX));
+		memcpy(m->data, dbuf, pl_size);
 		m->crc16 = 0; /* TODO */
 
 		muc_spi_transfer(hd, (uint8_t *)m);
 
-		remaining -= MIN(len, MUC_SPI_PAYLOAD_SZ_MAX);
+		remaining -= pl_size;
+		dbuf += pl_size;
 		kfree(m);
 	}
 
