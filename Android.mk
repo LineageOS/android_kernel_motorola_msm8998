@@ -35,14 +35,6 @@ $(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
 include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-muc-svc.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
 LOCAL_SRC_FILES := gb-muc-i2c.ko
 LOCAL_MODULE := $(LOCAL_SRC_FILES)
 LOCAL_MODULE_CLASS := EXECUTABLES
@@ -94,15 +86,14 @@ include $(BUILD_PREBUILT)
 # Local build code
 #######################
 GREYBUS_SRC_PATH := $(LOCAL_PATH)
-KERNEL_TOOLS_PREFIX:=arm-eabi-
 KDIRARG := KERNELDIR="${ANDROID_PRODUCT_OUT}/obj/KERNEL_OBJ"
-ifneq ($(ANDROID_64),)
-  ARCHARG := ARCH=arm64
-  FLAGARG := EXTRA_CFLAGS+=-fno-pic
+ifeq ($(TARGET_ARCH),arm64)
+  KERNEL_TOOLS_PREFIX=aarch64-linux-android-
 else
-  ARCHARG := ARCH=arm
-  FLAGARG := EXTRA_CFLAGS+=-fno-pic
+  KERNEL_TOOLS_PREFIX:=arm-eabi-
 endif
+ARCHARG := ARCH=$(TARGET_ARCH)
+FLAGARG := EXTRA_CFLAGS+=-fno-pic
 ARGS := $(KDIRARG) $(ARCHARG) $(FLAGARG)
 
 # if building with mm then assume kernel is already built

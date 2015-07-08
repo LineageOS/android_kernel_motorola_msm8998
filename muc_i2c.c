@@ -24,11 +24,12 @@
 #include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <linux/slice_attach.h>
 
 #include "endo.h"
 #include "greybus.h"
 #include "svc_msg.h"
+
+#include "muc_attach.h"
 #include "muc_svc.h"
 
 #define MUC_MSG_SIZE_MAX        (1024)
@@ -326,7 +327,7 @@ static int muc_i2c_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, dd);
 
-	register_slice_attach_notifier(&dd->attach_nb);
+	register_muc_attach_notifier(&dd->attach_nb);
 
 	return 0;
 }
@@ -337,7 +338,7 @@ static int muc_i2c_remove(struct i2c_client *client)
 
 	pr_info("%s: enter\n", __func__);
 
-	unregister_slice_attach_notifier(&dd->attach_nb);
+	unregister_muc_attach_notifier(&dd->attach_nb);
 	greybus_remove_hd(dd->hd);
 	i2c_set_clientdata(client, NULL);
 

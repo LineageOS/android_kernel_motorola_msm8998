@@ -22,12 +22,12 @@
 #include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <linux/slice_attach.h>
 #include <linux/spi/spi.h>
 
 #include "endo.h"
 #include "greybus.h"
 #include "svc_msg.h"
+
 #include "muc_svc.h"
 
 #define HP_BASE_SIZE      (sizeof(struct svc_msg_header) + 2)

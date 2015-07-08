@@ -22,8 +22,7 @@ gb-phy-y :=	gpbridge.o	\
 		audio.o		\
 		audio-pcm.o	\
 		audio-dai.o	\
-		audio-gb-cmds.o \
-		slice-codec.o
+		audio-gb-cmds.o 
 
 # Prefix all modules with gb-
 gb-vibrator-y := vibrator.o
@@ -35,10 +34,9 @@ gb-hid-y := hid.o
 gb-es2-y := es2.o
 gb-db3-y := db3-platform.o
 gb-camera-y := camera.o
-gb-muc-svc-y := muc_svc.o
 gb-muc-spi-y := muc_spi.o
 gb-muc-i2c-y := muc_i2c.o
-gb-slice-y := slice_i2c.o
+gb-slice-y := muc_core.o muc_gpio.o muc_svc.o
 gb-vendor-moto-y := vendor_moto.o
 
 obj-m += greybus.o
@@ -52,7 +50,6 @@ obj-m += gb-raw.o
 obj-m += gb-es2.o
 obj-m += gb-db3.o
 obj-m += gb-camera.o
-obj-m += gb-muc-svc.o
 obj-m += gb-muc-spi.o
 obj-m += gb-muc-i2c.o
 obj-m += gb-slice.o

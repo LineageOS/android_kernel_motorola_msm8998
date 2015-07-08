@@ -23,12 +23,13 @@
 #include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <linux/slice_attach.h>
 #include <linux/spi/spi.h>
 
 #include "endo.h"
 #include "greybus.h"
 #include "svc_msg.h"
+
+#include <muc_attach.h>
 #include "muc_svc.h"
 
 #define MUC_MSG_SIZE_MAX        (1024)
@@ -345,7 +346,7 @@ static int muc_spi_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, dd);
 
-	register_slice_attach_notifier(&dd->attach_nb);
+	register_muc_attach_notifier(&dd->attach_nb);
 
 	return 0;
 }
@@ -359,7 +360,7 @@ static int muc_spi_remove(struct spi_device *spi)
 	gpio_free(dd->gpio_wake_n);
 	gpio_free(dd->gpio_rdy_n);
 
-	unregister_slice_attach_notifier(&dd->attach_nb);
+	unregister_muc_attach_notifier(&dd->attach_nb);
 	greybus_remove_hd(dd->hd);
 	spi_set_drvdata(spi, NULL);
 
