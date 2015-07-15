@@ -342,8 +342,14 @@ static int muc_spi_gpio_init(struct muc_spi_data *dd)
 			       "muc_wake_n");
 	if (ret)
 		return ret;
+	gpio_export(dd->gpio_wake_n, false);
 
-	return gpio_request_one(dd->gpio_rdy_n, GPIOF_IN, "muc_rdy_n");
+	ret = gpio_request_one(dd->gpio_rdy_n, GPIOF_IN, "muc_rdy_n");
+	if (ret)
+		return ret;
+	gpio_export(dd->gpio_rdy_n, false);
+
+	return 0;
 }
 
 static int muc_spi_probe(struct spi_device *spi)
