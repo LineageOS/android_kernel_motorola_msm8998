@@ -137,6 +137,9 @@ static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
 	/* Assert WAKE */
 	gpio_set_value(dd->gpio_wake_n, 0);
 
+	/* Wait for ADC enable */
+	udelay(300);
+
 	/* Wait for RDY to be asserted */
 	while (gpio_get_value(dd->gpio_rdy_n));
 
