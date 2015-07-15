@@ -44,6 +44,9 @@
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
+#define POLYNOMIAL		0x8005
+#define CRC_HIGHBIT		0x8000
+
 struct muc_spi_data {
 	struct spi_device *spi;
 	struct greybus_host_device *hd;
@@ -89,6 +92,27 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *rx_buf);
 static inline struct muc_spi_data *hd_to_dd(struct greybus_host_device *hd)
 {
 	return (struct muc_spi_data *)&hd->hd_priv;
+}
+
+uint16_t gen_crc16(uint8_t *data, unsigned long len)
+{
+	uint16_t i, j, c, bit;
+	uint16_t crc = 0;
+
+	for (i=0; i<len; i++) {
+		c = (uint16_t)*data++;
+		for (j=0x80; j; j>>=1) {
+			bit = crc & CRC_HIGHBIT;
+			crc <<= 1;
+			if (c & j)
+				bit ^= CRC_HIGHBIT;
+			if (bit)
+				crc ^= POLYNOMIAL;
+		}
+	}
+
+	crc = (crc >> 8) | (crc << 8);
+	return(crc);
 }
 
 static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
@@ -147,6 +171,7 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 	struct muc_spi_data *dd = hd_to_dd(hd);
 	struct muc_spi_msg *m = (struct muc_spi_msg *)buf;
 	struct spi_device *spi = dd->spi;
+	uint16_t calcrc = 0;
 
 	if (!(m->hdr_bits & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
@@ -155,6 +180,13 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 
 	if (dd->rcvd_payload_idx >= MUC_MSG_SIZE_MAX) {
 		dev_err(&spi->dev, "%s: Too many packets received!\n", __func__);
+		return;
+	}
+
+	calcrc = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
+	if (m->crc16 != calcrc) {
+		dev_err(&spi->dev, "%s: CRC mismatch, received: 0x%x,"
+			 "calculated: 0x%x\n", __func__, m->crc16, calcrc);
 		return;
 	}
 
@@ -231,7 +263,7 @@ static int muc_spi_message_send_dl(struct greybus_host_device *hd,
 		m->hdr_bits |= HDR_BIT_VALID;
 		m->hdr_bits |= (remaining > MUC_SPI_PAYLOAD_SZ_MAX) ? HDR_BIT_MORE : 0;
 		memcpy(m->data, dbuf, pl_size);
-		m->crc16 = 0; /* TODO */
+		m->crc16= gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
 
 		muc_spi_transfer(hd, (uint8_t *)m);
 
