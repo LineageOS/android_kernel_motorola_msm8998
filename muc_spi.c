@@ -21,6 +21,7 @@
 #include <linux/err.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #include <linux/spi/spi.h>
@@ -52,6 +53,7 @@ struct muc_spi_data {
 	struct greybus_host_device *hd;
 	bool present;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
+	struct mutex mutex;
 
 	int gpio_wake_n;
 	int gpio_rdy_n;
@@ -94,7 +96,7 @@ static inline struct muc_spi_data *hd_to_dd(struct greybus_host_device *hd)
 	return (struct muc_spi_data *)&hd->hd_priv;
 }
 
-uint16_t gen_crc16(uint8_t *data, unsigned long len)
+static uint16_t gen_crc16(uint8_t *data, unsigned long len)
 {
 	uint16_t i, j, c, bit;
 	uint16_t crc = 0;
@@ -115,7 +117,8 @@ uint16_t gen_crc16(uint8_t *data, unsigned long len)
 	return(crc);
 }
 
-static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
+static int muc_spi_transfer_locked(struct greybus_host_device *hd,
+				   uint8_t *tx_buf)
 {
 	struct muc_spi_data *dd = hd_to_dd(hd);
 	uint8_t rx_buf[sizeof(struct muc_spi_msg)];
@@ -151,6 +154,18 @@ static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
 	if (!ret) {
 		parse_rx_dl(hd, rx_buf);
 	}
+
+	return ret;
+}
+
+static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
+{
+	struct muc_spi_data *dd = hd_to_dd(hd);
+	int ret;
+
+	mutex_lock(&dd->mutex);
+	ret = muc_spi_transfer_locked(hd, tx_buf);
+	mutex_unlock(&dd->mutex);
 
 	return ret;
 }
@@ -199,7 +214,7 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 
 	if (m->hdr_bits & HDR_BIT_MORE) {
 		/* Need additional packets */
-		muc_spi_transfer(hd, NULL);
+		muc_spi_transfer_locked(hd, NULL);
 		return;
 	}
 
@@ -384,6 +399,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	dd->spi = spi;
 	dd->attach_nb.notifier_call = muc_attach;
 	muc_spi_gpio_init(dd);
+	mutex_init(&dd->mutex);
 
 	spi_set_drvdata(spi, dd);
 
