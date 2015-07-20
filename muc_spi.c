@@ -118,7 +118,7 @@ static uint16_t gen_crc16(uint8_t *data, unsigned long len)
 }
 
 static int muc_spi_transfer_locked(struct greybus_host_device *hd,
-				   uint8_t *tx_buf)
+				   uint8_t *tx_buf, bool keep_wake)
 {
 	struct muc_spi_data *dd = hd_to_dd(hd);
 	uint8_t rx_buf[sizeof(struct muc_spi_msg)];
@@ -137,17 +137,22 @@ static int muc_spi_transfer_locked(struct greybus_host_device *hd,
 	}
 	dd->has_tranceived = 1;
 
-	/* Assert WAKE */
-	gpio_set_value(dd->gpio_wake_n, 0);
+	/* Check if WAKE is not asserted */
+	if (gpio_get_value(dd->gpio_wake_n)) {
+		/* Assert WAKE */
+		gpio_set_value(dd->gpio_wake_n, 0);
 
-	/* Wait for ADC enable */
-	udelay(300);
+		/* Wait for ADC enable */
+		udelay(300);
+	}
 
 	/* Wait for RDY to be asserted */
 	while (gpio_get_value(dd->gpio_rdy_n));
 
-	/* Deassert WAKE */
-	gpio_set_value(dd->gpio_wake_n, 1);
+	if (!keep_wake) {
+		/* Deassert WAKE */
+		gpio_set_value(dd->gpio_wake_n, 1);
+	}
 
 	ret = spi_sync_transfer(dd->spi, t, 1);
 
@@ -158,13 +163,14 @@ static int muc_spi_transfer_locked(struct greybus_host_device *hd,
 	return ret;
 }
 
-static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf)
+static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf,
+			    bool keep_wake)
 {
 	struct muc_spi_data *dd = hd_to_dd(hd);
 	int ret;
 
 	mutex_lock(&dd->mutex);
-	ret = muc_spi_transfer_locked(hd, tx_buf);
+	ret = muc_spi_transfer_locked(hd, tx_buf, keep_wake);
 	mutex_unlock(&dd->mutex);
 
 	return ret;
@@ -214,7 +220,7 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 
 	if (m->hdr_bits & HDR_BIT_MORE) {
 		/* Need additional packets */
-		muc_spi_transfer_locked(hd, NULL);
+		muc_spi_transfer_locked(hd, NULL, false);
 		return;
 	}
 
@@ -232,7 +238,7 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	muc_spi_transfer(hd, NULL);
+	muc_spi_transfer(hd, NULL, false);
 	return IRQ_HANDLED;
 }
 
@@ -271,6 +277,7 @@ static int muc_spi_message_send_dl(struct greybus_host_device *hd,
 	int remaining = len;
 	uint8_t *dbuf = (uint8_t *)buf;
 	int pl_size;
+	bool more;
 
 	while (remaining > 0) {
 		m = kzalloc(sizeof(struct muc_spi_msg), GFP_KERNEL);
@@ -278,12 +285,14 @@ static int muc_spi_message_send_dl(struct greybus_host_device *hd,
 			return -ENOMEM;
 
 		pl_size = MIN(remaining, MUC_SPI_PAYLOAD_SZ_MAX);
-		m->hdr_bits |= HDR_BIT_VALID;
-		m->hdr_bits |= (remaining > MUC_SPI_PAYLOAD_SZ_MAX) ? HDR_BIT_MORE : 0;
-		memcpy(m->data, dbuf, pl_size);
-		m->crc16= gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
+		more = remaining > MUC_SPI_PAYLOAD_SZ_MAX;
 
-		muc_spi_transfer(hd, (uint8_t *)m);
+		m->hdr_bits |= HDR_BIT_VALID;
+		m->hdr_bits |= more ? HDR_BIT_MORE : 0;
+		memcpy(m->data, dbuf, pl_size);
+		m->crc16 = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
+
+		muc_spi_transfer(hd, (uint8_t *)m, more);
 
 		remaining -= pl_size;
 		dbuf += pl_size;
