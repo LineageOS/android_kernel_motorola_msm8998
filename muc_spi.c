@@ -26,11 +26,9 @@
 #include "greybus.h"
 #include "svc_msg.h"
 
-#include <muc_attach.h>
+#include "muc_attach.h"
 #include "muc_svc.h"
-
-#define MUC_MSG_SIZE_MAX        (1024)
-#define MUC_PAYLOAD_SIZE_MAX    (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
+#include "mods_nw.h"
 
 /* Size of payload of individual SPI packet (in bytes) */
 #define MUC_SPI_PAYLOAD_SZ_MAX  (32)
@@ -46,7 +44,7 @@
 
 struct muc_spi_data {
 	struct spi_device *spi;
-	struct greybus_host_device *hd;
+	struct mods_host_device *hd;
 	bool present;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;
@@ -68,28 +66,20 @@ struct muc_spi_data {
 };
 
 #pragma pack(push, 1)
-struct muc_msg
-{
-  __le16  size;
-  __u8    dest_cport;
-  __u8    src_cport;
-  __u8    gb_msg[0];
-};
-
 struct muc_spi_msg
 {
-  __u8    hdr_bits;
-  __u8    data[MUC_SPI_PAYLOAD_SZ_MAX];
-  __le16  crc16;
+	__u8    hdr_bits;
+	__u8    data[MUC_SPI_PAYLOAD_SZ_MAX];
+	__le16  crc16;
 };
 #pragma pack(pop)
 
 
-static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *rx_buf);
+static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *rx_buf);
 
-static inline struct muc_spi_data *hd_to_dd(struct greybus_host_device *hd)
+static inline struct muc_spi_data *hd_to_dd(struct mods_host_device *hd)
 {
-	return (struct muc_spi_data *)&hd->hd_priv;
+	return (struct muc_spi_data *)hd->hd_priv;
 }
 
 static uint16_t gen_crc16(uint8_t *data, unsigned long len)
@@ -113,10 +103,9 @@ static uint16_t gen_crc16(uint8_t *data, unsigned long len)
 	return(crc);
 }
 
-static int muc_spi_transfer_locked(struct greybus_host_device *hd,
+static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 				   uint8_t *tx_buf, bool keep_wake)
 {
-	struct muc_spi_data *dd = hd_to_dd(hd);
 	uint8_t rx_buf[sizeof(struct muc_spi_msg)];
 	struct spi_transfer t[] = {
 		{
@@ -153,42 +142,26 @@ static int muc_spi_transfer_locked(struct greybus_host_device *hd,
 	ret = spi_sync_transfer(dd->spi, t, 1);
 
 	if (!ret) {
-		parse_rx_dl(hd, rx_buf);
+		parse_rx_dl(dd, rx_buf);
 	}
 
 	return ret;
 }
 
-static int muc_spi_transfer(struct greybus_host_device *hd, uint8_t *tx_buf,
+static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 			    bool keep_wake)
 {
-	struct muc_spi_data *dd = hd_to_dd(hd);
 	int ret;
 
 	mutex_lock(&dd->mutex);
-	ret = muc_spi_transfer_locked(hd, tx_buf, keep_wake);
+	ret = muc_spi_transfer_locked(dd, tx_buf, keep_wake);
 	mutex_unlock(&dd->mutex);
 
 	return ret;
 }
 
-static void parse_rx_nw(struct greybus_host_device *hd, uint8_t *buf, int len)
+static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *buf)
 {
-	struct muc_spi_data *dd = hd_to_dd(hd);
-	struct spi_device *spi = dd->spi;
-	struct muc_msg *m = (struct muc_msg *)buf;
-
-	if (m->size >= len) {
-		dev_err(&spi->dev, "%s: Received an invalid message\n", __func__);
-		return;
-	}
-
-	greybus_data_rcvd(hd, m->dest_cport, m->gb_msg, m->size);
-}
-
-static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
-{
-	struct muc_spi_data *dd = hd_to_dd(hd);
 	struct muc_spi_msg *m = (struct muc_spi_msg *)buf;
 	struct spi_device *spi = dd->spi;
 	uint16_t calcrc = 0;
@@ -216,25 +189,24 @@ static void parse_rx_dl(struct greybus_host_device *hd, uint8_t *buf)
 
 	if (m->hdr_bits & HDR_BIT_MORE) {
 		/* Need additional packets */
-		muc_spi_transfer_locked(hd, NULL, false);
+		muc_spi_transfer_locked(dd, NULL, false);
 		return;
 	}
 
-	parse_rx_nw(hd, dd->rcvd_payload, dd->rcvd_payload_idx);
+	mods_data_rcvd(dd->hd, dd->rcvd_payload);
 	memset(dd->rcvd_payload, 0, MUC_MSG_SIZE_MAX);
 	dd->rcvd_payload_idx = 0;
 }
 
 static irqreturn_t muc_spi_isr(int irq, void *data)
 {
-	struct greybus_host_device *hd = data;
-	struct muc_spi_data *dd = hd_to_dd(hd);
+	struct muc_spi_data *dd = data;
 
 	/* Any interrupt while the MuC is not attached would be spurious */
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	muc_spi_transfer(hd, NULL, false);
+	muc_spi_transfer(dd, NULL, false);
 	return IRQ_HANDLED;
 }
 
@@ -242,7 +214,6 @@ static int muc_attach(struct notifier_block *nb,
 		      unsigned long now_present, void *not_used)
 {
 	struct muc_spi_data *dd = container_of(nb, struct muc_spi_data, attach_nb);
-	struct greybus_host_device *hd = dd->hd;
 	struct spi_device *spi = dd->spi;
 
 	if (now_present != dd->present) {
@@ -255,19 +226,17 @@ static int muc_attach(struct notifier_block *nb,
 						      NULL, muc_spi_isr,
 						      IRQF_TRIGGER_LOW |
 						      IRQF_ONESHOT,
-						      "muc_spi", hd))
+						      "muc_spi", dd))
 				dev_err(&spi->dev, "%s: Unable to request irq.\n", __func__);
-				muc_svc_attach(hd);
 		} else {
-			devm_free_irq(&spi->dev, spi->irq, hd);
-			muc_svc_detach(hd);
+			devm_free_irq(&spi->dev, spi->irq, dd);
 		}
 	}
 	return NOTIFY_OK;
 }
 
-static int muc_spi_message_send_dl(struct greybus_host_device *hd,
-				   const void *buf, size_t len)
+static int muc_spi_message_send(struct mods_host_device *hd,
+				   uint8_t *buf, size_t len)
 {
 	struct muc_spi_msg *m;
 	int remaining = len;
@@ -288,7 +257,7 @@ static int muc_spi_message_send_dl(struct greybus_host_device *hd,
 		memcpy(m->data, dbuf, pl_size);
 		m->crc16 = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
 
-		muc_spi_transfer(hd, (uint8_t *)m, more);
+		muc_spi_transfer(hd_to_dd(hd), (uint8_t *)m, more);
 
 		remaining -= pl_size;
 		dbuf += pl_size;
@@ -298,56 +267,21 @@ static int muc_spi_message_send_dl(struct greybus_host_device *hd,
 	return 0;
 }
 
-static int muc_spi_message_send(struct greybus_host_device *hd, u16 hd_cport_id,
-				  struct gb_message *message, gfp_t gfp_mask)
-{
-	struct muc_spi_data *dd = hd_to_dd(hd);
-	struct gb_connection *connection;
-	struct muc_msg *m = (struct muc_msg *)dd->network_buffer;
-	struct spi_device *spi = dd->spi;
-
-	connection = gb_connection_hd_find(hd, hd_cport_id);
-
-	if (!connection) {
-		dev_err(&spi->dev, "Invalid cport supplied to send\n");
-		return -EINVAL;
-	}
-
-	m->size = sizeof(*message->header) + message->payload_size;
-	m->dest_cport = connection->intf_cport_id;
-	m->src_cport = connection->hd_cport_id;
-	memcpy(m->gb_msg, message->buffer, m->size);
-
-	dev_info(&spi->dev, "%s: AP (CPort %d) -> Module (CPort %d)\n",
-	         __func__, connection->hd_cport_id, connection->intf_cport_id);
-
-	muc_spi_message_send_dl(hd, m, m->size + sizeof(struct muc_msg));
-	return 0;
-}
-
 /*
  * The cookie value supplied is the value that message_send()
  * returned to its caller.  It identifies the buffer that should be
  * canceled.  This function must also handle (which is to say,
  * ignore) a null cookie value.
  */
-static void muc_spi_message_cancel(struct gb_message *message)
+static void muc_spi_message_cancel(void *cookie)
 {
 	/* Should never happen */
 }
 
-static int muc_spi_submit_svc(struct svc_msg *svc_msg,
-			      struct greybus_host_device *hd)
-{
-	/* Currently don't have an SVC! */
-	return 0;
-}
-
-static struct greybus_host_driver muc_spi_host_driver = {
+static struct mods_host_driver muc_spi_host_driver = {
 	.hd_priv_size		= sizeof(struct muc_spi_data),
 	.message_send		= muc_spi_message_send,
 	.message_cancel		= muc_spi_message_cancel,
-	.submit_svc		= muc_spi_submit_svc,
 };
 
 static int muc_spi_gpio_init(struct muc_spi_data *dd)
@@ -375,10 +309,6 @@ static int muc_spi_gpio_init(struct muc_spi_data *dd)
 static int muc_spi_probe(struct spi_device *spi)
 {
 	struct muc_spi_data *dd;
-	struct greybus_host_device *hd;
-	u16 endo_id = 0x4755;
-	u8 ap_intf_id = 0x01;
-	int retval;
 
 	dev_info(&spi->dev, "%s: enter\n", __func__);
 
@@ -387,20 +317,18 @@ static int muc_spi_probe(struct spi_device *spi)
 		return -EINVAL;
 	}
 
-	hd = greybus_create_hd(&muc_spi_host_driver, &spi->dev,
-			       MUC_PAYLOAD_SIZE_MAX);
-	if (IS_ERR(hd)) {
+	dd = devm_kzalloc(&spi->dev, sizeof(*dd), GFP_KERNEL);
+	if (!dd)
+		return -ENOMEM;
+
+	dd->hd = mods_create_hd(&muc_spi_host_driver, &spi->dev);
+	if (IS_ERR(dd->hd)) {
 		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
 		        __func__);
-		return PTR_ERR(hd);
+		return PTR_ERR(dd->hd);
 	}
 
-	retval = greybus_endo_setup(hd, endo_id, ap_intf_id);
-	if (retval)
-		return retval;
-
-	dd = hd_to_dd(hd);
-	dd->hd = hd;
+	dd->hd->hd_priv = (void *)dd;
 	dd->spi = spi;
 	dd->attach_nb.notifier_call = muc_attach;
 	muc_spi_gpio_init(dd);
@@ -423,7 +351,7 @@ static int muc_spi_remove(struct spi_device *spi)
 	gpio_free(dd->gpio_rdy_n);
 
 	unregister_muc_attach_notifier(&dd->attach_nb);
-	greybus_remove_hd(dd->hd);
+	mods_remove_hd(dd->hd);
 	spi_set_drvdata(spi, NULL);
 
 	return 0;

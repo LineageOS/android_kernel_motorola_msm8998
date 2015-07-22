@@ -28,7 +28,8 @@ gb-mods-y := 	muc_core.o \
 		muc_gpio.o \
 		muc_svc.o \
 		mods_init.o \
-		muc_spi.o
+		muc_spi.o \
+		mods_nw.o
 
 # Prefix all modules with gb-
 gb-vibrator-y := vibrator.o

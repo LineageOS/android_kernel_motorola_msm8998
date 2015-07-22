@@ -13,6 +13,8 @@
  *
  */
 
+#define pr_fmt(fmt) "SL-I2C: " fmt
+
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
@@ -27,12 +29,11 @@
 
 #include "muc_attach.h"
 #include "muc_svc.h"
-
-#define MUC_MSG_SIZE_MAX        (1024)
-#define MUC_PAYLOAD_SIZE_MAX    (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
+#include "mods_nw.h"
 
 /* Size of payload of individual I2C packet (in bytes) */
 #define I2C_BUF_SIZE            (32)
+#define I2C_MAX_PAYLOAD         (I2C_BUF_SIZE * 32)
 
 #define HDR_BIT_VALID           (0x01 << 7)
 #define HDR_BIT_RSVD            (0x03 << 5)
@@ -42,60 +43,36 @@
 
 struct muc_i2c_data {
 	struct i2c_client *client;
-	struct greybus_host_device *hd;
+	struct mods_host_device *hd;
 	bool present;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 };
 
 #pragma pack(push, 1)
-struct muc_msg_hdr {
-    __le16  size;
-    __u8    dest_cport;
-    __u8    src_cport;
-};
-
-struct muc_msg {
-    struct muc_msg_hdr hdr;
-    __u8    gb_msg[0];
-};
-
 struct muc_i2c_hdr {
-    uint8_t checksum;
-    uint8_t hdr_bits;
+	uint8_t checksum;
+	uint8_t hdr_bits;
 };
 
 struct muc_i2c_msg {
-    struct muc_i2c_hdr hdr;
-    uint8_t data[I2C_BUF_SIZE];
+	struct muc_i2c_hdr hdr;
+	uint8_t data[I2C_BUF_SIZE];
 };
 #pragma pack(pop)
-
-
-static inline struct muc_i2c_data *hd_to_dd(struct greybus_host_device *hd)
-{
-	return (struct muc_i2c_data *)&hd->hd_priv;
-}
 
 /* read a single i2c msg */
 static int muc_i2c_msg_read(struct muc_i2c_data *dd, struct muc_i2c_msg *msg)
 {
 	struct i2c_msg i2c_msg;
-	int rv;
 
 	i2c_msg.addr = dd->client->addr;
 	i2c_msg.flags = dd->client->flags | I2C_M_RD;
 	i2c_msg.len = sizeof(*msg);
 	i2c_msg.buf = (uint8_t *)msg;
-	rv = i2c_transfer(dd->client->adapter, &i2c_msg, 1);
-	return rv;
+	return i2c_transfer(dd->client->adapter, &i2c_msg, 1);
 }
 
-static inline void muc_msg_free(struct muc_msg *msg)
-{
-	kfree(msg);
-}
-
-static int muc_msg_read(struct muc_i2c_data *dd, struct muc_msg **msg)
+static int muc_i2c_message_read(struct muc_i2c_data *dd, uint8_t **msg)
 {
 	struct muc_i2c_msg i2c_msg;
 	uint8_t pkt_cnt; /* total number of pkts */
@@ -124,36 +101,35 @@ static int muc_msg_read(struct muc_i2c_data *dd, struct muc_msg **msg)
 	memcpy(&buf[0], i2c_msg.data, I2C_BUF_SIZE);
 
 	for (i = 1; i < pkt_cnt; i++) {
-        ret = muc_i2c_msg_read(dd, &i2c_msg);
+	ret = muc_i2c_msg_read(dd, &i2c_msg);
 		memcpy(&buf[i * I2C_BUF_SIZE], i2c_msg.data, I2C_BUF_SIZE);
 	}
+
 	/* TODO Calculate the checksum  */
-	*msg = (struct muc_msg *)buf;
+	*msg = buf;
 	return 0;
 }
 
 static irqreturn_t muc_i2c_isr(int irq, void *data)
 {
-	struct greybus_host_device *hd = data;
-	struct muc_i2c_data *dd = hd_to_dd(hd);
-	struct muc_msg *msg;
+	struct muc_i2c_data *dd = data;
+	uint8_t *msg;
 
 	/* Any interrupt while the MuC is not attached would be spurious */
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	if (!muc_msg_read(dd, &msg)) {
-		greybus_data_rcvd(hd, msg->hdr.dest_cport, msg->gb_msg, msg->hdr.size);
-        muc_msg_free(msg);
-    }
+	if (!muc_i2c_message_read(dd, &msg)) {
+		mods_data_rcvd(dd->hd, msg);
+		kfree(msg);
+	}
 	return IRQ_HANDLED;
 }
 
 static int muc_i2c_attach(struct notifier_block *nb,
-		      unsigned long now_present, void *not_used)
+		unsigned long now_present, void *not_used)
 {
 	struct muc_i2c_data *dd = container_of(nb, struct muc_i2c_data, attach_nb);
-	struct greybus_host_device *hd = dd->hd;
 	struct i2c_client *client = dd->client;
 
 	if (now_present != dd->present) {
@@ -166,12 +142,10 @@ static int muc_i2c_attach(struct notifier_block *nb,
 						      NULL, muc_i2c_isr,
 						      IRQF_TRIGGER_LOW |
 						      IRQF_ONESHOT,
-						      "muc_i2c", hd))
+						      "muc_i2c", dd))
 				printk(KERN_ERR "%s: Unable to request irq.\n", __func__);
-            muc_svc_attach(hd);
 		} else {
-			devm_free_irq(&client->dev, client->irq, hd);
-            muc_svc_detach(hd);
+			devm_free_irq(&client->dev, client->irq, dd);
 		}
 	}
 	return NOTIFY_OK;
@@ -179,6 +153,7 @@ static int muc_i2c_attach(struct notifier_block *nb,
 
 static int muc_i2c_write(struct muc_i2c_data *dd, uint8_t *buf, int size)
 {
+	int err;
 	struct i2c_msg msg;
 
 	msg.addr = dd->client->addr;
@@ -186,21 +161,20 @@ static int muc_i2c_write(struct muc_i2c_data *dd, uint8_t *buf, int size)
 	msg.len = size;
 	msg.buf = buf;
 
-	return i2c_transfer(dd->client->adapter, &msg, 1);
+	err = i2c_transfer(dd->client->adapter, &msg, 1);
+	return err;
 }
 
-static int muc_i2c_msg_send(struct muc_i2c_data *dd, struct muc_msg *msg)
+static int muc_i2c_message_send(struct mods_host_device *hd, uint8_t *msg, size_t len)
 {
 	struct muc_i2c_msg i2c_msg;
 	uint8_t pkts_total;
 	uint8_t pkts;
 	size_t remaining;
-	size_t len = msg->hdr.size;
 	uint8_t *buf = (uint8_t *)msg;
 	int i;
-
-	if (len > MUC_PAYLOAD_SIZE_MAX)
-		return -E2BIG;
+	struct i2c_client *client = container_of(hd->dev, struct i2c_client, dev);
+	struct muc_i2c_data *dd = i2c_get_clientdata(client);
 
 	memset(&i2c_msg, 0, sizeof(i2c_msg));
 
@@ -222,105 +196,38 @@ static int muc_i2c_msg_send(struct muc_i2c_data *dd, struct muc_msg *msg)
 	return 0;
 }
 
-/*
- * Returns zero if the message was successfully queued, or a negative errno
- * otherwise.
- */
-static int muc_msg_send(struct greybus_host_device *hd,
-        u16 hd_cport_id,
-		struct gb_message *message,
-        gfp_t gfp_mask)
+static void muc_i2c_message_cancel(void *cookie)
 {
-	struct muc_i2c_data *dd = hd_to_dd(hd);
-	size_t buffer_size;
-	struct gb_connection *connection;
-	struct muc_msg *msg;
-
-	connection = gb_connection_hd_find(hd, hd_cport_id);
-	if (!connection) {
-		pr_err("Invalid cport supplied to send\n");
-		return -EINVAL;
-	}
-
-	buffer_size = sizeof(*message->header) + message->payload_size;
-
-	msg = (struct muc_msg *)kzalloc(buffer_size + sizeof(struct muc_msg_hdr), GFP_KERNEL);
-	if (!msg) {
-		printk("%s: no memory\n", __func__);
-		return -ENOMEM;
-	}
-	msg->hdr.dest_cport = connection->intf_cport_id;
-	msg->hdr.src_cport = connection->hd_cport_id;
-	msg->hdr.size = buffer_size + sizeof(struct muc_msg_hdr);
-	memcpy(&msg->gb_msg[0], message->buffer, buffer_size);
-
-	printk("%s: AP (CPort %d) -> Module (CPort %d)\n",
-	       __func__, connection->hd_cport_id, connection->intf_cport_id);
-
-	muc_i2c_msg_send(dd, msg);
-	muc_msg_free(msg);
-
-	return 0;
+	pr_info("%s <- %pS\n", __func__, __builtin_return_address(0));
 }
 
-/*
- * The cookie value supplied is the value that message_send()
- * returned to its caller.  It identifies the buffer that should be
- * canceled.  This function must also handle (which is to say,
- * ignore) a null cookie value.
- */
-static void muc_i2c_message_cancel(struct gb_message *message)
-{
-	printk("%s: enter\n", __func__);
-}
-
-static int muc_i2c_submit_svc(struct svc_msg *svc_msg,
-			      struct greybus_host_device *hd)
-{
-	/* Currently don't have an SVC! */
-	return 0;
-}
-
-static struct greybus_host_driver muc_i2c_host_driver = {
+static struct mods_host_driver muc_i2c_host_driver = {
 	.hd_priv_size		= sizeof(struct muc_i2c_data),
-	.message_send		= muc_msg_send,
+	.message_send		= muc_i2c_message_send,
 	.message_cancel		= muc_i2c_message_cancel,
-	.submit_svc		    = muc_i2c_submit_svc,
 };
 
 static int muc_i2c_probe(struct i2c_client *client,
 			   const struct i2c_device_id *id)
 {
 	struct muc_i2c_data *dd;
-	struct greybus_host_device *hd;
-	u16 endo_id = 0x4755;
-	u8 ap_intf_id = 0x01;
-	int retval;
-
-	pr_info("%s: enter\n", __func__);
 
 	if (client->irq < 0) {
 		pr_err("%s: IRQ not defined\n", __func__);
 		return -EINVAL;
 	}
 
-	hd = greybus_create_hd(&muc_i2c_host_driver, &client->dev,
-			       MUC_PAYLOAD_SIZE_MAX);
-	if (IS_ERR(hd)) {
-		printk(KERN_ERR "%s: Unable to create greybus host driver.\n",
-		       __func__);
-		return PTR_ERR(hd);
-	}
-
-	retval = greybus_endo_setup(hd, endo_id, ap_intf_id);
-	if (retval)
-		return retval;
-
-	dd = hd_to_dd(hd);
-	dd->hd = hd;
+	dd = devm_kzalloc(&client->dev, sizeof(*dd), GFP_KERNEL);
 	dd->client = client;
 	dd->attach_nb.notifier_call = muc_i2c_attach;
 
+	dd->hd = mods_create_hd(&muc_i2c_host_driver, &client->dev);
+	if (IS_ERR(dd->hd)) {
+		printk(KERN_ERR "%s: Unable to create greybus host driver.\n",
+		       __func__);
+		return PTR_ERR(dd->hd);
+	}
+	dd->hd->hd_priv = dd;
 	i2c_set_clientdata(client, dd);
 
 	register_muc_attach_notifier(&dd->attach_nb);
@@ -332,10 +239,9 @@ static int muc_i2c_remove(struct i2c_client *client)
 {
 	struct muc_i2c_data *dd = i2c_get_clientdata(client);
 
-	pr_info("%s: enter\n", __func__);
-
 	unregister_muc_attach_notifier(&dd->attach_nb);
-	greybus_remove_hd(dd->hd);
+	mods_remove_hd(dd->hd);
+	devm_kfree(&client->dev, dd);
 	i2c_set_clientdata(client, NULL);
 
 	return 0;
