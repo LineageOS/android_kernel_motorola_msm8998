@@ -11,10 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
  */
 
 #include <linux/delay.h>
@@ -368,8 +364,18 @@ static struct i2c_driver muc_i2c_driver = {
 	.remove  = muc_i2c_remove,
 };
 
-module_i2c_driver(muc_i2c_driver);
+int __init muc_i2c_init(void)
+{
+	int err;
 
-MODULE_AUTHOR("Motorola Mobility, LLC");
-MODULE_DESCRIPTION("Mods uC (MuC) I2C bus driver");
-MODULE_LICENSE("GPL");
+	err = i2c_register_driver(THIS_MODULE, &muc_i2c_driver);
+	if (err != 0)
+		pr_err("muc_i2c initialization failed\n");
+
+	return err;
+}
+
+void __exit muc_i2c_exit(void)
+{
+	i2c_del_driver(&muc_i2c_driver);
+}

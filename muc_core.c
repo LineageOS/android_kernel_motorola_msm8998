@@ -155,20 +155,13 @@ static struct platform_driver muc_driver = {
 	.remove = muc_remove,
 };
 
-static int __init muc_init(void)
+int __init muc_core_init(void)
 {
 	platform_driver_register(&muc_driver);
 	return 0;
 }
 
-static void __exit muc_exit(void)
+void __exit muc_core_exit(void)
 {
 	platform_driver_unregister(&muc_driver);
 }
-
-module_init(muc_init);
-module_exit(muc_exit);
-
-MODULE_DESCRIPTION("MuC Driver");
-MODULE_AUTHOR("Motorola");
-MODULE_LICENSE("GPL");

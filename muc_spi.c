@@ -11,10 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
  */
 
 #include <linux/delay.h>
@@ -456,8 +452,18 @@ static struct spi_driver muc_spi_driver = {
 	.remove  = muc_spi_remove,
 };
 
-module_spi_driver(muc_spi_driver);
+int __init muc_spi_init(void)
+{
+	int err;
 
-MODULE_AUTHOR("Motorola Mobility, LLC");
-MODULE_DESCRIPTION("Mods uC (MuC) SPI bus driver");
-MODULE_LICENSE("GPL");
+	err = spi_register_driver(&muc_spi_driver);
+	if (err != 0)
+		pr_err("muc_spi initialization failed\n");
+
+	return err;
+}
+
+void __exit muc_spi_exit(void)
+{
+	spi_unregister_driver(&muc_spi_driver);
+}

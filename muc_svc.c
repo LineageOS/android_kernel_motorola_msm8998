@@ -11,10 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
  */
 
 #include <linux/delay.h>
@@ -99,7 +95,12 @@ void muc_svc_detach(struct greybus_host_device *hd)
 }
 EXPORT_SYMBOL(muc_svc_detach);
 
+int __init muc_svc_init(void)
+{
+	return 0;
+}
 
-MODULE_AUTHOR("Motorola Mobility, LLC");
-MODULE_DESCRIPTION("Mods uC (MuC) SVC shim driver");
-MODULE_LICENSE("GPL");
+void __exit muc_svc_exit(void)
+{
+	/* nada */
+}
