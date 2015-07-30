@@ -230,13 +230,7 @@ static struct platform_driver mods_nw_driver = {
 	.remove  = mods_nw_remove,
 };
 
-
-static struct platform_device mods_nw_device = {
-	.name           = "mods_nw",
-	.id             = 0,
-	.num_resources  = 0,
-};
-
+static struct platform_device *mods_nw_device;
 
 int __init mods_nw_init(void)
 {
@@ -247,16 +241,32 @@ int __init mods_nw_init(void)
 		pr_err("mods_nw failed to register driver\n");
 		return rv;
 	}
-	rv = platform_device_register(&mods_nw_device);
-	if (rv < 0) {
-		pr_err("mods_nw failed to register device\n");
-		platform_driver_unregister(&mods_nw_driver);
-		return rv;
+
+	mods_nw_device = platform_device_alloc("mods_nw", -1);
+	if (!mods_nw_device) {
+		rv = -ENOMEM;
+		pr_err("mods_nw failed to alloc device\n");
+		goto alloc_fail;
+	}
+
+	rv = platform_device_add(mods_nw_device);
+	if (rv) {
+		pr_err("mods_nw failed to add device: %d\n", rv);
+		goto add_fail;
 	}
 
 	return 0;
+
+add_fail:
+	platform_device_put(mods_nw_device);
+alloc_fail:
+	platform_driver_unregister(&mods_nw_driver);
+
+	return rv;
 }
 
 void __exit mods_nw_exit(void)
 {
+	platform_driver_unregister(&mods_nw_driver);
+	platform_device_unregister(mods_nw_device);
 }
