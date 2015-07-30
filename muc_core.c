@@ -122,19 +122,27 @@ static int muc_probe(struct platform_device *pdev)
 	return 0;
 
 err_intr_init:
-	/* XXX gpio free */
+	muc_gpio_exit(dev, ps_muc);
 err_gpio_init:
 	muc_device_power_off(ps_muc);
 err1:
 	mutex_unlock(&ps_muc->lock);
 	mutex_destroy(&ps_muc->lock);
 
+	muc_misc_data = NULL;
+
 	return err;
 }
 
 static int muc_remove(struct platform_device *pdev)
 {
-	/* XXX Free up */
+	struct device *dev = &pdev->dev;
+	struct muc_data *ps_muc = muc_misc_data;
+
+	muc_intr_destroy(ps_muc, dev);
+	muc_gpio_exit(dev, ps_muc);
+	muc_device_power_off(ps_muc);
+
 	return 0;
 }
 

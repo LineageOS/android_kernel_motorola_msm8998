@@ -44,10 +44,12 @@ struct muc_data {
 
 /* Global functions */
 int muc_gpio_init(struct device *dev, struct muc_data *cdata);
+void muc_gpio_exit(struct device *dev, struct muc_data *cdata);
 bool muc_vbus_is_enabled(struct muc_data *cdata);
 void muc_vbus_enable(struct muc_data *cdata);
 void muc_vbus_disable(struct muc_data *cdata);
 int muc_intr_setup(struct muc_data *cdata, struct device *dev);
+void muc_intr_destroy(struct muc_data *cdata, struct device *dev);
 
 /* Global variables */
 extern struct muc_data *muc_misc_data;

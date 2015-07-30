@@ -183,8 +183,7 @@ static irqreturn_t muc_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-int muc_intr_setup(struct muc_data *cdata,
-	struct device *dev)
+int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 {
 	int ret;
 	int gpio;
@@ -210,6 +209,12 @@ int muc_intr_setup(struct muc_data *cdata,
 	return ret;
 }
 
+void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
+{
+	disable_irq_wake(cdata->irq);
+	free_irq(cdata->irq, cdata);
+}
+
 static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 {
 	int i;
@@ -217,29 +222,33 @@ static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 	const char *label_prop = "mmi,muc-ctrl-gpio-labels";
 	int label_cnt = of_property_count_strings(dev->of_node, label_prop);
 
-	if (gpio_cnt > ARRAY_SIZE(cdata->gpios)) {
-		dev_err(dev, "%s:%d gpio count is greater than %zu.\n",
-			__func__, __LINE__, ARRAY_SIZE(cdata->gpios));
+	if (gpio_cnt != ARRAY_SIZE(cdata->gpios)) {
+		dev_err(dev, "gpio count is %d expected %zu.\n",
+			gpio_cnt, ARRAY_SIZE(cdata->gpios));
 		return -EINVAL;
 	}
 
 	for (i = 0; i < gpio_cnt; i++) {
 		enum of_gpio_flags flags = 0;
 		int gpio;
+		int ret;
 		const char *label = NULL;
 
 		gpio = of_get_gpio_flags(dev->of_node, i, &flags);
-		if (gpio < 0) {
-			dev_err(dev, "%s:%d of_get_gpio failed: %d\n",
-				__func__, __LINE__, gpio);
-			return gpio;
+		if (!gpio_is_valid(gpio)) {
+			dev_err(dev, "of_get_gpio failed: %d\n", gpio);
+			return -EINVAL;
 		}
 
 		if (i < label_cnt)
 			of_property_read_string_index(dev->of_node, label_prop,
 				i, &label);
 
-		gpio_request_one(gpio, flags, label);
+		ret = devm_gpio_request_one(dev, gpio, flags, label);
+		if (ret) {
+			dev_err(dev, "Failed to get gpio %d\n", gpio);
+			return ret;
+		}
 		gpio_export(gpio, true);
 
 		dev_dbg(dev, "%s:%d gpio=%d, flags=0x%x, label=%s\n",
@@ -296,6 +305,7 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 	if (ret) {
 		dev_err(dev, "%s:%d: failed to read gpios.\n",
 			__func__, __LINE__);
+		switch_dev_unregister(&cdata->muc_detected);
 		return ret;
 	}
 
@@ -329,6 +339,14 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 	muc_handle_detection(cdata);
 
 	return 0;
+}
+
+void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
+{
+	switch_dev_unregister(&cdata->muc_detected);
+
+	/* Disable the module on unload */
+	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 }
 
 bool muc_vbus_is_enabled(struct muc_data *cdata)
