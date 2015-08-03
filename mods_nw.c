@@ -111,7 +111,7 @@ static int mods_nw_attach(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static void *mods_msg_send(struct greybus_host_device *hd,
+static int mods_msg_send(struct greybus_host_device *hd,
 		u16 hd_cport_id,
 		struct gb_message *message,
 		gfp_t gfp_mask)
@@ -119,22 +119,23 @@ static void *mods_msg_send(struct greybus_host_device *hd,
 	size_t buffer_size;
 	struct gb_connection *connection;
 	struct muc_msg *msg;
+	int rv = -EINVAL;
 
 	if (message->payload_size > PAYLOAD_MAX_SIZE)
-		return ERR_PTR(-E2BIG);
+		return -E2BIG;
 
 	connection = gb_connection_hd_find(hd, hd_cport_id);
 	if (!connection) {
 		pr_err("Invalid cport supplied to send\n");
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
 	buffer_size = sizeof(*message->header) + message->payload_size;
 
 	msg = (struct muc_msg *)kzalloc(buffer_size +
-			sizeof(struct muc_msg_hdr), GFP_KERNEL);
+			sizeof(struct muc_msg_hdr), gfp_mask);
 	if (!msg) {
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 	}
 
 	msg->hdr.dest_cport = connection->intf_cport_id;
@@ -147,16 +148,17 @@ static void *mods_msg_send(struct greybus_host_device *hd,
 
 	/* hand off to the dl layer */
 	if (g_routing && g_routing->drv && g_routing->drv->message_send)
-		g_routing->drv->message_send(
+		rv = g_routing->drv->message_send(
 				(struct mods_host_device *)g_routing,
 				(uint8_t *)msg,
 				msg->hdr.size);
+
 	kfree(msg);
 
-	return NULL;
+	return rv;
 }
 
-static void mods_msg_cancel(void *cookie)
+static void mods_msg_cancel(struct gb_message *message)
 {
 	/* nothing currently */
 }
@@ -171,7 +173,7 @@ static struct greybus_host_driver mods_nw_host_driver = {
 	.hd_priv_size		= sizeof(struct mods_nw_data),
 	.message_send		= mods_msg_send,
 	.message_cancel		= mods_msg_cancel,
-	.submit_svc		    = mods_submit_svc,
+	.submit_svc		= mods_submit_svc,
 };
 
 static int mods_nw_probe(struct platform_device *pdev)
