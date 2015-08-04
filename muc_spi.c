@@ -24,7 +24,6 @@
 
 #include "endo.h"
 #include "greybus.h"
-#include "svc_msg.h"
 
 #include "muc_attach.h"
 #include "muc_svc.h"

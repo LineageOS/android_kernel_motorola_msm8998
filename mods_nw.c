@@ -25,7 +25,6 @@
 
 #include "endo.h"
 #include "greybus.h"
-#include "svc_msg.h"
 #include "muc_svc.h"
 #include "muc_attach.h"
 #include "mods_nw.h"
@@ -163,17 +162,10 @@ static void mods_msg_cancel(struct gb_message *message)
 	/* nothing currently */
 }
 
-static int mods_submit_svc(struct svc_msg *svc_msg,
-			      struct greybus_host_device *hd)
-{
-	return 0;
-}
-
 static struct greybus_host_driver mods_nw_host_driver = {
 	.hd_priv_size		= sizeof(struct mods_nw_data),
 	.message_send		= mods_msg_send,
 	.message_cancel		= mods_msg_cancel,
-	.submit_svc		= mods_submit_svc,
 };
 
 static int mods_nw_probe(struct platform_device *pdev)
