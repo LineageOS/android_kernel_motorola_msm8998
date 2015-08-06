@@ -43,7 +43,7 @@
 
 struct muc_spi_data {
 	struct spi_device *spi;
-	struct mods_host_device *hd;
+	struct mods_dl_device *dld;
 	bool present;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;
@@ -76,9 +76,9 @@ struct muc_spi_msg
 
 static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *rx_buf);
 
-static inline struct muc_spi_data *hd_to_dd(struct mods_host_device *hd)
+static inline struct muc_spi_data *dld_to_dd(struct mods_dl_device *dld)
 {
-	return (struct muc_spi_data *)hd->hd_priv;
+	return (struct muc_spi_data *)dld->dl_priv;
 }
 
 static uint16_t gen_crc16(uint8_t *data, unsigned long len)
@@ -192,7 +192,7 @@ static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *buf)
 		return;
 	}
 
-	mods_data_rcvd(dd->hd, dd->rcvd_payload);
+	mods_data_rcvd(dd->dld, dd->rcvd_payload);
 	memset(dd->rcvd_payload, 0, MUC_MSG_SIZE_MAX);
 	dd->rcvd_payload_idx = 0;
 }
@@ -234,7 +234,7 @@ static int muc_attach(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static int muc_spi_message_send(struct mods_host_device *hd,
+static int muc_spi_message_send(struct mods_dl_device *dld,
 				   uint8_t *buf, size_t len)
 {
 	struct muc_spi_msg *m;
@@ -256,7 +256,7 @@ static int muc_spi_message_send(struct mods_host_device *hd,
 		memcpy(m->data, dbuf, pl_size);
 		m->crc16 = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
 
-		muc_spi_transfer(hd_to_dd(hd), (uint8_t *)m, more);
+		muc_spi_transfer(dld_to_dd(dld), (uint8_t *)m, more);
 
 		remaining -= pl_size;
 		dbuf += pl_size;
@@ -277,8 +277,8 @@ static void muc_spi_message_cancel(void *cookie)
 	/* Should never happen */
 }
 
-static struct mods_host_driver muc_spi_host_driver = {
-	.hd_priv_size		= sizeof(struct muc_spi_data),
+static struct mods_dl_driver muc_spi_dl_driver = {
+	.dl_priv_size		= sizeof(struct muc_spi_data),
 	.message_send		= muc_spi_message_send,
 	.message_cancel		= muc_spi_message_cancel,
 };
@@ -320,14 +320,14 @@ static int muc_spi_probe(struct spi_device *spi)
 	if (!dd)
 		return -ENOMEM;
 
-	dd->hd = mods_create_hd(&muc_spi_host_driver, &spi->dev);
-	if (IS_ERR(dd->hd)) {
+	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev);
+	if (IS_ERR(dd->dld)) {
 		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
 		        __func__);
-		return PTR_ERR(dd->hd);
+		return PTR_ERR(dd->dld);
 	}
 
-	dd->hd->hd_priv = (void *)dd;
+	dd->dld->dl_priv = (void *)dd;
 	dd->spi = spi;
 	dd->attach_nb.notifier_call = muc_attach;
 	muc_spi_gpio_init(dd);
@@ -350,7 +350,7 @@ static int muc_spi_remove(struct spi_device *spi)
 	gpio_free(dd->gpio_rdy_n);
 
 	unregister_muc_attach_notifier(&dd->attach_nb);
-	mods_remove_hd(dd->hd);
+	mods_remove_dl_device(dd->dld);
 	spi_set_drvdata(spi, NULL);
 
 	return 0;

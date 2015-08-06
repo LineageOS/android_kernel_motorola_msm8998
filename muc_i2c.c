@@ -43,7 +43,7 @@
 
 struct muc_i2c_data {
 	struct i2c_client *client;
-	struct mods_host_device *hd;
+	struct mods_dl_device *dld;
 	bool present;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 };
@@ -120,7 +120,7 @@ static irqreturn_t muc_i2c_isr(int irq, void *data)
 		return IRQ_HANDLED;
 
 	if (!muc_i2c_message_read(dd, &msg)) {
-		mods_data_rcvd(dd->hd, msg);
+		mods_data_rcvd(dd->dld, msg);
 		kfree(msg);
 	}
 	return IRQ_HANDLED;
@@ -165,7 +165,7 @@ static int muc_i2c_write(struct muc_i2c_data *dd, uint8_t *buf, int size)
 	return err;
 }
 
-static int muc_i2c_message_send(struct mods_host_device *hd, uint8_t *msg, size_t len)
+static int muc_i2c_message_send(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 {
 	struct muc_i2c_msg i2c_msg;
 	uint8_t pkts_total;
@@ -173,7 +173,7 @@ static int muc_i2c_message_send(struct mods_host_device *hd, uint8_t *msg, size_
 	size_t remaining;
 	uint8_t *buf = (uint8_t *)msg;
 	int i;
-	struct i2c_client *client = container_of(hd->dev, struct i2c_client, dev);
+	struct i2c_client *client = container_of(dld->dev, struct i2c_client, dev);
 	struct muc_i2c_data *dd = i2c_get_clientdata(client);
 
 	memset(&i2c_msg, 0, sizeof(i2c_msg));
@@ -201,8 +201,8 @@ static void muc_i2c_message_cancel(void *cookie)
 	pr_info("%s <- %pS\n", __func__, __builtin_return_address(0));
 }
 
-static struct mods_host_driver muc_i2c_host_driver = {
-	.hd_priv_size		= sizeof(struct muc_i2c_data),
+static struct mods_dl_driver muc_i2c_dl_driver = {
+	.dl_priv_size		= sizeof(struct muc_i2c_data),
 	.message_send		= muc_i2c_message_send,
 	.message_cancel		= muc_i2c_message_cancel,
 };
@@ -221,13 +221,13 @@ static int muc_i2c_probe(struct i2c_client *client,
 	dd->client = client;
 	dd->attach_nb.notifier_call = muc_i2c_attach;
 
-	dd->hd = mods_create_hd(&muc_i2c_host_driver, &client->dev);
-	if (IS_ERR(dd->hd)) {
+	dd->dld = mods_create_dl_device(&muc_i2c_dl_driver, &client->dev);
+	if (IS_ERR(dd->dld)) {
 		printk(KERN_ERR "%s: Unable to create greybus host driver.\n",
 		       __func__);
-		return PTR_ERR(dd->hd);
+		return PTR_ERR(dd->dld);
 	}
-	dd->hd->hd_priv = dd;
+	dd->dld->dl_priv = dd;
 	i2c_set_clientdata(client, dd);
 
 	register_muc_attach_notifier(&dd->attach_nb);
@@ -240,7 +240,7 @@ static int muc_i2c_remove(struct i2c_client *client)
 	struct muc_i2c_data *dd = i2c_get_clientdata(client);
 
 	unregister_muc_attach_notifier(&dd->attach_nb);
-	mods_remove_hd(dd->hd);
+	mods_remove_dl_device(dd->dld);
 	devm_kfree(&client->dev, dd);
 	i2c_set_clientdata(client, NULL);
 

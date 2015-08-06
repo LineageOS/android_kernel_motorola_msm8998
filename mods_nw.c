@@ -54,15 +54,15 @@ static struct greybus_host_device *g_hd;
 
 /* TODO: a real list with operations to select the device */
 /* single entry table to start with */
-static struct mods_host_device *g_routing;
+static struct mods_dl_device *g_routing;
 
 /* TODO: use max_size to calc max payload */
-struct mods_host_device *mods_create_hd(struct mods_host_driver *drv,
+struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *dev)
 {
-	struct mods_host_device *mods_dev;
+	struct mods_dl_device *mods_dev;
 
-	mods_dev = (struct mods_host_device *)kzalloc(sizeof(*mods_dev),
+	mods_dev = (struct mods_dl_device *)kzalloc(sizeof(*mods_dev),
 			GFP_KERNEL);
 	if (!mods_dev)
 		return ERR_PTR(-ENOMEM);
@@ -74,16 +74,16 @@ struct mods_host_device *mods_create_hd(struct mods_host_driver *drv,
 
 	return mods_dev;
 }
-EXPORT_SYMBOL_GPL(mods_create_hd);
+EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
-void mods_remove_hd(struct mods_host_device *dev)
+void mods_remove_dl_device(struct mods_dl_device *dev)
 {
 	g_routing = NULL;
 	kfree(dev);
 }
-EXPORT_SYMBOL_GPL(mods_remove_hd);
+EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
-void mods_data_rcvd(struct mods_host_device *hd, uint8_t *data)
+void mods_data_rcvd(struct mods_dl_device *nd, uint8_t *data)
 {
 	struct muc_msg *msg = (struct muc_msg *)data;
 
@@ -148,7 +148,7 @@ static int mods_msg_send(struct greybus_host_device *hd,
 	/* hand off to the dl layer */
 	if (g_routing && g_routing->drv && g_routing->drv->message_send)
 		rv = g_routing->drv->message_send(
-				(struct mods_host_device *)g_routing,
+				(struct mods_dl_device *)g_routing,
 				(uint8_t *)msg,
 				msg->hdr.size);
 

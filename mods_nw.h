@@ -14,26 +14,26 @@
 #ifndef _MODS_NW_H__
 #define _MODS_NW_H__
 
-struct mods_host_device;
+struct mods_dl_device;
 
 #define MUC_MSG_SIZE_MAX        (1024)
 
-struct mods_host_driver {
-	size_t hd_priv_size;
+struct mods_dl_driver {
+	size_t dl_priv_size;
 
-	int (*message_send)(struct mods_host_device *hd, uint8_t *payload,
+	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
 			size_t size);
 	void (*message_cancel)(void *cookie);
 };
 
-struct mods_host_device {
+struct mods_dl_device {
 	struct device *dev;
-	struct mods_host_driver *drv;
-	void *hd_priv;
+	struct mods_dl_driver *drv;
+	void *dl_priv;
 };
 
-extern void mods_data_rcvd(struct mods_host_device *hd, uint8_t *data);
-extern struct mods_host_device *mods_create_hd(struct mods_host_driver *drv,
+extern void mods_data_rcvd(struct mods_dl_device *nd, uint8_t *data);
+extern struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *parent);
-extern void mods_remove_hd(struct mods_host_device *dev);
+extern void mods_remove_dl_device(struct mods_dl_device *nd);
 #endif
