@@ -165,7 +165,8 @@ static int muc_i2c_write(struct muc_i2c_data *dd, uint8_t *buf, int size)
 	return err;
 }
 
-static int muc_i2c_message_send(struct mods_dl_device *dld, uint8_t *msg, size_t len)
+static int
+muc_i2c_message_send(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 {
 	struct muc_i2c_msg i2c_msg;
 	uint8_t pkts_total;
@@ -173,7 +174,8 @@ static int muc_i2c_message_send(struct mods_dl_device *dld, uint8_t *msg, size_t
 	size_t remaining;
 	uint8_t *buf = (uint8_t *)msg;
 	int i;
-	struct i2c_client *client = container_of(dld->dev, struct i2c_client, dev);
+	struct i2c_client *client = container_of(dld->dev,
+					struct i2c_client, dev);
 	struct muc_i2c_data *dd = i2c_get_clientdata(client);
 
 	memset(&i2c_msg, 0, sizeof(i2c_msg));

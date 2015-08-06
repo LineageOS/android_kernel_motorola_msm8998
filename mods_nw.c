@@ -62,8 +62,7 @@ struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 {
 	struct mods_dl_device *mods_dev;
 
-	mods_dev = (struct mods_dl_device *)kzalloc(sizeof(*mods_dev),
-			GFP_KERNEL);
+	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
 	if (!mods_dev)
 		return ERR_PTR(-ENOMEM);
 
