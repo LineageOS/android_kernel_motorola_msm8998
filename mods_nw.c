@@ -23,7 +23,6 @@
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
 
-#include "endo.h"
 #include "greybus.h"
 #include "muc_svc.h"
 #include "muc_attach.h"
@@ -48,6 +47,8 @@ struct mods_nw_data {
 	struct greybus_host_device *hd;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	bool present;
+	struct list_head nw_dev;
+	atomic_t device_id;
 };
 
 static struct greybus_host_device *g_hd;
@@ -69,6 +70,7 @@ struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 	mods_dev->drv = drv;
 	mods_dev->dev = dev;
 
+	/* XXX Add to a list */
 	g_routing = mods_dev;
 
 	return mods_dev;
@@ -77,6 +79,7 @@ EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
+	/* XXX Free from list */
 	g_routing = NULL;
 	kfree(dev);
 }
@@ -122,6 +125,10 @@ static int mods_msg_send(struct greybus_host_device *hd,
 	if (message->payload_size > PAYLOAD_MAX_SIZE)
 		return -E2BIG;
 
+	/* XXX - This should lookup in the routing table for destination
+	 * device and cport id. Which will also let us identify the DL
+	 * driver to send towards.
+	 */
 	connection = gb_connection_hd_find(hd, hd_cport_id);
 	if (!connection) {
 		pr_err("Invalid cport supplied to send\n");
@@ -170,9 +177,6 @@ static struct greybus_host_driver mods_nw_host_driver = {
 static int mods_nw_probe(struct platform_device *pdev)
 {
 	struct mods_nw_data *dd;
-	u16 endo_id = 0x4755;
-	u8 ap_intf_id = 0x01;
-	int retval;
 
 	/* setup host device */
 	g_hd = greybus_create_hd(&mods_nw_host_driver, &pdev->dev,
@@ -182,20 +186,18 @@ static int mods_nw_probe(struct platform_device *pdev)
 		return PTR_ERR(g_hd);
 	}
 
-	/* setup endo */
-	retval = greybus_endo_setup(g_hd, endo_id, ap_intf_id);
-	if (retval) {
-		greybus_remove_hd(g_hd);
-		return retval;
-	}
-
 	/* register attach */
 	dd = (struct mods_nw_data *)&g_hd->hd_priv;
 	dd->hd = g_hd;
 	platform_set_drvdata(pdev, dd);
 
+	atomic_set(&dd->device_id, 0);
+	INIT_LIST_HEAD(&dd->nw_dev);
+
 	dd->attach_nb.notifier_call = mods_nw_attach;
 	register_muc_attach_notifier(&dd->attach_nb);
+
+	/* XXX Kick off the SVC initialization, it needs to exist */
 
 	return 0;
 }
