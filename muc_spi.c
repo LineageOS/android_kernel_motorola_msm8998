@@ -22,11 +22,7 @@
 #include <linux/of_irq.h>
 #include <linux/spi/spi.h>
 
-#include "endo.h"
-#include "greybus.h"
-
 #include "muc_attach.h"
-#include "muc_svc.h"
 #include "mods_nw.h"
 
 /* Size of payload of individual SPI packet (in bytes) */
@@ -52,9 +48,6 @@ struct muc_spi_data {
 	int gpio_rdy_n;
 
 	__u8 has_tranceived;
-
-	/* Preallocated buffer for network messages */
-	__u8 network_buffer[MUC_MSG_SIZE_MAX];
 
 	/*
 	 * Buffer to hold incoming payload (which could be spread across
