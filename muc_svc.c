@@ -30,6 +30,10 @@ struct muc_svc_data {
 	struct mods_dl_device *dld;
 };
 
+/* XXX Move these into device tree? */
+#define MUC_SVC_AP_INTF_ID 1
+#define MUC_SVC_ENDO_ID 0x4755
+
 #define HP_BASE_SIZE      (sizeof(struct svc_msg_header) + 2)
 #define LU_PAYLOAD_SIZE   (sizeof(struct svc_function_unipro_management))
 #define LU_MSG_SIZE       (sizeof(struct svc_msg_header) + LU_PAYLOAD_SIZE)
@@ -64,6 +68,11 @@ void muc_svc_detach(struct greybus_host_device *hd)
 }
 EXPORT_SYMBOL(muc_svc_detach);
 
+static int muc_svc_probe_ap(uint8_t ap_intf_id)
+{
+	return 0;
+}
+
 static int
 muc_svc_msg_send(struct mods_dl_device *dld, uint8_t *buf, size_t len)
 {
@@ -84,6 +93,7 @@ static struct mods_dl_driver muc_svc_dl_driver = {
 static int muc_svc_probe(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd;
+	int ret;
 
 	dd = devm_kzalloc(&pdev->dev, sizeof(*dd), GFP_KERNEL);
 	if (!dd)
@@ -96,6 +106,13 @@ static int muc_svc_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, dd);
+
+	/* We are a single entity, AP is always attached */
+	ret = muc_svc_probe_ap(MUC_SVC_AP_INTF_ID);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to probe the AP: %d\n", ret);
+		return ret;
+	}
 
 	return 0;
 }
