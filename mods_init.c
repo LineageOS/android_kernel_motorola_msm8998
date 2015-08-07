@@ -21,6 +21,9 @@ extern void muc_core_exit(void);
 extern int muc_spi_init(void);
 extern void muc_spi_exit(void);
 
+extern int mods_uart_init(void);
+extern void mods_uart_exit(void);
+
 extern int muc_svc_init(void);
 extern void muc_svc_exit(void);
 
@@ -35,6 +38,7 @@ static int __init mods_init(void)
 	err |= muc_svc_init();
 	err |= mods_ap_init();
 	err |= muc_spi_init();
+	err |= mods_uart_init();
 
 	return (err ? -ENODEV : 0);
 }
@@ -43,6 +47,7 @@ static void __exit mods_exit(void)
 {
 	muc_spi_exit();
 	mods_ap_exit();
+	mods_uart_exit();
 	muc_svc_exit();
 	muc_core_exit();
 }

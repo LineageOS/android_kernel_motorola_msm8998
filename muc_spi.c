@@ -22,6 +22,7 @@
 #include <linux/of_irq.h>
 #include <linux/spi/spi.h>
 
+#include "crc.h"
 #include "muc_attach.h"
 #include "mods_nw.h"
 #include "muc_svc.h"
@@ -34,9 +35,6 @@
 #define HDR_BIT_RSVD            (0x3F << 0)
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
-
-#define POLYNOMIAL		0x8005
-#define CRC_HIGHBIT		0x8000
 
 struct muc_spi_data {
 	struct spi_device *spi;
@@ -73,27 +71,6 @@ static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *rx_buf);
 static inline struct muc_spi_data *dld_to_dd(struct mods_dl_device *dld)
 {
 	return (struct muc_spi_data *)dld->dl_priv;
-}
-
-static uint16_t gen_crc16(uint8_t *data, unsigned long len)
-{
-	uint16_t i, j, c, bit;
-	uint16_t crc = 0;
-
-	for (i=0; i<len; i++) {
-		c = (uint16_t)*data++;
-		for (j=0x80; j; j>>=1) {
-			bit = crc & CRC_HIGHBIT;
-			crc <<= 1;
-			if (c & j)
-				bit ^= CRC_HIGHBIT;
-			if (bit)
-				crc ^= POLYNOMIAL;
-		}
-	}
-
-	crc = (crc >> 8) | (crc << 8);
-	return(crc);
 }
 
 static int muc_spi_transfer_locked(struct muc_spi_data *dd,
