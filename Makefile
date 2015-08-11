@@ -24,7 +24,8 @@ gb-phy-y :=	gpbridge.o	\
 		audio-dai.o	\
 		audio-gb-cmds.o 
 
-gb-mods-y := 	muc_core.o \
+gb-mods-y :=	muc_core.o \
+		mods_ap.o \
 		muc_gpio.o \
 		muc_svc.o \
 		mods_init.o \
