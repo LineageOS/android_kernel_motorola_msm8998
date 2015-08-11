@@ -83,6 +83,11 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 	/* hand off to the nw layer */
 	rv = mods_nw_switch(dl, (uint8_t *)msg);
 
+	/* Tell submitter that the message send (attempt) is
+	 * complete and save the status.
+	 */
+	greybus_message_sent(hd, message, rv);
+
 	kfree(msg);
 
 	return rv;
