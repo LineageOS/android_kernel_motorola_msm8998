@@ -30,19 +30,6 @@
 
 #define PAYLOAD_MAX_SIZE     (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
 
-#pragma pack(push, 1)
-struct muc_msg_hdr {
-	__le16  size;
-	__u8    dest_cport;
-	__u8    src_cport;
-};
-
-struct muc_msg {
-	struct muc_msg_hdr hdr;
-	__u8    gb_msg[0];
-};
-#pragma pack(pop)
-
 struct mods_nw_data {
 	struct greybus_host_device *hd;
 	struct notifier_block attach_nb;   /* attach/detach notifications */

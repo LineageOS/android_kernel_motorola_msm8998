@@ -32,6 +32,19 @@ struct mods_dl_device {
 	void *dl_priv;
 };
 
+#pragma pack(push, 1)
+struct muc_msg_hdr {
+	__le16  size;
+	__u8    dest_cport;
+	__u8    src_cport;
+};
+
+struct muc_msg {
+	struct muc_msg_hdr hdr;
+	__u8    gb_msg[0];
+};
+#pragma pack(pop)
+
 extern void mods_data_rcvd(struct mods_dl_device *nd, uint8_t *data);
 extern struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *parent);
