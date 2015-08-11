@@ -131,9 +131,71 @@ svc_route_msg(struct mods_dl_device *dld, uint8_t src_cport,
 	return 0;
 }
 
-/* Handle the incoming greybus message and complete the waiting thread */
-/* XXX This only accounts for responses.... need to determine if its response
- * or a brand new message to the SVC (even possible? AP set route, maybe).
+static inline size_t get_gb_payload_size(size_t message_size)
+{
+	return message_size - sizeof(struct gb_operation_msg_hdr);
+}
+
+static int
+muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
+			size_t msg_size, uint8_t cport)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	size_t payload_size = get_gb_payload_size(msg_size);
+	struct gb_operation_msg_hdr hdr;
+	struct svc_op *op;
+	int ret;
+
+	op = kzalloc(sizeof(*op), GFP_KERNEL);
+	if (!op)
+		return -ENOMEM;
+
+	memcpy(&hdr, data, sizeof(hdr));
+
+	op->request = svc_gb_msg_alloc(hdr.type, payload_size);
+	if (!op->request) {
+		ret = -ENOMEM;
+		goto gb_msg_alloc;
+	}
+
+	if (payload_size)
+		memcpy(op->request->payload, data, payload_size);
+
+	switch (hdr.type) {
+	case GB_SVC_TYPE_INTF_DEVICE_ID:
+		/* XXX Handle interface to device ID mapping */
+		break;
+	case GB_SVC_TYPE_INTF_RESET:
+		/* XXX Handle interface reset request */
+		break;
+	case GB_SVC_TYPE_CONN_CREATE:
+		/* XXX Handle connection create intf:cport <-> intf:cport */
+		break;
+	case GB_SVC_TYPE_CONN_DESTROY:
+		/* XXX Handle connection destroy */
+		break;
+	case GB_SVC_TYPE_ROUTE_CREATE:
+		/* XXX Handle route create intf:devid <-> intf:devid */
+		break;
+	default:
+		dev_err(&dd->pdev->dev, "Unsupported type: %d\n", hdr.type);
+		goto unknown_type;
+	}
+
+	/* If hdr operation id is non-zero, it expects a response */
+
+	return 0;
+
+unknown_type:
+	svc_gb_msg_free(op->request);
+gb_msg_alloc:
+	kfree(op);
+
+	return ret;
+}
+
+/* Handle the incoming greybus message and complete the waiting thread, or
+ * process the new incoming request.
  */
 static int
 svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
@@ -141,10 +203,9 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
-	size_t payload_size;
+	size_t payload_size = get_gb_payload_size(msg_size);
 	struct gb_operation_msg_hdr hdr;
 
-	payload_size = msg_size - sizeof(struct gb_operation_msg_hdr);
 	if (msg_size < sizeof(hdr)) {
 		dev_err(&dd->pdev->dev, "msg size too small: %zu\n", msg_size);
 		return -EINVAL;
@@ -152,6 +213,7 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 
 	memcpy(&hdr, data, sizeof(hdr));
 
+	/* If this is a response, notify the the waiter */
 	if (hdr.type & GB_MESSAGE_TYPE_RESPONSE) {
 		op = svc_find_op(dd, le16_to_cpu(hdr.operation_id));
 		if (!op) {
@@ -166,11 +228,12 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 
 		memcpy(op->response->header, data, msg_size);
 		complete(&op->completion);
-	} else {
-		/* This is a new incoming request! */
+
+		return 0;
 	}
 
-	return 0;
+	/* If not a response, process the new request */
+	return muc_svc_handle_request(dld, data, msg_size, cport);
 }
 
 /* Send a message out the specified CPORT and wait for a response */
