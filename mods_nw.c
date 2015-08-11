@@ -133,12 +133,3 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 
 	return err;
 }
-
-int __init mods_nw_init(void)
-{
-	return 0;
-}
-
-void __exit mods_nw_exit(void)
-{
-}
