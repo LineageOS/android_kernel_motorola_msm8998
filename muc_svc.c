@@ -56,13 +56,26 @@ struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 	mods_dev->intf_id = intf_id;
 
 	mods_nw_add_dl_device(mods_dev);
+
+	if (intf_id == MODS_INTF_AP) {
+		int err;
+
+		err = mods_nw_add_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
+		err |= mods_nw_add_route(MODS_INTF_AP,  0, MODS_INTF_SVC, 0);
+		if (err) {
+			mods_nw_del_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
+			mods_nw_del_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
+			kfree(mods_dev);
+			mods_dev = ERR_PTR(err);
+		}
+	}
+
 	return mods_dev;
 }
 EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
-	mods_nw_del_dl_device(dev);
 	kfree(dev);
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);

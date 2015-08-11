@@ -36,7 +36,8 @@ static int mods_ap_message_send(struct mods_dl_device *dld,
 {
 	struct muc_msg *msg = (struct muc_msg *)buf;
 
-	greybus_data_rcvd(g_hd, msg->hdr.dest_cport, msg->gb_msg, msg->hdr.size);
+	greybus_data_rcvd(g_hd, msg->hdr.dest_cport,
+			msg->gb_msg, msg->hdr.size);
 	return 0;
 }
 
@@ -72,8 +73,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 
 	buffer_size = sizeof(*message->header) + message->payload_size;
 
-	msg = (struct muc_msg *)kzalloc(buffer_size +
-			sizeof(struct muc_msg_hdr), gfp_mask);
+	msg = kzalloc(buffer_size + sizeof(struct muc_msg_hdr), gfp_mask);
 	if (!msg)
 		return -ENOMEM;
 
@@ -108,6 +108,7 @@ static struct gb_hd_driver mods_ap_host_driver = {
 
 static int mods_ap_probe(struct platform_device *pdev)
 {
+	int err = 0;
 	struct mods_ap_data *ap_data;
 
 	/* setup host device */
@@ -125,12 +126,25 @@ static int mods_ap_probe(struct platform_device *pdev)
 	ap_data->dld = mods_create_dl_device(&mods_ap_dl_driver,
 			&pdev->dev, MODS_INTF_AP);
 	if (IS_ERR(ap_data->dld)) {
-		dev_err(&pdev->dev, "%s: Unable to create greybus host driver.\n",
-		        __func__);
-		return PTR_ERR(ap_data->dld);
+		err = PTR_ERR(ap_data->dld);
+		dev_err(&pdev->dev, "Unable to create greybus host driver.\n");
+		if (err == -ENODEV) {
+			/* the AP is a special case that creates a route with
+			 * the SVC.  ENODEV means that the SVC isn't ready and
+			 * we should try again later */
+			err = -EPROBE_DEFER;
+		}
+
+		goto err;
 	}
 
 	return 0;
+
+err:
+	greybus_remove_hd(g_hd);
+	g_hd = NULL;
+	return err;
+
 }
 
 static int mods_ap_remove(struct platform_device *pdev)
@@ -157,6 +171,7 @@ static struct platform_device *mods_ap_device;
 int __init mods_ap_init(void)
 {
 	int err;
+
 	err = platform_driver_register(&mods_ap_driver);
 	if (err) {
 		pr_err("mods ap failed to register driver\n");

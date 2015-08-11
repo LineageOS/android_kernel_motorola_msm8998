@@ -31,7 +31,6 @@ struct muc_msg {
 
 #define MUC_MSG_SIZE_MAX        (1024)
 #define PAYLOAD_MAX_SIZE        (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
-#define CPORTS_PER_DEVICE        16
 
 struct mods_dl_driver {
 	size_t dl_priv_size;
@@ -51,8 +50,10 @@ struct mods_dl_device {
 };
 
 /* interfaces with the svc */
-extern int mods_nw_add_route(struct mods_dl_device *from, u16 from_cport,
-		struct mods_dl_device *to, u16 to_cport);
+extern int mods_nw_add_route(u8 from_intf, u8 from_cport,
+		u8 to_intf, u8 to_cport);
+extern void mods_nw_del_route(u8 from_intf, u8 from_cport,
+		u8 to_intf, u8 to_cport);
 extern void mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
 extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
 
