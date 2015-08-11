@@ -16,22 +16,6 @@
 
 struct mods_dl_device;
 
-#define MUC_MSG_SIZE_MAX        (1024)
-
-struct mods_dl_driver {
-	size_t dl_priv_size;
-
-	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
-			size_t size);
-	void (*message_cancel)(void *cookie);
-};
-
-struct mods_dl_device {
-	struct device *dev;
-	struct mods_dl_driver *drv;
-	void *dl_priv;
-};
-
 #pragma pack(push, 1)
 struct muc_msg_hdr {
 	__le16  size;
@@ -45,8 +29,40 @@ struct muc_msg {
 };
 #pragma pack(pop)
 
-extern void mods_data_rcvd(struct mods_dl_device *nd, uint8_t *data);
+#define MUC_MSG_SIZE_MAX        (1024)
+#define PAYLOAD_MAX_SIZE        (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
+#define CPORTS_PER_DEVICE        16
+
+struct mods_dl_driver {
+	size_t dl_priv_size;
+
+	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
+			size_t size);
+	void (*message_cancel)(void *cookie);
+};
+
+/* HACK for hard coded routes */
+enum mods_dl_role {
+	MODS_DL_ROLE_AP,
+	MODS_DL_ROLE_MUC,
+	MODS_DL_ROLE_TSB,
+	MODS_DL_ROLD_SVC,
+};
+
+struct mods_dl_device {
+	struct list_head list;
+	struct device *dev;
+	struct mods_dl_driver *drv;
+	enum mods_dl_role role;
+	void *dl_priv;
+};
+
 extern struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
-		struct device *parent);
+		struct device *parent, enum mods_dl_role role);
 extern void mods_remove_dl_device(struct mods_dl_device *nd);
+
+extern int mods_nw_add_route(struct mods_dl_device *from, u16 from_cport,
+		struct mods_dl_device *to, u16 to_cport);
+/* send message to switch to connect to destination */
+extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg);
 #endif

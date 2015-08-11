@@ -185,7 +185,7 @@ static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *buf)
 		return;
 	}
 
-	mods_data_rcvd(dd->dld, dd->rcvd_payload);
+	mods_nw_switch(dd->dld, dd->rcvd_payload);
 	memset(dd->rcvd_payload, 0, MUC_MSG_SIZE_MAX);
 	dd->rcvd_payload_idx = 0;
 }
@@ -227,6 +227,7 @@ static int muc_attach(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
+/* send message from switch to muc */
 static int muc_spi_message_send(struct mods_dl_device *dld,
 				   uint8_t *buf, size_t len)
 {
@@ -313,7 +314,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	if (!dd)
 		return -ENOMEM;
 
-	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev);
+	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, MODS_DL_ROLE_MUC);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
 		        __func__);

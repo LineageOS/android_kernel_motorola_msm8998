@@ -18,6 +18,7 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
+#include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
@@ -28,42 +29,29 @@
 #include "muc_attach.h"
 #include "mods_nw.h"
 
-#define PAYLOAD_MAX_SIZE     (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
-
-struct mods_nw_data {
-	struct greybus_host_device *hd;
-	struct notifier_block attach_nb;   /* attach/detach notifications */
-	bool present;
-	struct list_head nw_dev;
-	atomic_t device_id;
-};
-
-static struct greybus_host_device *g_hd;
-
 /* TODO: a real list with operations to select the device */
 /* single entry table to start with */
-static struct mods_dl_device *g_routing;
+static LIST_HEAD(g_routing);
+static DEFINE_SPINLOCK(g_routing_lock);
 
 /* TODO: use max_size to calc max payload */
 struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
-		struct device *dev)
+		struct device *dev, enum mods_dl_role role)
 {
 	struct mods_dl_device *mods_dev;
 
-	if (!g_hd) {
-		dev_err(dev, "NW HD not yet initialized\n");
-		return ERR_PTR(-EPROBE_DEFER);
-	}
-
+	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), role);
 	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
 	if (!mods_dev)
 		return ERR_PTR(-ENOMEM);
 
 	mods_dev->drv = drv;
 	mods_dev->dev = dev;
+	mods_dev->role = role;
 
-	/* XXX Add to a list */
-	g_routing = mods_dev;
+	spin_lock_irq(&g_routing_lock);
+	list_add(&mods_dev->list, &g_routing);
+	spin_unlock_irq(&g_routing_lock);
 
 	return mods_dev;
 }
@@ -71,192 +59,92 @@ EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
-	/* XXX Free from list */
-	g_routing = NULL;
+	spin_lock_irq(&g_routing_lock);
+	list_del(&dev->list);
+	spin_unlock_irq(&g_routing_lock);
 	kfree(dev);
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
-void mods_data_rcvd(struct mods_dl_device *nd, uint8_t *data)
+static inline struct mods_dl_device *find_by_role(struct list_head *list,
+	enum mods_dl_role role)
 {
-	struct muc_msg *msg = (struct muc_msg *)data;
+	struct mods_dl_device *dld = NULL;
+	struct list_head *ptr;
 
-	greybus_data_rcvd(g_hd, msg->hdr.dest_cport, msg->gb_msg, msg->hdr.size);
-}
-EXPORT_SYMBOL_GPL(mods_data_rcvd);
-
-static int mods_nw_attach(struct notifier_block *nb,
-		      unsigned long now_present, void *not_used)
-{
-	struct mods_nw_data *dd = container_of(nb, struct mods_nw_data,
-			attach_nb);
-	struct greybus_host_device *hd = dd->hd;
-
-	if (now_present != dd->present) {
-		pr_debug("MuC attach state = %lu\n", now_present);
-
-		dd->present = now_present;
-		if (now_present)
-			muc_svc_attach(hd);
-		else
-			muc_svc_detach(hd);
+	spin_lock_irq(&g_routing_lock);
+	list_for_each(ptr, list) {
+		dld = list_entry(ptr, struct mods_dl_device, list);
+		if (dld && dld->role == role) {
+			pr_info("%s match found for role = %d\n", __func__, role);
+			break;
+		}
 	}
-	return NOTIFY_OK;
+	spin_unlock_irq(&g_routing_lock);
+	return dld;
 }
 
-static int mods_msg_send(struct greybus_host_device *hd,
-		u16 hd_cport_id,
-		struct gb_message *message,
-		gfp_t gfp_mask)
+static inline void mods_msg_dump(const char *str, struct muc_msg *mm)
 {
-	size_t buffer_size;
-	struct gb_connection *connection;
-	struct muc_msg *msg;
-	int rv = -EINVAL;
+	struct gb_operation     *gb_op;
+	gb_op = (struct gb_operation*)mm->gb_msg;
 
-	if (message->payload_size > PAYLOAD_MAX_SIZE)
-		return -E2BIG;
+	pr_info("%s [%4u] type=%u size=%d (%u -> %u)\n", str,
+		gb_op->id, gb_op->type,
+		mm->hdr.size, mm->hdr.src_cport, mm->hdr.dest_cport);
+}
 
-	/* XXX - This should lookup in the routing table for destination
-	 * device and cport id. Which will also let us identify the DL
-	 * driver to send towards.
-	 */
-	connection = gb_connection_hd_find(hd, hd_cport_id);
-	if (!connection) {
-		pr_err("Invalid cport supplied to send\n");
+int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
+{
+	struct mods_dl_device *to = NULL;
+	struct muc_msg *mm;
+	size_t msg_size;
+	int err = -ENODEV;
+
+pr_info("JRW: %s(%p, %p)\n", __func__, from, msg), msleep(10);
+	if (!msg || !from) {
+		pr_err("bad arguments\n");
 		return -EINVAL;
 	}
 
-	buffer_size = sizeof(*message->header) + message->payload_size;
-
-	msg = (struct muc_msg *)kzalloc(buffer_size +
-			sizeof(struct muc_msg_hdr), gfp_mask);
-	if (!msg) {
-		return -ENOMEM;
+	mm = (struct muc_msg *)msg;
+	msg_size = mm->hdr.size;
+	
+	/* FIXME - do something */
+	switch (from->role) {
+	case MODS_DL_ROLE_AP:
+		/* send to muc */
+		pr_info("JRW: %s msg from AP send to MUC\n", __func__);
+		to = find_by_role(&g_routing, MODS_DL_ROLD_SVC);
+		break;
+	case MODS_DL_ROLE_MUC:
+		/* send to ap */
+		pr_info("JRW: %s msg from MUC send to AP\n", __func__);
+		to = find_by_role(&g_routing, MODS_DL_ROLE_AP);
+		break;
+	case MODS_DL_ROLD_SVC:
+		to = find_by_role(&g_routing, MODS_DL_ROLE_AP);
+		break;
+	default:
+		pr_err("%s - Unsupported role %d\n", __func__, from->role);
 	}
+	mods_msg_dump(__func__, mm);
+	msleep(10);
 
-	msg->hdr.dest_cport = connection->intf_cport_id;
-	msg->hdr.src_cport = connection->hd_cport_id;
-	msg->hdr.size = buffer_size + sizeof(struct muc_msg_hdr);
-	memcpy(&msg->gb_msg[0], message->buffer, buffer_size);
+	if (to)
+		err = to->drv->message_send(to, msg, msg_size);
 
-	pr_info("AP (CPort %d) -> Module (CPort %d)\n",
-			connection->hd_cport_id, connection->intf_cport_id);
-
-	/* hand off to the dl layer */
-	if (g_routing && g_routing->drv && g_routing->drv->message_send)
-		rv = g_routing->drv->message_send(
-				(struct mods_dl_device *)g_routing,
-				(uint8_t *)msg,
-				msg->hdr.size);
-
-	/* Tell submitter that the message send (attempt) is
-	 * complete and save the status.
-	 */
-	greybus_message_sent(hd, message, rv);
-
-	kfree(msg);
-
-	return rv;
+pr_info("JRW: %s -> %pS to == %p\n", __func__, __builtin_return_address(0), to); msleep(10);
+	return err;
 }
-
-static void mods_msg_cancel(struct gb_message *message)
-{
-	/* nothing currently */
-}
-
-static struct greybus_host_driver mods_nw_host_driver = {
-	.hd_priv_size		= sizeof(struct mods_nw_data),
-	.message_send		= mods_msg_send,
-	.message_cancel		= mods_msg_cancel,
-};
-
-static int mods_nw_probe(struct platform_device *pdev)
-{
-	struct mods_nw_data *dd;
-
-	/* setup host device */
-	g_hd = greybus_create_hd(&mods_nw_host_driver, &pdev->dev,
-			PAYLOAD_MAX_SIZE);
-	if (IS_ERR(g_hd)) {
-		dev_err(&pdev->dev, "Unable to create greybus host driver.\n");
-		return PTR_ERR(g_hd);
-	}
-
-	/* register attach */
-	dd = (struct mods_nw_data *)&g_hd->hd_priv;
-	dd->hd = g_hd;
-	platform_set_drvdata(pdev, dd);
-
-	atomic_set(&dd->device_id, 0);
-	INIT_LIST_HEAD(&dd->nw_dev);
-
-	dd->attach_nb.notifier_call = mods_nw_attach;
-	register_muc_attach_notifier(&dd->attach_nb);
-
-	/* XXX Kick off the SVC initialization, it needs to exist */
-
-	return 0;
-}
-
-static int mods_nw_remove(struct platform_device *pdev)
-{
-	struct mods_nw_data *dd = (struct mods_nw_data *)
-			platform_get_drvdata(pdev);
-
-	unregister_muc_attach_notifier(&dd->attach_nb);
-	greybus_remove_hd(dd->hd);
-
-	return 0;
-}
-
-/* TODO init device */
-static struct platform_driver mods_nw_driver = {
-	.driver = {
-		.owner = THIS_MODULE,
-		.name = "mods_nw",
-	},
-	.probe = mods_nw_probe,
-	.remove  = mods_nw_remove,
-};
-
-static struct platform_device *mods_nw_device;
 
 int __init mods_nw_init(void)
 {
-	int rv;
-
-	rv = platform_driver_register(&mods_nw_driver);
-	if (rv < 0) {
-		pr_err("mods_nw failed to register driver\n");
-		return rv;
-	}
-
-	mods_nw_device = platform_device_alloc("mods_nw", -1);
-	if (!mods_nw_device) {
-		rv = -ENOMEM;
-		pr_err("mods_nw failed to alloc device\n");
-		goto alloc_fail;
-	}
-
-	rv = platform_device_add(mods_nw_device);
-	if (rv) {
-		pr_err("mods_nw failed to add device: %d\n", rv);
-		goto add_fail;
-	}
-
+pr_info("JRW: %s <- %pS\n", __func__, __builtin_return_address(0));
 	return 0;
-
-add_fail:
-	platform_device_put(mods_nw_device);
-alloc_fail:
-	platform_driver_unregister(&mods_nw_driver);
-
-	return rv;
 }
 
 void __exit mods_nw_exit(void)
 {
-	platform_driver_unregister(&mods_nw_driver);
-	platform_device_unregister(mods_nw_device);
+pr_info("JRW: %s <- %pS\n", __func__, __builtin_return_address(0));
 }
