@@ -101,7 +101,6 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	size_t msg_size;
 	int err = -ENODEV;
 
-pr_info("JRW: %s(%p, %p)\n", __func__, from, msg), msleep(10);
 	if (!msg || !from) {
 		pr_err("bad arguments\n");
 		return -EINVAL;
@@ -114,12 +113,10 @@ pr_info("JRW: %s(%p, %p)\n", __func__, from, msg), msleep(10);
 	switch (from->role) {
 	case MODS_DL_ROLE_AP:
 		/* send to muc */
-		pr_info("JRW: %s msg from AP send to MUC\n", __func__);
 		to = find_by_role(&g_routing, MODS_DL_ROLD_SVC);
 		break;
 	case MODS_DL_ROLE_MUC:
 		/* send to ap */
-		pr_info("JRW: %s msg from MUC send to AP\n", __func__);
 		to = find_by_role(&g_routing, MODS_DL_ROLE_AP);
 		break;
 	case MODS_DL_ROLD_SVC:
@@ -134,17 +131,14 @@ pr_info("JRW: %s(%p, %p)\n", __func__, from, msg), msleep(10);
 	if (to)
 		err = to->drv->message_send(to, msg, msg_size);
 
-pr_info("JRW: %s -> %pS to == %p\n", __func__, __builtin_return_address(0), to); msleep(10);
 	return err;
 }
 
 int __init mods_nw_init(void)
 {
-pr_info("JRW: %s <- %pS\n", __func__, __builtin_return_address(0));
 	return 0;
 }
 
 void __exit mods_nw_exit(void)
 {
-pr_info("JRW: %s <- %pS\n", __func__, __builtin_return_address(0));
 }
