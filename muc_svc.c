@@ -137,7 +137,7 @@ svc_route_msg(struct mods_dl_device *dld, uint8_t src_cport,
 	m->hdr.dest_cport = dest_cport;
 	m->hdr.src_cport = src_cport;
 
-	mods_data_rcvd(dld, (uint8_t *)m);
+	mods_nw_switch(dld, (uint8_t *)m);
 	kfree(m);
 
 	return 0;
@@ -370,7 +370,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 	if (!dd)
 		return -ENOMEM;
 
-	dd->dld = mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev);
+	dd->dld = mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev, MODS_DL_ROLD_SVC);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&pdev->dev, "Failed to create mods DL device.\n");
 		return PTR_ERR(dd->dld);
