@@ -50,6 +50,11 @@ struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 {
 	struct mods_dl_device *mods_dev;
 
+	if (!g_hd) {
+		dev_err(dev, "NW HD not yet initialized\n");
+		return ERR_PTR(-EPROBE_DEFER);
+	}
+
 	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
 	if (!mods_dev)
 		return ERR_PTR(-ENOMEM);
