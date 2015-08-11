@@ -150,6 +150,11 @@ static int mods_msg_send(struct greybus_host_device *hd,
 				(uint8_t *)msg,
 				msg->hdr.size);
 
+	/* Tell submitter that the message send (attempt) is
+	 * complete and save the status.
+	 */
+	greybus_message_sent(hd, message, rv);
+
 	kfree(msg);
 
 	return rv;
