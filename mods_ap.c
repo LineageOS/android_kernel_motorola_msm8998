@@ -28,14 +28,6 @@ struct mods_ap_data {
 	struct gb_host_device *hd;
 };
 
-void mods_ap_svc_in(u8 *msg, size_t sz)
-{
-	if (g_hd)
-		greybus_svc_in(g_hd, msg, sz);
-	else
-		pr_err("%s too soon\n", __func__);
-}
-
 /* got a message from the nw switch forward it to greybus */
 static int mods_ap_message_send(struct mods_dl_device *dld,
 		uint8_t *buf, size_t len)
@@ -101,26 +93,15 @@ static void mods_ap_msg_cancel(struct gb_message *message)
 	/* nothing currently */
 }
 
-static int mods_ap_submit_svc(struct svc_msg *svc_msg,
-		struct greybus_host_device *hd)
-{
-	return 0;
-}
-
 static struct gb_hd_driver mods_ap_host_driver = {
 	.hd_priv_size		= sizeof(struct mods_ap_data),
 	.message_send		= mods_ap_msg_send,
 	.message_cancel		= mods_ap_msg_cancel,
-	.submit_svc		= mods_ap_submit_svc,
 };
 
 static int mods_ap_probe(struct platform_device *pdev)
 {
 	struct mods_ap_data *ap_data;
-	int err = 0;
-	u16 endo_id = 0x4755;
-	u8 ap_intf_id = 0x01;
-
 
 	/* setup host device */
 	g_hd = greybus_create_hd(&mods_ap_host_driver, &pdev->dev,
@@ -132,13 +113,6 @@ static int mods_ap_probe(struct platform_device *pdev)
 	ap_data = (struct mods_ap_data *)&g_hd->hd_priv;
 	ap_data->hd = g_hd;
 	platform_set_drvdata(pdev, ap_data);
-
-	/* setup endo */
-	err = greybus_endo_setup(g_hd, endo_id, ap_intf_id);
-	if (err) {
-		greybus_remove_hd(g_hd);
-		return err;
-	}
 
 	/* create our data link device */
 	ap_data->dld = mods_create_dl_device(&mods_ap_dl_driver,
