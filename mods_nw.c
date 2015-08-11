@@ -29,45 +29,31 @@
 #include "muc_attach.h"
 #include "mods_nw.h"
 
+	
 /* TODO: a real list with operations to select the device */
 /* single entry table to start with */
 static LIST_HEAD(g_routing);
 static DEFINE_SPINLOCK(g_routing_lock);
 
-/* TODO: use max_size to calc max payload */
-struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
-		struct device *dev, enum mods_dl_role role)
+/* add the dl device to the table */
+/* called by the svc while creating the dl device */
+void mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
 {
-	struct mods_dl_device *mods_dev;
-
-	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), role);
-	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
-	if (!mods_dev)
-		return ERR_PTR(-ENOMEM);
-
-	mods_dev->drv = drv;
-	mods_dev->dev = dev;
-	mods_dev->role = role;
-
 	spin_lock_irq(&g_routing_lock);
 	list_add(&mods_dev->list, &g_routing);
 	spin_unlock_irq(&g_routing_lock);
 
-	return mods_dev;
 }
-EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
-void mods_remove_dl_device(struct mods_dl_device *dev)
+void mods_nw_del_dl_device(struct mods_dl_device *mods_dev)
 {
 	spin_lock_irq(&g_routing_lock);
-	list_del(&dev->list);
+	list_del(&mods_dev->list);
 	spin_unlock_irq(&g_routing_lock);
-	kfree(dev);
 }
-EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
-static inline struct mods_dl_device *find_by_role(struct list_head *list,
-	enum mods_dl_role role)
+static inline struct mods_dl_device *find_by_intf(struct list_head *list,
+	u8 intf_id)
 {
 	struct mods_dl_device *dld = NULL;
 	struct list_head *ptr;
@@ -75,8 +61,8 @@ static inline struct mods_dl_device *find_by_role(struct list_head *list,
 	spin_lock_irq(&g_routing_lock);
 	list_for_each(ptr, list) {
 		dld = list_entry(ptr, struct mods_dl_device, list);
-		if (dld && dld->role == role) {
-			pr_info("%s match found for role = %d\n", __func__, role);
+		if (dld && dld->intf_id == intf_id) {
+			pr_info("%s match found for intf_id = %d\n", __func__, intf_id);
 			break;
 		}
 	}
@@ -110,20 +96,20 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	msg_size = mm->hdr.size;
 	
 	/* FIXME - do something */
-	switch (from->role) {
-	case MODS_DL_ROLE_AP:
+	switch (from->intf_id) {
+	case MODS_INTF_AP:
 		/* send to muc */
-		to = find_by_role(&g_routing, MODS_DL_ROLD_SVC);
+		to = find_by_intf(&g_routing, MODS_INTF_SVC);
 		break;
-	case MODS_DL_ROLE_MUC:
+	case MODS_INTF_MUC:
 		/* send to ap */
-		to = find_by_role(&g_routing, MODS_DL_ROLE_AP);
+		to = find_by_intf(&g_routing, MODS_INTF_AP);
 		break;
-	case MODS_DL_ROLD_SVC:
-		to = find_by_role(&g_routing, MODS_DL_ROLE_AP);
+	case MODS_INTF_SVC:
+		to = find_by_intf(&g_routing, MODS_INTF_AP);
 		break;
 	default:
-		pr_err("%s - Unsupported role %d\n", __func__, from->role);
+		pr_err("%s - Unsupported intf %d\n", __func__, from->intf_id);
 	}
 	mods_msg_dump(__func__, mm);
 	msleep(10);

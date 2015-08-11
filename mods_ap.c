@@ -19,7 +19,9 @@
 #include <linux/platform_device.h>
 
 #include "greybus.h"
+
 #include "mods_nw.h"
+#include "muc_svc.h"
 
 static struct gb_host_device *g_hd;
 
@@ -121,13 +123,13 @@ static int mods_ap_probe(struct platform_device *pdev)
 
 	/* create our data link device */
 	ap_data->dld = mods_create_dl_device(&mods_ap_dl_driver,
-			&pdev->dev, MODS_DL_ROLE_AP);
+			&pdev->dev, MODS_INTF_AP);
 	if (IS_ERR(ap_data->dld)) {
 		dev_err(&pdev->dev, "%s: Unable to create greybus host driver.\n",
 		        __func__);
 		return PTR_ERR(ap_data->dld);
 	}
-	
+
 	return 0;
 }
 

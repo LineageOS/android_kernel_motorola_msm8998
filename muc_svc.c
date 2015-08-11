@@ -41,6 +41,32 @@ struct muc_svc_data {
 
 #define SVC_MSG_TIMEOUT 500
 
+struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
+		struct device *dev, u8 intf_id)
+{
+	struct mods_dl_device *mods_dev;
+
+	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), intf_id);
+	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
+	if (!mods_dev)
+		return ERR_PTR(-ENOMEM);
+
+	mods_dev->drv = drv;
+	mods_dev->dev = dev;
+	mods_dev->intf_id = intf_id;
+
+	mods_nw_add_dl_device(mods_dev);
+	return mods_dev;
+}
+EXPORT_SYMBOL_GPL(mods_create_dl_device);
+
+void mods_remove_dl_device(struct mods_dl_device *dev)
+{
+	mods_nw_del_dl_device(dev);
+	kfree(dev);
+}
+EXPORT_SYMBOL_GPL(mods_remove_dl_device);
+
 void muc_svc_attach(struct greybus_host_device *hd)
 {
 }
@@ -370,7 +396,8 @@ static int muc_svc_probe(struct platform_device *pdev)
 	if (!dd)
 		return -ENOMEM;
 
-	dd->dld = mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev, MODS_DL_ROLD_SVC);
+	dd->dld = mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev,
+			MODS_INTF_SVC);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&pdev->dev, "Failed to create mods DL device.\n");
 		return PTR_ERR(dd->dld);

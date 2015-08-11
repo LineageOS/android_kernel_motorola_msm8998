@@ -41,28 +41,21 @@ struct mods_dl_driver {
 	void (*message_cancel)(void *cookie);
 };
 
-/* HACK for hard coded routes */
-enum mods_dl_role {
-	MODS_DL_ROLE_AP,
-	MODS_DL_ROLE_MUC,
-	MODS_DL_ROLE_TSB,
-	MODS_DL_ROLD_SVC,
-};
-
 struct mods_dl_device {
-	struct list_head list;
-	struct device *dev;
-	struct mods_dl_driver *drv;
-	enum mods_dl_role role;
-	void *dl_priv;
+	struct list_head	list;
+	struct device		*dev;
+	struct mods_dl_driver	*drv;
+	u8			intf_id;
+	u8			device_id;
+	void			*dl_priv;
 };
 
-extern struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
-		struct device *parent, enum mods_dl_role role);
-extern void mods_remove_dl_device(struct mods_dl_device *nd);
-
+/* interfaces with the svc */
 extern int mods_nw_add_route(struct mods_dl_device *from, u16 from_cport,
 		struct mods_dl_device *to, u16 to_cport);
+extern void mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
+extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
+
 /* send message to switch to connect to destination */
 extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg);
 #endif

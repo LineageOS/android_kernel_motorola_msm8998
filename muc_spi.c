@@ -24,6 +24,7 @@
 
 #include "muc_attach.h"
 #include "mods_nw.h"
+#include "muc_svc.h"
 
 /* Size of payload of individual SPI packet (in bytes) */
 #define MUC_SPI_PAYLOAD_SZ_MAX  (32)
@@ -314,7 +315,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	if (!dd)
 		return -ENOMEM;
 
-	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, MODS_DL_ROLE_MUC);
+	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, MODS_INTF_MUC);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
 		        __func__);
