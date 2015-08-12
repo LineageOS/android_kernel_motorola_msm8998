@@ -339,6 +339,39 @@ muc_svc_probe_ap(struct mods_dl_device *dld, uint8_t ap_intf_id)
 
 	return 0;
 }
+/* Notifies that the DL device is in attached state and the
+ * hotplug event can be kicked off
+ */
+int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
+{
+	int err;
+
+	/* XXX Temporary method to determine this is AP */
+	if (mods_dev->intf_id == MODS_INTF_AP) {
+		/* Special case for AP, we'll setup the routes right away */
+		err = mods_nw_add_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
+		if (err)
+			return err;
+
+		err = mods_nw_add_route(MODS_INTF_AP,  0, MODS_INTF_SVC, 0);
+		if (err)
+			goto free_svc_to_ap;
+
+		err = muc_svc_probe_ap(svc_dd->dld, MUC_SVC_AP_INTF_ID);
+		if (err)
+			goto free_ap_to_svc;
+	}
+
+	return 0;
+
+free_ap_to_svc:
+	mods_nw_del_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
+free_svc_to_ap:
+	mods_nw_del_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(mods_dl_dev_attached);
 
 struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *dev, u8 intf_id)
