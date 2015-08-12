@@ -32,6 +32,7 @@ struct muc_svc_data {
 	struct list_head operations;
 	struct platform_device *pdev;
 };
+struct muc_svc_data *svc_dd;
 
 /* XXX Move these into device tree? */
 #define MUC_SVC_AP_INTF_ID 1
@@ -40,45 +41,6 @@ struct muc_svc_data {
 #define MUC_SVC_RESPONSE_TYPE 0
 
 #define SVC_MSG_TIMEOUT 500
-
-struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
-		struct device *dev, u8 intf_id)
-{
-	struct mods_dl_device *mods_dev;
-
-	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), intf_id);
-	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
-	if (!mods_dev)
-		return ERR_PTR(-ENOMEM);
-
-	mods_dev->drv = drv;
-	mods_dev->dev = dev;
-	mods_dev->intf_id = intf_id;
-
-	mods_nw_add_dl_device(mods_dev);
-
-	if (intf_id == MODS_INTF_AP) {
-		int err;
-
-		err = mods_nw_add_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
-		err |= mods_nw_add_route(MODS_INTF_AP,  0, MODS_INTF_SVC, 0);
-		if (err) {
-			mods_nw_del_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
-			mods_nw_del_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
-			kfree(mods_dev);
-			mods_dev = ERR_PTR(err);
-		}
-	}
-
-	return mods_dev;
-}
-EXPORT_SYMBOL_GPL(mods_create_dl_device);
-
-void mods_remove_dl_device(struct mods_dl_device *dev)
-{
-	kfree(dev);
-}
-EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
 void muc_svc_attach(struct greybus_host_device *hd)
 {
@@ -378,6 +340,42 @@ muc_svc_probe_ap(struct mods_dl_device *dld, uint8_t ap_intf_id)
 	return 0;
 }
 
+struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
+		struct device *dev, u8 intf_id)
+{
+	struct mods_dl_device *mods_dev;
+
+	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), intf_id);
+	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
+	if (!mods_dev)
+		return ERR_PTR(-ENOMEM);
+
+	mods_dev->drv = drv;
+	mods_dev->dev = dev;
+	mods_dev->intf_id = intf_id;
+
+	mods_nw_add_dl_device(mods_dev);
+
+	return mods_dev;
+}
+
+struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
+		struct device *dev, u8 intf_id)
+{
+	/* If the SVC hasn't been fully initialized, return error */
+	if (!svc_dd)
+		return ERR_PTR(-ENODEV);
+
+	return _mods_create_dl_device(drv, dev, intf_id);
+}
+EXPORT_SYMBOL_GPL(mods_create_dl_device);
+
+void mods_remove_dl_device(struct mods_dl_device *dev)
+{
+	kfree(dev);
+}
+EXPORT_SYMBOL_GPL(mods_remove_dl_device);
+
 /* Handle the muc_msg and strip out its envelope to pass along the
  * actual gb_message we're interested in.
  */
@@ -403,13 +401,12 @@ static struct mods_dl_driver muc_svc_dl_driver = {
 static int muc_svc_probe(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd;
-	int ret;
 
 	dd = devm_kzalloc(&pdev->dev, sizeof(*dd), GFP_KERNEL);
 	if (!dd)
 		return -ENOMEM;
 
-	dd->dld = mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev,
+	dd->dld = _mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev,
 			MODS_INTF_SVC);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&pdev->dev, "Failed to create mods DL device.\n");
@@ -423,20 +420,9 @@ static int muc_svc_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, dd);
 
-	/* We are a single entity, AP is always attached */
-	ret = muc_svc_probe_ap(dd->dld, MUC_SVC_AP_INTF_ID);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to probe the AP: %d\n", ret);
-		goto ap_probe_fail;
-	}
+	svc_dd = dd;
+
 	return 0;
-
-ap_probe_fail:
-	mods_remove_dl_device(dd->dld);
-
-	platform_set_drvdata(pdev, NULL);
-
-	return ret;
 }
 
 static int muc_svc_remove(struct platform_device *pdev)
