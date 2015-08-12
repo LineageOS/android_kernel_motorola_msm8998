@@ -16,9 +16,6 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/module.h>
-#include <linux/of_gpio.h>
-#include <linux/of_irq.h>
-#include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
 #include "greybus.h"
@@ -41,16 +38,6 @@ struct muc_svc_data *svc_dd;
 #define MUC_SVC_RESPONSE_TYPE 0
 
 #define SVC_MSG_TIMEOUT 500
-
-void muc_svc_attach(struct greybus_host_device *hd)
-{
-}
-EXPORT_SYMBOL(muc_svc_attach);
-
-void muc_svc_detach(struct greybus_host_device *hd)
-{
-}
-EXPORT_SYMBOL(muc_svc_detach);
 
 static struct gb_message *svc_gb_msg_alloc(u8 type, size_t payload_size)
 {
