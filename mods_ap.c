@@ -138,8 +138,16 @@ static int mods_ap_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	err = mods_dl_dev_attached(ap_data->dld);
+	if (err) {
+		dev_err(&pdev->dev, "Unable to notify SVC of attach\n");
+		goto remove_dl;
+	}
+
 	return 0;
 
+remove_dl:
+	mods_remove_dl_device(ap_data->dld);
 err:
 	greybus_remove_hd(g_hd);
 	g_hd = NULL;
