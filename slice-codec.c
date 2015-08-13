@@ -160,7 +160,6 @@ static const struct snd_soc_dapm_route slice_codec_dapm_routes[] = {
 static int slice_codec_probe(struct snd_soc_codec *codec)
 {
 
-	snd_soc_dapm_new_widgets(&codec->dapm);
 	snd_soc_dapm_add_routes(&codec->dapm, slice_codec_dapm_routes,
 			ARRAY_SIZE(slice_codec_dapm_routes));
 	snd_soc_dapm_sync(&codec->dapm);
@@ -175,6 +174,8 @@ static int slice_codec_remove(struct snd_soc_codec *codec)
 }
 
 static struct snd_soc_codec_driver soc_codec_dev_slice = {
+	.dapm_widgets = slice_dai_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(slice_dai_dapm_widgets),
 	.probe = slice_codec_probe,
 	.remove = slice_codec_remove,
 };

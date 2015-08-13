@@ -22,7 +22,8 @@ gb-phy-y :=	gpbridge.o	\
 		audio.o		\
 		audio-pcm.o	\
 		audio-dai.o	\
-		audio-gb-cmds.o 
+		audio-gb-cmds.o \
+		slice-codec.o
 
 gb-mods-y :=	muc_core.o \
 		mods_ap.o \
