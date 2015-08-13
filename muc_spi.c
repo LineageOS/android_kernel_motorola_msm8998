@@ -208,6 +208,7 @@ static int muc_attach(struct notifier_block *nb,
 {
 	struct muc_spi_data *dd = container_of(nb, struct muc_spi_data, attach_nb);
 	struct spi_device *spi = dd->spi;
+	int err;
 
 	if (now_present != dd->present) {
 		dev_info(&spi->dev, "%s: state = %lu\n", __func__, now_present);
@@ -221,8 +222,14 @@ static int muc_attach(struct notifier_block *nb,
 						      IRQF_ONESHOT,
 						      "muc_spi", dd))
 				dev_err(&spi->dev, "%s: Unable to request irq.\n", __func__);
+			err = mods_dl_dev_attached(dd->dld);
+			if (err) {
+				dev_err(&spi->dev, "Error attaching to SVC\n");
+				devm_free_irq(&spi->dev, spi->irq, dd);
+			}
 		} else {
 			devm_free_irq(&spi->dev, spi->irq, dd);
+			/* XXX notify SVC of detach */
 		}
 	}
 	return NOTIFY_OK;
