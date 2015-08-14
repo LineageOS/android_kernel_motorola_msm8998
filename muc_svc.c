@@ -326,6 +326,34 @@ muc_svc_probe_ap(struct mods_dl_device *dld, uint8_t ap_intf_id)
 
 	return 0;
 }
+
+static int muc_svc_generate_hotplug(struct mods_dl_device *dld, u8 intf_id)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct gb_message *msg;
+	struct gb_svc_intf_hotplug_request hotplug;
+
+	/* XXX Use custom CONTROL protocol message to get IDs */
+	hotplug.intf_id = intf_id;
+	hotplug.data.unipro_mfg_id = 0xff;
+	hotplug.data.unipro_prod_id = 0xff;
+	hotplug.data.ara_vend_id = 0xff;
+	hotplug.data.ara_prod_id = 0xff;
+
+	msg = svc_gb_msg_send_sync(dld, (uint8_t *)&hotplug,
+					GB_SVC_TYPE_INTF_HOTPLUG,
+					sizeof(hotplug), 0, 0);
+	if (IS_ERR(msg)) {
+		dev_err(&dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
+		return PTR_ERR(msg);
+	}
+
+	dev_info(&dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
+			intf_id);
+
+	return 0;
+}
+
 /* Notifies that the DL device is in attached state and the
  * hotplug event can be kicked off
  */
@@ -347,9 +375,11 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		err = muc_svc_probe_ap(svc_dd->dld, MUC_SVC_AP_INTF_ID);
 		if (err)
 			goto free_ap_to_svc;
+
+		return 0;
 	}
 
-	return 0;
+	return muc_svc_generate_hotplug(svc_dd->dld, mods_dev->intf_id);
 
 free_ap_to_svc:
 	mods_nw_del_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
