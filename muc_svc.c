@@ -138,7 +138,7 @@ static inline size_t get_gb_payload_size(size_t message_size)
 
 static int
 muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
-			size_t msg_size, uint8_t cport)
+			size_t msg_size, uint8_t cport, uint8_t reply)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	size_t payload_size = get_gb_payload_size(msg_size);
@@ -159,7 +159,7 @@ muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
 	}
 
 	if (payload_size)
-		memcpy(op->request->payload, data, payload_size);
+		memcpy(op->request->header, data, msg_size);
 
 	switch (hdr.type) {
 	case GB_SVC_TYPE_INTF_DEVICE_ID:
@@ -183,9 +183,33 @@ muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
 	}
 
 	/* If hdr operation id is non-zero, it expects a response */
+	if (hdr.operation_id) {
+		op->response = svc_gb_msg_alloc(GB_MESSAGE_TYPE_RESPONSE, 0);
+
+		/* Copy in the original request type and operation id */
+		op->response->header->type |= hdr.type;
+		op->response->header->operation_id = hdr.operation_id;
+
+		ret = svc_route_msg(dld, cport, reply, op->response);
+		if (ret) {
+			dev_err(&dd->pdev->dev,
+				"Failed to send response for type: %d\n",
+				hdr.type);
+			goto free_response;
+		}
+
+		/* Done with the response */
+		svc_gb_msg_free(op->response);
+	}
+
+	/* Done with the request and op */
+	svc_gb_msg_free(op->request);
+	kfree(op);
 
 	return 0;
 
+free_response:
+	svc_gb_msg_free(op->response);
 unknown_type:
 	svc_gb_msg_free(op->request);
 gb_msg_alloc:
@@ -199,7 +223,7 @@ gb_msg_alloc:
  */
 static int
 svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
-		size_t msg_size, uint8_t cport)
+		size_t msg_size, uint8_t dest_cport, uint8_t src_cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -233,7 +257,8 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 	}
 
 	/* If not a response, process the new request */
-	return muc_svc_handle_request(dld, data, msg_size, cport);
+	return muc_svc_handle_request(dld, data, msg_size,
+					dest_cport, src_cport);
 }
 
 /* Send a message out the specified CPORT and wait for a response */
@@ -497,7 +522,8 @@ muc_svc_msg_send(struct mods_dl_device *dld, uint8_t *buf, size_t len)
 {
 	struct muc_msg *m = (struct muc_msg *)buf;
 
-	return svc_gb_msg_recv(dld, m->gb_msg, m->hdr.size, m->hdr.dest_cport);
+	return svc_gb_msg_recv(dld, m->gb_msg, m->hdr.size,
+				m->hdr.dest_cport, m->hdr.src_cport);
 }
 
 static void muc_svc_msg_cancel(void *cookie)
