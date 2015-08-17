@@ -137,6 +137,74 @@ static inline size_t get_gb_payload_size(size_t message_size)
 }
 
 static int
+svc_gb_conn_create(struct mods_dl_device *dld, struct gb_message *req,
+		uint8_t cport, uint8_t reply)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct gb_svc_conn_create_request *conn = req->payload;
+	struct gb_message *resp;
+	int ret;
+
+	dev_info(&dd->pdev->dev, "Create Connection: %hu:%hu to %hu:%hu\n",
+			conn->intf1_id, conn->cport1_id,
+			conn->intf2_id, conn->cport2_id);
+
+	/* Create the two bi-directional connection routes */
+	ret = mods_nw_add_route(conn->intf1_id, conn->cport1_id,
+				conn->intf2_id, conn->cport2_id);
+	if (ret) {
+		dev_err(&dd->pdev->dev,
+			"Failed to create route: %d:%d->%d.%d\n",
+			conn->intf1_id, conn->cport1_id,
+			conn->intf2_id, conn->cport2_id);
+		return ret;
+	}
+
+	ret = mods_nw_add_route(conn->intf2_id, conn->cport2_id,
+				conn->intf1_id, conn->cport1_id);
+	if (ret) {
+		dev_err(&dd->pdev->dev,
+			"Failed to create route: %d:%d->%d.%d\n",
+			conn->intf2_id, conn->cport2_id,
+			conn->intf1_id, conn->cport1_id);
+		goto del_route_1;
+	}
+
+	resp = svc_gb_msg_alloc(GB_MESSAGE_TYPE_RESPONSE, 0);
+	if (!resp) {
+		ret = -ENOMEM;
+		goto del_route_2;
+	}
+
+	/* Copy in the original request type and operation id */
+	resp->header->type |= req->header->type;
+	resp->header->operation_id = req->header->operation_id;
+
+	ret = svc_route_msg(dld, cport, reply, resp);
+	if (ret) {
+		dev_err(&dd->pdev->dev,
+			"Failed to send response for type: %d\n",
+			req->header->type);
+		goto free_response;
+	}
+
+	svc_gb_msg_free(resp);
+
+	return 0;
+
+free_response:
+	svc_gb_msg_free(resp);
+del_route_2:
+	mods_nw_del_route(conn->intf1_id, conn->cport1_id,
+			conn->intf2_id, conn->cport2_id);
+del_route_1:
+	mods_nw_del_route(conn->intf1_id, conn->cport1_id,
+			conn->intf2_id, conn->cport2_id);
+
+	return ret;
+}
+
+static int
 muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
 			size_t msg_size, uint8_t cport, uint8_t reply)
 {
@@ -170,7 +238,10 @@ muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
 		break;
 	case GB_SVC_TYPE_CONN_CREATE:
 		/* XXX Handle connection create intf:cport <-> intf:cport */
-		break;
+		ret = svc_gb_conn_create(dld, op->request, cport, reply);
+		svc_gb_msg_free(op->request);
+		kfree(op);
+		return ret;
 	case GB_SVC_TYPE_CONN_DESTROY:
 		/* XXX Handle connection destroy */
 		break;
