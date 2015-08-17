@@ -433,6 +433,8 @@ static int muc_svc_version_check(struct mods_dl_device *dld)
 	dev_info(&dd->pdev->dev, "VERSION: %hhu.%hhu\n",
 		ver->major, ver->minor);
 
+	svc_gb_msg_free(msg);
+
 	return 0;
 }
 
@@ -509,6 +511,8 @@ static int muc_svc_generate_hotplug(struct mods_dl_device *dld, u8 intf_id)
 
 	dev_info(&dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
 			intf_id);
+
+	svc_gb_msg_free(msg);
 
 	return 0;
 }
