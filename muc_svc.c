@@ -37,7 +37,7 @@ struct muc_svc_data *svc_dd;
 
 #define MUC_SVC_RESPONSE_TYPE 0
 
-#define SVC_MSG_TIMEOUT 500
+#define SVC_MSG_TIMEOUT 5000
 
 static struct gb_message *svc_gb_msg_alloc(u8 type, size_t payload_size)
 {
