@@ -29,7 +29,7 @@
 #include "muc_attach.h"
 #include "mods_nw.h"
 
-#define CONFIG_MODS_DEV_MAX     (4) /* TODO: move to Kconfig */
+#define CONFIG_MODS_DEV_MAX     (6) /* TODO: move to Kconfig */
 
 struct dest_entry {
 	struct mods_dl_device *dev; /* TODO: keep or lookup in route function */
