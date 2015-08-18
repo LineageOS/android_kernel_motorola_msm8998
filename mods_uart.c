@@ -293,6 +293,8 @@ static int mods_uart_remove(struct platform_device *pdev)
 	struct mods_uart_data *mud = platform_get_drvdata(pdev);
 	struct tty_struct *tty = mud->tty;
 
+	device_remove_file(&pdev->dev, &dev_attr_ldisc_rel);
+
 	mods_remove_dl_device(mud->dld);
 
 	/* TTY must be locked to close the connection */
