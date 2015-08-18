@@ -585,6 +585,7 @@ EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
+	mods_nw_del_dl_device(dev);
 	kfree(dev);
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);
