@@ -24,7 +24,9 @@
 #include <linux/tty_driver.h>
 
 #include "crc.h"
+#include "muc_attach.h"
 #include "mods_nw.h"
+#include "muc_svc.h"
 
 #define DRIVERNAME	"mods_uart"
 #define N_MODS_UART	25
@@ -33,6 +35,8 @@ struct mods_uart_data {
 	struct platform_device *pdev;
 	struct tty_struct *tty;
 	struct mods_dl_device *dld;
+	struct notifier_block attach_nb;
+	bool present;
 };
 
 /* Found in tty_io.c */
@@ -179,6 +183,31 @@ static struct tty_driver *find_tty_driver(char *name, int *line)
 	return res;
 }
 
+static int
+mod_attach(struct notifier_block *nb, unsigned long now_present, void *unused)
+{
+	struct mods_uart_data *mud;
+	int err;
+
+	mud = container_of(nb, struct mods_uart_data, attach_nb);
+	if (now_present == mud->present)
+		return NOTIFY_OK;
+
+	mud->present = now_present;
+
+	if (now_present) {
+		err = mods_dl_dev_attached(mud->dld);
+		if (err) {
+			dev_err(&mud->pdev->dev, "Error attaching to SVC\n");
+			mud->present = 0;
+		}
+	}
+
+	/* XXX hook into detach when available */
+
+	return NOTIFY_OK;
+}
+
 static int mods_uart_probe(struct platform_device *pdev)
 {
 	struct mods_uart_data *mud;
@@ -192,7 +221,8 @@ static int mods_uart_probe(struct platform_device *pdev)
 	if (!mud)
 		return -ENOMEM;
 
-	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev);
+	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
+					MODS_INTF_APBA);
 	if (IS_ERR(mud->dld)) {
 		dev_err(&pdev->dev, "%s: Unable to create data link device\n",
 			__func__);
@@ -262,6 +292,9 @@ static int mods_uart_probe(struct platform_device *pdev)
 	mud->tty->disc_data = mud;
 	platform_set_drvdata(pdev, mud);
 
+	mud->attach_nb.notifier_call = mod_attach;
+	register_muc_attach_notifier(&mud->attach_nb);
+
 	ret = device_create_file(&pdev->dev, &dev_attr_ldisc_rel);
 	if (ret)
 		dev_warn(&pdev->dev, "%s: Failed to create sysfs\n", __func__);
@@ -295,6 +328,7 @@ static int mods_uart_remove(struct platform_device *pdev)
 
 	device_remove_file(&pdev->dev, &dev_attr_ldisc_rel);
 
+	unregister_muc_attach_notifier(&mud->attach_nb);
 	mods_remove_dl_device(mud->dld);
 
 	/* TTY must be locked to close the connection */
@@ -348,7 +382,7 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 		return count;
 	}
 
-	mods_data_rcvd(mud->dld, (uint8_t *)cp);
+	mods_nw_switch(mud->dld, (uint8_t *)cp);
 	return count;
 }
 
