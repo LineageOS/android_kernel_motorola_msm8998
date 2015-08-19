@@ -121,7 +121,7 @@ svc_route_msg(struct mods_dl_device *dld, uint8_t src_cport,
 		return -ENOMEM;
 
 	memcpy(m->gb_msg, msg->buffer, muc_payload);
-	m->hdr.size = msg->header->size;
+	m->hdr.gb_msg_size = msg->header->size;
 	m->hdr.dest_cport = dest_cport;
 	m->hdr.src_cport = src_cport;
 
@@ -598,7 +598,7 @@ muc_svc_msg_send(struct mods_dl_device *dld, uint8_t *buf, size_t len)
 {
 	struct muc_msg *m = (struct muc_msg *)buf;
 
-	return svc_gb_msg_recv(dld, m->gb_msg, m->hdr.size,
+	return svc_gb_msg_recv(dld, m->gb_msg, m->hdr.gb_msg_size,
 				m->hdr.dest_cport, m->hdr.src_cport);
 }
 

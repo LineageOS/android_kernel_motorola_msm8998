@@ -114,7 +114,7 @@ static inline void mods_msg_dump(const char *str, struct muc_msg *mm)
 	gb_op = (struct gb_operation *)mm->gb_msg;
 	pr_info("%s [%4u] type=%u size=%d (%u -> %u)\n", str,
 		gb_op->id, gb_op->type,
-		mm->hdr.size, mm->hdr.src_cport, mm->hdr.dest_cport);
+		mm->hdr.gb_msg_size, mm->hdr.src_cport, mm->hdr.dest_cport);
 }
 
 int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
@@ -145,7 +145,7 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 		dest = routes[from->intf_id].dest[mm->hdr.src_cport];
 		if (dest.dev)
 			err = dest.dev->drv->message_send(dest.dev, msg,
-					mm->hdr.size);
+					mm->hdr.gb_msg_size);
 	} else
 		dev_err(from->dev, "No route for %u:%u\n",
 				from->intf_id, mm->hdr.src_cport);

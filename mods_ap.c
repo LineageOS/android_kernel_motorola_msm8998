@@ -37,7 +37,7 @@ static int mods_ap_message_send(struct mods_dl_device *dld,
 	struct muc_msg *msg = (struct muc_msg *)buf;
 
 	greybus_data_rcvd(g_hd, msg->hdr.dest_cport,
-			msg->gb_msg, msg->hdr.size);
+			msg->gb_msg, msg->hdr.gb_msg_size);
 	return 0;
 }
 
@@ -79,7 +79,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 
 	msg->hdr.dest_cport = connection->intf_cport_id;
 	msg->hdr.src_cport = connection->hd_cport_id;
-	msg->hdr.size = buffer_size + sizeof(struct muc_msg_hdr);
+	msg->hdr.gb_msg_size = buffer_size + sizeof(struct muc_msg_hdr);
 	memcpy(&msg->gb_msg[0], message->buffer, buffer_size);
 
 	/* hand off to the nw layer */
