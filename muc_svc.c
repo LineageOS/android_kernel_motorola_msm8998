@@ -17,6 +17,7 @@
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/workqueue.h>
 
 #include "greybus.h"
 
@@ -28,8 +29,24 @@ struct muc_svc_data {
 	atomic_t msg_num;
 	struct list_head operations;
 	struct platform_device *pdev;
+	struct workqueue_struct *wq;
 };
 struct muc_svc_data *svc_dd;
+
+/* Special Control Message to get IDs */
+#define GB_CONTROL_TYPE_GET_IDS 0x7f
+struct gb_control_get_ids_response {
+	__le32    unipro_mfg_id;
+	__le32    unipro_prod_id;
+	__le32    ara_vend_id;
+	__le32    ara_prod_id;
+};
+
+struct muc_svc_hotplug_work {
+	struct work_struct work;
+	struct mods_dl_device *dld;
+	struct gb_svc_intf_hotplug_request hotplug;
+};
 
 /* XXX Move these into device tree? */
 #define MUC_SVC_AP_INTF_ID 1
@@ -488,31 +505,145 @@ muc_svc_probe_ap(struct mods_dl_device *dld, uint8_t ap_intf_id)
 	return 0;
 }
 
-static int muc_svc_generate_hotplug(struct mods_dl_device *dld, u8 intf_id)
+static int
+muc_svc_get_hotplug_data(struct mods_dl_device *dld,
+			struct gb_svc_intf_hotplug_request *hotplug,
+			u8 out_cport)
 {
+	struct gb_control_get_ids_response *ids;
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_message *msg;
-	struct gb_svc_intf_hotplug_request hotplug;
 
-	/* XXX Use custom CONTROL protocol message to get IDs */
-	hotplug.intf_id = intf_id;
-	hotplug.data.unipro_mfg_id = 0xff;
-	hotplug.data.unipro_prod_id = 0xff;
-	hotplug.data.ara_vend_id = 0xff;
-	hotplug.data.ara_prod_id = 0xff;
-
-	msg = svc_gb_msg_send_sync(dld, (uint8_t *)&hotplug,
-					GB_SVC_TYPE_INTF_HOTPLUG,
-					sizeof(hotplug), 0, 0);
+	/* GET_IDs has no payload */
+	msg = svc_gb_msg_send_sync(dld, NULL, GB_CONTROL_TYPE_GET_IDS, 0,
+					out_cport, GB_CONTROL_CPORT_ID);
 	if (IS_ERR(msg)) {
-		dev_err(&dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
+		dev_err(&dd->pdev->dev, "Failed to get GET_IDS\n");
 		return PTR_ERR(msg);
 	}
 
-	dev_info(&dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
-			intf_id);
+	ids = msg->payload;
+
+	hotplug->data.unipro_mfg_id = le32_to_cpu(ids->unipro_mfg_id);
+	hotplug->data.unipro_prod_id = le32_to_cpu(ids->unipro_prod_id);
+	hotplug->data.ara_vend_id = le32_to_cpu(ids->ara_vend_id);
+	hotplug->data.ara_prod_id = le32_to_cpu(ids->ara_prod_id);
+
+	dev_info(&dd->pdev->dev, "UNIPRO_IDS: %x:%x ARA_IDS: %x:%x\n",
+		hotplug->data.unipro_mfg_id, hotplug->data.unipro_prod_id,
+		hotplug->data.ara_vend_id, hotplug->data.ara_prod_id);
 
 	svc_gb_msg_free(msg);
+
+	return 0;
+}
+
+static int muc_svc_create_control_route(u8 intf_id)
+{
+	int ret;
+
+	/* Temporary route to interface's Control Port, we assign the CPort
+	 * on SVC same as interface since its unique.
+	 */
+	ret = mods_nw_add_route(MODS_INTF_SVC, intf_id, intf_id, 0);
+	if (ret)
+		return ret;
+
+	ret = mods_nw_add_route(intf_id, 0, MODS_INTF_SVC, intf_id);
+	if (ret)
+		goto clean_route1;
+
+	return 0;
+
+clean_route1:
+	mods_nw_del_route(MODS_INTF_SVC, intf_id, intf_id, 0);
+
+	return ret;
+}
+
+static void muc_svc_destroy_control_route(u8 intf_id)
+{
+	mods_nw_del_route(MODS_INTF_SVC, intf_id, intf_id, 0);
+	mods_nw_del_route(intf_id, 0, MODS_INTF_SVC, intf_id);
+}
+
+static void muc_svc_attach_work(struct work_struct *work)
+{
+	struct muc_svc_hotplug_work *hpw;
+	struct gb_message *msg;
+	struct mods_dl_device *dld;
+	struct muc_svc_data *dd;
+
+	hpw = container_of(work, struct muc_svc_hotplug_work, work);
+	dld = hpw->dld;
+	dd = dld_get_dd(dld);
+
+	msg = svc_gb_msg_send_sync(dld, (uint8_t *)&hpw->hotplug,
+					GB_SVC_TYPE_INTF_HOTPLUG,
+					sizeof(hpw->hotplug), 0, 0);
+	if (IS_ERR(msg)) {
+		dev_err(&dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
+		goto free_hpw;
+	}
+
+	dev_info(&dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
+			hpw->hotplug.intf_id);
+
+	svc_gb_msg_free(msg);
+
+free_hpw:
+	kfree(hpw);
+}
+
+static struct muc_svc_hotplug_work *
+muc_svc_create_hotplug_work(struct mods_dl_device *dld, u8 intf_id)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct muc_svc_hotplug_work *hpw;
+	int ret;
+
+	hpw = kzalloc(sizeof(*hpw), GFP_KERNEL);
+	if (!hpw)
+		return ERR_PTR(-ENOMEM);
+
+	hpw->dld = dld;
+	INIT_WORK(&hpw->work, muc_svc_attach_work);
+
+	ret = muc_svc_create_control_route(intf_id);
+	if (ret) {
+		dev_err(&dd->pdev->dev, "Failed to setup CONTROL route\n");
+		goto free_hpw;
+	}
+
+	/* Get the hotplug IDs */
+	ret = muc_svc_get_hotplug_data(dld, &hpw->hotplug, intf_id);
+	if (ret)
+		goto free_route;
+
+	hpw->hotplug.intf_id = intf_id;
+
+	muc_svc_destroy_control_route(intf_id);
+
+	return hpw;
+
+free_route:
+	muc_svc_destroy_control_route(intf_id);
+free_hpw:
+	kfree(hpw);
+
+	return ERR_PTR(ret);
+}
+
+static int muc_svc_generate_hotplug(struct mods_dl_device *dld, u8 intf_id)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct muc_svc_hotplug_work *hpw;
+
+	hpw = muc_svc_create_hotplug_work(dld, intf_id);
+	if (IS_ERR(hpw))
+		return PTR_ERR(hpw);
+
+	queue_work(dd->wq, &hpw->work);
 
 	return 0;
 }
@@ -616,6 +747,7 @@ static struct mods_dl_driver muc_svc_dl_driver = {
 static int muc_svc_probe(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd;
+	int ret;
 
 	dd = devm_kzalloc(&pdev->dev, sizeof(*dd), GFP_KERNEL);
 	if (!dd)
@@ -627,6 +759,14 @@ static int muc_svc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to create mods DL device.\n");
 		return PTR_ERR(dd->dld);
 	}
+
+	dd->wq = alloc_workqueue("muc_svc_attach", WQ_UNBOUND, 1);
+	if (!dd->wq) {
+		dev_err(&pdev->dev, "Failed to create attach workqueue.\n");
+		ret = -ENOMEM;
+		goto free_dl_dev;
+	}
+
 	dd->dld->dl_priv = dd;
 
 	dd->pdev = pdev;
@@ -638,12 +778,18 @@ static int muc_svc_probe(struct platform_device *pdev)
 	svc_dd = dd;
 
 	return 0;
+
+free_dl_dev:
+	mods_remove_dl_device(dd->dld);
+
+	return ret;
 }
 
 static int muc_svc_remove(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 
+	destroy_workqueue(dd->wq);
 	mods_remove_dl_device(dd->dld);
 
 	return 0;
