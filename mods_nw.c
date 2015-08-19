@@ -122,6 +122,7 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	struct muc_msg *mm;
 	struct dest_entry dest;
 	int err = -ENODEV;
+	size_t size;
 
 	if (!msg || !from) {
 		pr_err("bad arguments\n");
@@ -130,6 +131,8 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 
 	mm = (struct muc_msg *)msg;
 	mods_msg_dump(__func__, mm);
+
+	size = mm->hdr.gb_msg_size + sizeof(struct muc_msg);
 
 	if (from->intf_id >= CONFIG_MODS_DEV_MAX) {
 		dev_err(from->dev, "Attempt to send with invalid IID\n");
@@ -145,7 +148,7 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 		dest = routes[from->intf_id].dest[mm->hdr.src_cport];
 		if (dest.dev)
 			err = dest.dev->drv->message_send(dest.dev, msg,
-					mm->hdr.gb_msg_size);
+					size);
 	} else
 		dev_err(from->dev, "No route for %u:%u\n",
 				from->intf_id, mm->hdr.src_cport);
