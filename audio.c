@@ -398,17 +398,17 @@ static int gb_i2s_mgmt_report_event_recv(u8 type, struct gb_operation *op)
 	return 0;
 }
 
-static int gb_audio_register_slice_codec(struct platform_driver *plat)
+static int gb_audio_register_mods_codec(struct platform_driver *plat)
 {
 	int err;
 
 	err = platform_driver_register(plat);
 	if (err) {
-		pr_err("Can't register slice codec driver: %d\n", -err);
+		pr_err("Can't register mods codec driver: %d\n", -err);
 		return err;
 	}
 
-	snd_codec.codec_dev.name = "slice_codec";
+	snd_codec.codec_dev.name = "mods_codec";
 	snd_codec.codec_dev.id = 0;
 	snd_codec.codec_dev.dev.release = default_release; /* XXX - suspicious */
 	snd_codec.gb_snd_devs = &gb_snd_list;
@@ -416,7 +416,7 @@ static int gb_audio_register_slice_codec(struct platform_driver *plat)
 
 	err = platform_device_register(&snd_codec.codec_dev);
 	if (err) {
-		pr_err("slice codec platform dev register failed\n");
+		pr_err("mods codec platform dev register failed\n");
 		return -EINVAL;
 	}
 
@@ -476,13 +476,13 @@ int gb_audio_protocol_init(void)
 		goto err_unregister_pcm;
 	}
 
-	/* slice codec is registered with platform and will be used when
+	/* mods codec is registered with platform and will be used when
 	 * pcm is routed through platform dependent I2S Intf
 	 * instead of pcm tunneling.
 	*/
-	err = gb_audio_register_slice_codec(&gb_audio_slice_driver);
+	err = gb_audio_register_mods_codec(&gb_audio_mods_driver);
 	if (err) {
-		pr_err("Can't register slice codec driver: %d\n", err);
+		pr_err("Can't register mods codec driver: %d\n", err);
 	}
 	return 0;
 
@@ -501,5 +501,5 @@ void gb_audio_protocol_exit(void)
 	platform_driver_unregister(&gb_audio_plat_driver);
 	gb_protocol_deregister(&gb_i2s_receiver_protocol);
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);
-	platform_driver_unregister(&gb_audio_slice_driver);
+	platform_driver_unregister(&gb_audio_mods_driver);
 }

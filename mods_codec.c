@@ -14,7 +14,7 @@
 #include <sound/tlv.h>
 #include "audio.h"
 
-struct slice_codec_dai {
+struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
 	atomic_t pcm_triggered;
 	int is_params_set;
@@ -23,10 +23,10 @@ struct slice_codec_dai {
 	struct snd_pcm_substream *substream;
 };
 
-static void slice_codec_work(struct work_struct *work)
+static void mods_codec_work(struct work_struct *work)
 {
-	struct slice_codec_dai *priv =
-			container_of(work, struct slice_codec_dai, work);
+	struct mods_codec_dai *priv =
+			container_of(work, struct mods_codec_dai, work);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
 	struct gb_snd *snd_dev;
 	int err;
@@ -74,11 +74,11 @@ static void slice_codec_work(struct work_struct *work)
 	}
 }
 
-static int slice_codec_hw_params(struct snd_pcm_substream *substream,
+static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_pcm_hw_params *params,
 			     struct snd_soc_dai *dai)
 {
-	struct slice_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
 	struct gb_snd *snd_dev;
 	int rate, chans, bytes_per_chan, is_le;
@@ -100,10 +100,10 @@ static int slice_codec_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static int slice_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
+static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 				struct snd_soc_dai *dai)
 {
-	struct slice_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
 	priv->substream = substream;
 
 	switch (cmd) {
@@ -127,106 +127,106 @@ static int slice_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 }
 
 
-static int slice_codec_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+static int mods_codec_dai_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
 	return 0;
 }
 
-static int slice_codec_set_dai_sysclk(struct snd_soc_dai *dai,
+static int mods_codec_set_dai_sysclk(struct snd_soc_dai *dai,
 				  int clk_id, unsigned int freq, int dir)
 {
 	return 0;
 }
 
-static const struct snd_soc_dai_ops slice_codec_dai_ops = {
-	.hw_params = slice_codec_hw_params,
-	.trigger	= slice_codec_dai_trigger,
-	.set_fmt	= slice_codec_dai_set_fmt,
-	.set_sysclk = slice_codec_set_dai_sysclk,
+static const struct snd_soc_dai_ops mods_codec_dai_ops = {
+	.hw_params = mods_codec_hw_params,
+	.trigger	= mods_codec_dai_trigger,
+	.set_fmt	= mods_codec_dai_set_fmt,
+	.set_sysclk = mods_codec_set_dai_sysclk,
 };
 
 
-static const struct snd_soc_dapm_widget slice_dai_dapm_widgets[] = {
-	SND_SOC_DAPM_AIF_IN("SLICE_DAI_RX", "Slice Dai Playback", 0, 0, 0, 0),
-	SND_SOC_DAPM_AIF_OUT("SLICE_DAI_TX", "Slice Dai Capture", 0, 0, 0, 0),
-	SND_SOC_DAPM_OUTPUT("SLICE_DAI_RX Playback"),
+static const struct snd_soc_dapm_widget mods_dai_dapm_widgets[] = {
+	SND_SOC_DAPM_AIF_IN("MODS_DAI_RX", "Mods Dai Playback", 0, 0, 0, 0),
+	SND_SOC_DAPM_AIF_OUT("MODS_DAI_TX", "Mods Dai Capture", 0, 0, 0, 0),
+	SND_SOC_DAPM_OUTPUT("MODS_DAI_RX Playback"),
 };
 
-static const struct snd_soc_dapm_route slice_codec_dapm_routes[] = {
-	{"SLICE_DAI_RX", NULL, "Slice Dai Playback"},
-	{"Slice Dai Capture", NULL, "SLICE_DAI_TX"},
+static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
+	{"MODS_DAI_RX", NULL, "Mods Dai Playback"},
+	{"Mods Dai Capture", NULL, "MODS_DAI_TX"},
 };
 
-static int slice_codec_probe(struct snd_soc_codec *codec)
+static int mods_codec_probe(struct snd_soc_codec *codec)
 {
 
-	snd_soc_dapm_add_routes(&codec->dapm, slice_codec_dapm_routes,
-			ARRAY_SIZE(slice_codec_dapm_routes));
+	snd_soc_dapm_add_routes(&codec->dapm, mods_codec_dapm_routes,
+			ARRAY_SIZE(mods_codec_dapm_routes));
 	snd_soc_dapm_sync(&codec->dapm);
 
-	pr_info("slice codec probed\n");
+	pr_info("mods codec probed\n");
 	return 0;
 }
 
-static int slice_codec_remove(struct snd_soc_codec *codec)
+static int mods_codec_remove(struct snd_soc_codec *codec)
 {
 	return 0;
 }
 
-static struct snd_soc_codec_driver soc_codec_dev_slice = {
-	.dapm_widgets = slice_dai_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(slice_dai_dapm_widgets),
-	.probe = slice_codec_probe,
-	.remove = slice_codec_remove,
+static struct snd_soc_codec_driver soc_codec_dev_mods = {
+	.dapm_widgets = mods_dai_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(mods_dai_dapm_widgets),
+	.probe = mods_codec_probe,
+	.remove = mods_codec_remove,
 };
 
 
-static struct snd_soc_dai_driver slice_codec_codec_dai = {
-	.name			= "slice-codec-dai",
+static struct snd_soc_dai_driver mods_codec_codec_dai = {
+	.name			= "mods-codec-dai",
 	.playback = {
-		.stream_name = "Slice Dai Playback",
+		.stream_name = "Mods Dai Playback",
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
 		.channels_max	= 2,
 	},
 	.capture = {
-		.stream_name = "Slice Dai Capture",
+		.stream_name = "Mods Dai Capture",
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
 		.channels_max	= 2,
 	},
-	.ops = &slice_codec_dai_ops,
+	.ops = &mods_codec_dai_ops,
 
 };
 
-static int slice_codec_dai_probe(struct platform_device *pdev)
+static int mods_codec_dai_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct slice_codec_dai *priv;
+	struct mods_codec_dai *priv;
 
-	priv = devm_kzalloc(&pdev->dev, sizeof(struct slice_codec_dai),
+	priv = devm_kzalloc(&pdev->dev, sizeof(struct mods_codec_dai),
 			       GFP_KERNEL);
 	if (priv == NULL)
 		return -ENOMEM;
 
 	priv->snd_codec = (struct gb_snd_codec *)pdev->dev.platform_data;
 
-	priv->workqueue = alloc_workqueue("slice-codec", WQ_HIGHPRI, 0);
+	priv->workqueue = alloc_workqueue("mods-codec", WQ_HIGHPRI, 0);
 	if (!priv->workqueue) {
 		ret = -ENOMEM;
 		pr_err("%s: failed to allocate work queue", __func__);
 		goto wq_fail;
 	}
 
-	INIT_WORK(&priv->work, slice_codec_work);
+	INIT_WORK(&priv->work, mods_codec_work);
 
-	ret = snd_soc_register_codec(&pdev->dev, &soc_codec_dev_slice,
-						&slice_codec_codec_dai, 1);
+	ret = snd_soc_register_codec(&pdev->dev, &soc_codec_dev_mods,
+						&mods_codec_codec_dai, 1);
 
 	if (ret) {
-		pr_err("%s: failed to register slice codec", __func__);
+		pr_err("%s: failed to register mods codec", __func__);
 		goto codec_reg_fail;
 	}
 
@@ -239,20 +239,20 @@ wq_fail:
 	return ret;
 }
 
-static int slice_codec_dai_remove(struct platform_device *pdev)
+static int mods_codec_dai_remove(struct platform_device *pdev)
 {
-	struct slice_codec_dai *priv = dev_get_drvdata(&pdev->dev);
+	struct mods_codec_dai *priv = dev_get_drvdata(&pdev->dev);
 
 	snd_soc_unregister_codec(&pdev->dev);
 	destroy_workqueue(priv->workqueue);
 	return 0;
 }
 
-struct platform_driver gb_audio_slice_driver = {
+struct platform_driver gb_audio_mods_driver = {
 	.driver = {
-		.name = "slice_codec",
+		.name = "mods_codec",
 	},
-	.probe = slice_codec_dai_probe,
-	.remove  = slice_codec_dai_remove,
+	.probe = mods_codec_dai_probe,
+	.remove  = mods_codec_dai_remove,
 };
 

@@ -3,10 +3,10 @@
 PRODUCT_PACKAGES += \
 	greybus.ko \
 	gb-phy.ko \
-	gb-slice.ko \
-	gb-muc.ko \
+	gb-mods.ko \
 	gb-es1.ko \
 	gb-es2.ko \
 	gb-vibrator.ko \
-	gb-battery.ko
+	gb-battery.ko \
+	gb-vendor-moto.ko
 

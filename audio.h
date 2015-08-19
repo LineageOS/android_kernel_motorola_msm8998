@@ -73,7 +73,7 @@ struct gb_snd {
 
 /*
  * This codec structure will be passed as platform data
- * to slice codec when physical I2S interface is used
+ * to mods codec when physical I2S interface is used
  * instead of pcm tunneling.
  */
 struct gb_snd_codec {
@@ -117,7 +117,7 @@ void gb_pcm_hrtimer_stop(struct gb_snd *snd_dev);
  */
 extern struct platform_driver gb_audio_pcm_driver;
 extern struct platform_driver gb_audio_plat_driver;
-extern struct platform_driver gb_audio_slice_driver;
+extern struct platform_driver gb_audio_mods_driver;
 
 
 #endif /* __GB_AUDIO_H */

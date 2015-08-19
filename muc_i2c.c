@@ -251,13 +251,13 @@ static int muc_i2c_remove(struct i2c_client *client)
 
 #ifdef CONFIG_OF
 static const struct of_device_id of_muc_i2c_match[] = {
-	{ .compatible = "moto,slice_i2c", },
+	{ .compatible = "moto,muc_i2c", },
 	{},
 };
 #endif
 
 static const struct i2c_device_id muc_i2c_id[] = {
-	{ "slice_i2c", 0 },
+	{ "muc_i2c", 0 },
 	{ }
 };
 
