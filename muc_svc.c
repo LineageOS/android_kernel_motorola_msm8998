@@ -31,6 +31,7 @@ struct muc_svc_data {
 	struct platform_device *pdev;
 	struct workqueue_struct *wq;
 	struct kset *intf_kset;
+	bool authenticate;
 };
 struct muc_svc_data *svc_dd;
 
@@ -572,28 +573,25 @@ static void muc_svc_attach_work(struct work_struct *work)
 {
 	struct muc_svc_hotplug_work *hpw;
 	struct gb_message *msg;
-	struct mods_dl_device *dld;
-	struct muc_svc_data *dd;
 
 	hpw = container_of(work, struct muc_svc_hotplug_work, work);
-	dld = hpw->dld;
-	dd = dld_get_dd(dld);
 
-	msg = svc_gb_msg_send_sync(dld, (uint8_t *)&hpw->hotplug,
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&hpw->hotplug,
 					GB_SVC_TYPE_INTF_HOTPLUG,
 					sizeof(hpw->hotplug), 0, 0);
 	if (IS_ERR(msg)) {
-		dev_err(&dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
+		dev_err(&svc_dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
 		goto free_hpw;
 	}
 
-	dev_info(&dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
+	dev_info(&svc_dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
 			hpw->hotplug.intf_id);
 
 	svc_gb_msg_free(msg);
 
 free_hpw:
 	kfree(hpw);
+	hpw->dld->hpw = NULL;
 }
 
 static struct muc_svc_hotplug_work *
@@ -651,12 +649,21 @@ hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 {
 	unsigned long val;
 
-	if (!kstrtoul(buf, 10, &val))
+	/* If authentication is disabled, this is a no-op */
+	if (!svc_dd->authenticate)
+		return count;
+
+	/* Nothing to do, there is no hotplug */
+	if (!dev->hpw)
 		return -EINVAL;
 
-	/* XXX Eventually kick off the hotplug to greybus on a '1'
-	 * and shutdown on a '0'
-	 */
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val == 1)
+		queue_work(svc_dd->wq, &dev->hpw->work);
+
+	/* XXX What to do if told to 'deny' */
 
 	return count;
 }
@@ -759,16 +766,18 @@ static void muc_svc_destroy_dl_dev_sysfs(struct mods_dl_device *mods_dev)
 	}
 }
 
-static int muc_svc_generate_hotplug(struct mods_dl_device *dld, u8 intf_id)
+static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
 {
-	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct muc_svc_hotplug_work *hpw;
 
-	hpw = muc_svc_create_hotplug_work(dld, intf_id);
+	hpw = muc_svc_create_hotplug_work(svc_dd->dld, mods_dev->intf_id);
 	if (IS_ERR(hpw))
 		return PTR_ERR(hpw);
 
-	queue_work(dd->wq, &hpw->work);
+	mods_dev->hpw = hpw;
+
+	if (svc_dd->authenticate == false)
+		queue_work(svc_dd->wq, &hpw->work);
 
 	return 0;
 }
@@ -798,7 +807,7 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		return 0;
 	}
 
-	return muc_svc_generate_hotplug(svc_dd->dld, mods_dev->intf_id);
+	return muc_svc_generate_hotplug(mods_dev);
 
 free_ap_to_svc:
 	mods_nw_del_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
@@ -856,6 +865,7 @@ void mods_remove_dl_device(struct mods_dl_device *dev)
 {
 	muc_svc_destroy_dl_dev_sysfs(dev);
 	mods_nw_del_dl_device(dev);
+	kfree(dev->hpw);
 	kfree(dev);
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);

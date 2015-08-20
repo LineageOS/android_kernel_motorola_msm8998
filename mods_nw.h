@@ -49,6 +49,8 @@ struct mods_dl_device {
 	void			*dl_priv;
 	struct kobject		intf_kobj;
 	struct bin_attribute	manifest_attr;
+
+	struct muc_svc_hotplug_work *hpw;
 };
 
 /* interfaces with the svc */
