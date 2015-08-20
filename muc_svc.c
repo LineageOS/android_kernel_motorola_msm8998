@@ -592,10 +592,65 @@ free_hpw:
 	hpw->dld->hpw = NULL;
 }
 
-static struct muc_svc_hotplug_work *
-muc_svc_create_hotplug_work(struct mods_dl_device *dld, u8 intf_id)
+static int
+muc_svc_get_manifest(struct mods_dl_device *mods_dev, u8 out_cport)
 {
-	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct gb_control_get_manifest_size_response *size_resp;
+	struct gb_message *msg;
+	int err;
+
+	/* GET_SIZE has no payload */
+	msg = svc_gb_msg_send_sync(svc_dd->dld, NULL,
+					GB_CONTROL_TYPE_GET_MANIFEST_SIZE,
+					0, out_cport);
+	if (IS_ERR(msg)) {
+		dev_err(mods_dev->dev, "Failed to get MANIFEST_SIZE\n");
+		return PTR_ERR(msg);
+	}
+
+	size_resp = msg->payload;
+	mods_dev->manifest_size = le16_to_cpu(size_resp->size);
+
+	svc_gb_msg_free(msg);
+
+	mods_dev->manifest = kmalloc(mods_dev->manifest_size, GFP_KERNEL);
+	if (!mods_dev->manifest) {
+		err = -ENOMEM;
+		goto clear_size;
+	}
+
+	/* GET_MANIFEST has no payload */
+	msg = svc_gb_msg_send_sync(svc_dd->dld, NULL,
+					GB_CONTROL_TYPE_GET_MANIFEST,
+					0, out_cport);
+	if (IS_ERR(msg)) {
+		dev_err(mods_dev->dev, "Failed to get MANIFEST\n");
+		err = PTR_ERR(msg);
+		goto free_manifest;
+	}
+
+	memcpy(mods_dev->manifest, msg->payload, mods_dev->manifest_size);
+
+	svc_gb_msg_free(msg);
+
+	/* Update with the latest size and notify userspace */
+	mods_dev->manifest_attr.size = mods_dev->manifest_size;
+	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ADD);
+
+	return 0;
+
+free_manifest:
+	kfree(mods_dev->manifest);
+	mods_dev->manifest = NULL;
+clear_size:
+	mods_dev->manifest_size = 0;
+
+	return err;
+}
+
+static struct muc_svc_hotplug_work *
+muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
+{
 	struct muc_svc_hotplug_work *hpw;
 	int ret;
 
@@ -603,28 +658,33 @@ muc_svc_create_hotplug_work(struct mods_dl_device *dld, u8 intf_id)
 	if (!hpw)
 		return ERR_PTR(-ENOMEM);
 
-	hpw->dld = dld;
+	hpw->dld = mods_dev;
 	INIT_WORK(&hpw->work, muc_svc_attach_work);
 
-	ret = muc_svc_create_control_route(intf_id);
+	ret = muc_svc_create_control_route(mods_dev->intf_id);
 	if (ret) {
-		dev_err(&dd->pdev->dev, "Failed to setup CONTROL route\n");
+		dev_err(&svc_dd->pdev->dev, "Failed to setup CONTROL route\n");
 		goto free_hpw;
 	}
 
 	/* Get the hotplug IDs */
-	ret = muc_svc_get_hotplug_data(dld, &hpw->hotplug, intf_id);
+	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug,
+					mods_dev->intf_id);
 	if (ret)
 		goto free_route;
 
-	hpw->hotplug.intf_id = intf_id;
+	hpw->hotplug.intf_id = mods_dev->intf_id;
 
-	muc_svc_destroy_control_route(intf_id);
+	ret = muc_svc_get_manifest(mods_dev, mods_dev->intf_id);
+	if (ret)
+		goto free_route;
+
+	muc_svc_destroy_control_route(mods_dev->intf_id);
 
 	return hpw;
 
 free_route:
-	muc_svc_destroy_control_route(intf_id);
+	muc_svc_destroy_control_route(mods_dev->intf_id);
 free_hpw:
 	kfree(hpw);
 
@@ -638,8 +698,16 @@ static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 				struct bin_attribute *attr, char *buf,
 				loff_t pos, size_t size)
 {
-	/* XXX Eventually return the manifest */
-	return -EINVAL;
+	struct mods_dl_device *mods_dev = kobj_to_device(kobj);
+	ssize_t count = 0;
+
+	if (!mods_dev->manifest || !mods_dev->manifest_size)
+		return -EINVAL;
+
+	for ( ; size > 0 && pos < mods_dev->manifest_size; count++, size--)
+		*buf++ = mods_dev->manifest[pos++];
+
+	return count;
 }
 
 static ssize_t
@@ -768,7 +836,7 @@ static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
 {
 	struct muc_svc_hotplug_work *hpw;
 
-	hpw = muc_svc_create_hotplug_work(svc_dd->dld, mods_dev->intf_id);
+	hpw = muc_svc_create_hotplug_work(mods_dev);
 	if (IS_ERR(hpw))
 		return PTR_ERR(hpw);
 

@@ -50,6 +50,8 @@ struct mods_dl_device {
 	struct bin_attribute	manifest_attr;
 
 	struct muc_svc_hotplug_work *hpw;
+	char *manifest;
+	__le16 manifest_size;
 };
 
 /* interfaces with the svc */
