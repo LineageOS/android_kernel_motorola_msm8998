@@ -30,6 +30,7 @@ struct muc_svc_data {
 	struct list_head operations;
 	struct platform_device *pdev;
 	struct workqueue_struct *wq;
+	struct kset *intf_kset;
 };
 struct muc_svc_data *svc_dd;
 
@@ -634,6 +635,130 @@ free_hpw:
 	return ERR_PTR(ret);
 }
 
+#define kobj_to_device(k) \
+	container_of(k, struct mods_dl_device, intf_kobj)
+
+static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
+				struct bin_attribute *attr, char *buf,
+				loff_t pos, size_t size)
+{
+	/* XXX Eventually return the manifest */
+	return -EINVAL;
+}
+
+static ssize_t
+hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (!kstrtoul(buf, 10, &val))
+		return -EINVAL;
+
+	/* XXX Eventually kick off the hotplug to greybus on a '1'
+	 * and shutdown on a '0'
+	 */
+
+	return count;
+}
+
+struct muc_svc_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
+	ssize_t (*store)(struct mods_dl_device *dev, const char *buf,
+			size_t count);
+};
+
+#define MUC_SVC_ATTR(_name, _mode, _show, _store) \
+struct muc_svc_attribute muc_svc_attr_##_name = {\
+	.attr = { .name = __stringify(_name), .mode = _mode }, \
+	.show = _show, \
+	.store = _store, \
+}
+
+static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
+
+#define to_muc_svc_attr(a) \
+	container_of(a, struct muc_svc_attribute, attr)
+
+static ssize_t
+muc_svc_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	struct mods_dl_device *dev = kobj_to_device(kobj);
+	struct muc_svc_attribute *pattr = to_muc_svc_attr(attr);
+
+	if (!pattr->show)
+		return -EIO;
+
+	return pattr->show(dev, buf);
+}
+
+static ssize_t
+muc_svc_sysfs_store(struct kobject *kobj, struct attribute *attr,
+			const char *buf, size_t count)
+{
+	struct mods_dl_device *dev = kobj_to_device(kobj);
+	struct muc_svc_attribute *pattr = to_muc_svc_attr(attr);
+
+	if (!pattr->store)
+		return -EIO;
+
+	return pattr->store(dev, buf, count);
+}
+
+static const struct sysfs_ops muc_svc_sysfs_ops = {
+	.show = muc_svc_sysfs_show,
+	.store = muc_svc_sysfs_store,
+};
+
+static struct attribute *muc_svc_default_attrs[] = {
+	&muc_svc_attr_hotplug.attr,
+	NULL,
+};
+
+static struct kobj_type ktype_muc_svc = {
+	.sysfs_ops = &muc_svc_sysfs_ops,
+	.default_attrs = muc_svc_default_attrs,
+};
+
+static int muc_svc_create_dl_dev_sysfs(struct mods_dl_device *mods_dev)
+{
+	int err;
+
+	mods_dev->intf_kobj.kset = svc_dd->intf_kset;
+	err = kobject_init_and_add(&mods_dev->intf_kobj, &ktype_muc_svc,
+					NULL, "%d", mods_dev->intf_id);
+	if (err)
+		goto put_kobj;
+
+	sysfs_bin_attr_init(&mods_dev->manifest_attr);
+	mods_dev->manifest_attr.attr.name = "manifest";
+	mods_dev->manifest_attr.attr.mode = S_IRUGO;
+	mods_dev->manifest_attr.read = manifest_read;
+	mods_dev->manifest_attr.size = 0;
+
+	err = sysfs_create_bin_file(&mods_dev->intf_kobj,
+					&mods_dev->manifest_attr);
+	if (err)
+		goto put_kobj;
+
+	return 0;
+
+put_kobj:
+	kobject_put(&mods_dev->intf_kobj);
+
+	return err;
+}
+
+static void muc_svc_destroy_dl_dev_sysfs(struct mods_dl_device *mods_dev)
+{
+	/* XXX Only setup for certain interfaces */
+	if (mods_dev->intf_id > MUC_SVC_AP_INTF_ID) {
+		sysfs_remove_bin_file(&mods_dev->intf_kobj,
+					&mods_dev->manifest_attr);
+		kobject_put(&mods_dev->intf_kobj);
+	}
+}
+
 static int muc_svc_generate_hotplug(struct mods_dl_device *dld, u8 intf_id)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
@@ -688,6 +813,7 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *dev, u8 intf_id)
 {
 	struct mods_dl_device *mods_dev;
+	int err;
 
 	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), intf_id);
 	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
@@ -700,7 +826,19 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 
 	mods_nw_add_dl_device(mods_dev);
 
+	/* XXX Only want this created for non AP/SVC */
+	if (intf_id > MUC_SVC_AP_INTF_ID) {
+		err = muc_svc_create_dl_dev_sysfs(mods_dev);
+		if (err)
+			goto free_dev;
+	}
+
 	return mods_dev;
+
+free_dev:
+	kfree(mods_dev);
+
+	return ERR_PTR(err);
 }
 
 struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
@@ -716,6 +854,7 @@ EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
+	muc_svc_destroy_dl_dev_sysfs(dev);
 	mods_nw_del_dl_device(dev);
 	kfree(dev);
 }
@@ -773,12 +912,23 @@ static int muc_svc_probe(struct platform_device *pdev)
 	atomic_set(&dd->msg_num, 1);
 	INIT_LIST_HEAD(&dd->operations);
 
+	/* Create an 'interfaces' directory in sysfs */
+	dd->intf_kset = kset_create_and_add("mods_interfaces", NULL,
+						&pdev->dev.kobj);
+	if (!dd->intf_kset) {
+		dev_err(&pdev->dev, "Failed to create 'interfaces' sysfs\n");
+		ret = -ENOMEM;
+		goto free_wq;
+	}
+
 	platform_set_drvdata(pdev, dd);
 
 	svc_dd = dd;
 
 	return 0;
 
+free_wq:
+	destroy_workqueue(dd->wq);
 free_dl_dev:
 	mods_remove_dl_device(dd->dld);
 
@@ -789,6 +939,7 @@ static int muc_svc_remove(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 
+	kset_unregister(dd->intf_kset);
 	destroy_workqueue(dd->wq);
 	mods_remove_dl_device(dd->dld);
 

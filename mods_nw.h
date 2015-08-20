@@ -47,6 +47,8 @@ struct mods_dl_device {
 	u8			intf_id;
 	u8			device_id;
 	void			*dl_priv;
+	struct kobject		intf_kobj;
+	struct bin_attribute	manifest_attr;
 };
 
 /* interfaces with the svc */
