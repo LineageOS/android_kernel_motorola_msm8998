@@ -36,7 +36,7 @@ static int mods_ap_message_send(struct mods_dl_device *dld,
 {
 	struct muc_msg *msg = (struct muc_msg *)buf;
 
-	greybus_data_rcvd(g_hd, msg->hdr.dest_cport,
+	greybus_data_rcvd(g_hd, msg->hdr.cport,
 			msg->gb_msg, msg->hdr.gb_msg_size);
 	return 0;
 }
@@ -53,7 +53,6 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 		gfp_t gfp_mask)
 {
 	size_t buffer_size;
-	struct gb_connection *connection;
 	struct muc_msg *msg;
 	struct mods_ap_data *data;
 	struct mods_dl_device *dl;
@@ -65,20 +64,13 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 	data = (struct mods_ap_data *)hd->hd_priv;
 	dl = data->dld;
 
-	connection = gb_connection_hd_find(hd, hd_cport_id);
-	if (!connection) {
-		pr_err("Invalid cport supplied to send\n");
-		return -EINVAL;
-	}
-
 	buffer_size = sizeof(*message->header) + message->payload_size;
 
 	msg = kzalloc(buffer_size + sizeof(struct muc_msg_hdr), gfp_mask);
 	if (!msg)
 		return -ENOMEM;
 
-	msg->hdr.dest_cport = connection->intf_cport_id;
-	msg->hdr.src_cport = connection->hd_cport_id;
+	msg->hdr.cport = hd_cport_id;
 	msg->hdr.gb_msg_size = buffer_size;
 	memcpy(&msg->gb_msg[0], message->buffer, buffer_size);
 

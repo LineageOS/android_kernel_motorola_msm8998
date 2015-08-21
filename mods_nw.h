@@ -19,8 +19,7 @@ struct mods_dl_device;
 #pragma pack(push, 1)
 struct muc_msg_hdr {
 	__le16  gb_msg_size;
-	__u8    dest_cport;
-	__u8    src_cport;
+	__u8    cport;
 };
 
 struct muc_msg {

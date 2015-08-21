@@ -13,7 +13,7 @@
  *
  */
 
-#define pr_fmt(fmt) "SL-NWK: " fmt
+#define pr_fmt(fmt) "MDNW: " fmt
 
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -32,8 +32,7 @@
 #define CONFIG_MODS_DEV_MAX     (6) /* TODO: move to Kconfig */
 
 struct dest_entry {
-	struct mods_dl_device *dev; /* TODO: keep or lookup in route function */
-	u8 intf;
+	struct mods_dl_device *dev;
 	u8 cport;
 };
 
@@ -79,7 +78,6 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	from_cset = &routes[from_intf];
 	to_dev = routes[to_intf].dev;
 	if (from_cset->dev && to_dev) {
-		from_cset->dest[from_cport].intf = to_intf;
 		from_cset->dest[from_cport].cport = to_cport;
 		from_cset->dest[from_cport].dev = routes[to_intf].dev;
 	} else {
@@ -102,19 +100,8 @@ void mods_nw_del_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	from_cset = &routes[from_intf];
 	if (from_cset->dev) {
 		from_cset->dest[from_cport].dev = NULL;
-		from_cset->dest[from_cport].intf = 0;
 		from_cset->dest[from_cport].cport = 0;
 	}
-}
-
-static inline void mods_msg_dump(const char *str, struct muc_msg *mm)
-{
-	struct gb_operation     *gb_op;
-
-	gb_op = (struct gb_operation *)mm->gb_msg;
-	pr_info("%s [%4u] type=%u size=%d (%u -> %u)\n", str,
-		gb_op->id, gb_op->type,
-		mm->hdr.gb_msg_size, mm->hdr.src_cport, mm->hdr.dest_cport);
 }
 
 int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
@@ -130,7 +117,6 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	}
 
 	mm = (struct muc_msg *)msg;
-	mods_msg_dump(__func__, mm);
 
 	size = mm->hdr.gb_msg_size + sizeof(struct muc_msg);
 
@@ -139,19 +125,21 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 		err = -EINVAL;
 		goto out;
 	}
-	if (mm->hdr.src_cport >= CONFIG_CPORT_ID_MAX) {
+	if (mm->hdr.cport >= CONFIG_CPORT_ID_MAX) {
 		dev_err(from->dev, "Attempt to send on invalid cport\n");
 		err = -EINVAL;
 		goto out;
 	}
 	if (routes[from->intf_id].dev) {
-		dest = routes[from->intf_id].dest[mm->hdr.src_cport];
-		if (dest.dev)
+		dest = routes[from->intf_id].dest[mm->hdr.cport];
+		if (dest.dev) {
+			mm->hdr.cport = dest.cport;
 			err = dest.dev->drv->message_send(dest.dev, msg,
 					size);
+		}
 	} else
 		dev_err(from->dev, "No route for %u:%u\n",
-				from->intf_id, mm->hdr.src_cport);
+				from->intf_id, mm->hdr.cport);
 
 out:
 	return err;

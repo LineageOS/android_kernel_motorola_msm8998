@@ -128,8 +128,8 @@ static struct svc_op *svc_find_op(struct muc_svc_data *dd, uint16_t id)
  * envelope that it understands.
  */
 static int
-svc_route_msg(struct mods_dl_device *dld, uint8_t src_cport,
-		uint8_t dest_cport, struct gb_message *msg)
+svc_route_msg(struct mods_dl_device *dld, uint8_t cport,
+		struct gb_message *msg)
 {
 	struct muc_msg *m;
 	size_t muc_payload = get_gb_msg_size(msg);
@@ -141,8 +141,7 @@ svc_route_msg(struct mods_dl_device *dld, uint8_t src_cport,
 
 	memcpy(m->gb_msg, msg->buffer, muc_payload);
 	m->hdr.gb_msg_size = msg->header->size;
-	m->hdr.dest_cport = dest_cport;
-	m->hdr.src_cport = src_cport;
+	m->hdr.cport = cport;
 
 	mods_nw_switch(dld, (uint8_t *)m);
 	kfree(m);
@@ -157,7 +156,7 @@ static inline size_t get_gb_payload_size(size_t message_size)
 
 static int
 svc_gb_conn_create(struct mods_dl_device *dld, struct gb_message *req,
-		uint8_t cport, uint8_t reply)
+		   uint8_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_svc_conn_create_request *conn = req->payload;
@@ -199,7 +198,7 @@ svc_gb_conn_create(struct mods_dl_device *dld, struct gb_message *req,
 	resp->header->type |= req->header->type;
 	resp->header->operation_id = req->header->operation_id;
 
-	ret = svc_route_msg(dld, cport, reply, resp);
+	ret = svc_route_msg(dld, cport, resp);
 	if (ret) {
 		dev_err(&dd->pdev->dev,
 			"Failed to send response for type: %d\n",
@@ -224,8 +223,8 @@ del_route_1:
 }
 
 static int
-muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
-			size_t msg_size, uint8_t cport, uint8_t reply)
+muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
+			  size_t msg_size, uint8_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	size_t payload_size = get_gb_payload_size(msg_size);
@@ -257,7 +256,7 @@ muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
 		break;
 	case GB_SVC_TYPE_CONN_CREATE:
 		/* XXX Handle connection create intf:cport <-> intf:cport */
-		ret = svc_gb_conn_create(dld, op->request, cport, reply);
+		ret = svc_gb_conn_create(dld, op->request, cport);
 		svc_gb_msg_free(op->request);
 		kfree(op);
 		return ret;
@@ -280,7 +279,7 @@ muc_svc_handle_request(struct mods_dl_device *dld, uint8_t *data,
 		op->response->header->type |= hdr.type;
 		op->response->header->operation_id = hdr.operation_id;
 
-		ret = svc_route_msg(dld, cport, reply, op->response);
+		ret = svc_route_msg(dld, cport, op->response);
 		if (ret) {
 			dev_err(&dd->pdev->dev,
 				"Failed to send response for type: %d\n",
@@ -313,7 +312,7 @@ gb_msg_alloc:
  */
 static int
 svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
-		size_t msg_size, uint8_t dest_cport, uint8_t src_cport)
+		size_t msg_size, uint8_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -347,14 +346,13 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 	}
 
 	/* If not a response, process the new request */
-	return muc_svc_handle_request(dld, data, msg_size,
-					dest_cport, src_cport);
+	return muc_svc_handle_ap_request(dld, data, msg_size, cport);
 }
 
 /* Send a message out the specified CPORT and wait for a response */
 static struct gb_message *
 svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
-		size_t payload_size, uint8_t src_cport, uint8_t dest_cport)
+		size_t payload_size, uint8_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -384,7 +382,7 @@ svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	list_add_tail(&op->entry, &dd->operations);
 
 	/* Send to NW Routing Layer */
-	ret = svc_route_msg(dld, src_cport, dest_cport, msg);
+	ret = svc_route_msg(dld, cport, msg);
 	if (ret) {
 		dev_err(&dd->pdev->dev, "failed sending svc msg: %d\n", ret);
 		goto remove_op;
@@ -438,7 +436,7 @@ static int muc_svc_version_check(struct mods_dl_device *dld)
 	ver->minor = GB_SVC_VERSION_MINOR;
 
 	msg = svc_gb_msg_send_sync(dld, (uint8_t *)ver, GB_SVC_TYPE_PROTOCOL_VERSION,
-				sizeof(*ver), 0, 0);
+				sizeof(*ver), 0);
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to get VERSION from AP\n");
 		kfree(ver);
@@ -473,7 +471,7 @@ muc_svc_hello_req(struct mods_dl_device *dld, uint8_t ap_intf_id)
 	hello->interface_id = ap_intf_id;
 
 	msg = svc_gb_msg_send_sync(dld, (uint8_t *)hello, GB_SVC_TYPE_SVC_HELLO,
-				sizeof(*hello), 0, 0);
+				sizeof(*hello), 0);
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to send HELLO to AP\n");
 		kfree(hello);
@@ -518,7 +516,7 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 
 	/* GET_IDs has no payload */
 	msg = svc_gb_msg_send_sync(dld, NULL, GB_CONTROL_TYPE_GET_IDS, 0,
-					out_cport, GB_CONTROL_CPORT_ID);
+				   out_cport);
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to get GET_IDS\n");
 		return PTR_ERR(msg);
@@ -578,7 +576,7 @@ static void muc_svc_attach_work(struct work_struct *work)
 
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&hpw->hotplug,
 					GB_SVC_TYPE_INTF_HOTPLUG,
-					sizeof(hpw->hotplug), 0, 0);
+					sizeof(hpw->hotplug), 0);
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
 		goto free_hpw;
@@ -879,7 +877,7 @@ muc_svc_msg_send(struct mods_dl_device *dld, uint8_t *buf, size_t len)
 	struct muc_msg *m = (struct muc_msg *)buf;
 
 	return svc_gb_msg_recv(dld, m->gb_msg, m->hdr.gb_msg_size,
-				m->hdr.dest_cport, m->hdr.src_cport);
+				m->hdr.cport);
 }
 
 static void muc_svc_msg_cancel(void *cookie)
