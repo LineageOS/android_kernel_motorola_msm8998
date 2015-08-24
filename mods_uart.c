@@ -216,13 +216,20 @@ static int mods_uart_probe(struct platform_device *pdev)
 	int ret;
 	struct device_node *np = pdev->dev.of_node;
 	const char *tty_name = NULL;
+	u8 intf_id;
 
 	mud = devm_kzalloc(&pdev->dev, sizeof(*mud), GFP_KERNEL);
 	if (!mud)
 		return -ENOMEM;
 
+	ret = of_property_read_u8(np, "mmi,intf-id", &intf_id);
+	if (ret) {
+		dev_err(&pdev->dev, "%s: Couldn't read intf-id\n", __func__);
+		return ret;
+	}
+
 	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
-					MODS_INTF_APBA);
+					intf_id);
 	if (IS_ERR(mud->dld)) {
 		dev_err(&pdev->dev, "%s: Unable to create data link device\n",
 			__func__);
