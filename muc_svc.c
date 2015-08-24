@@ -435,8 +435,9 @@ static int muc_svc_version_check(struct mods_dl_device *dld)
 	ver->major = GB_SVC_VERSION_MAJOR;
 	ver->minor = GB_SVC_VERSION_MINOR;
 
-	msg = svc_gb_msg_send_sync(dld, (uint8_t *)ver, GB_SVC_TYPE_PROTOCOL_VERSION,
-				sizeof(*ver), 0);
+	msg = svc_gb_msg_send_sync(dld, (uint8_t *)ver,
+				GB_REQUEST_TYPE_PROTOCOL_VERSION,
+				sizeof(*ver), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to get VERSION from AP\n");
 		kfree(ver);
@@ -470,8 +471,9 @@ muc_svc_hello_req(struct mods_dl_device *dld, uint8_t ap_intf_id)
 	hello->endo_id = cpu_to_le16(MUC_SVC_ENDO_ID);
 	hello->interface_id = ap_intf_id;
 
-	msg = svc_gb_msg_send_sync(dld, (uint8_t *)hello, GB_SVC_TYPE_SVC_HELLO,
-				sizeof(*hello), 0);
+	msg = svc_gb_msg_send_sync(dld, (uint8_t *)hello,
+				GB_SVC_TYPE_SVC_HELLO,
+				sizeof(*hello), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to send HELLO to AP\n");
 		kfree(hello);
@@ -576,7 +578,7 @@ static void muc_svc_attach_work(struct work_struct *work)
 
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&hpw->hotplug,
 					GB_SVC_TYPE_INTF_HOTPLUG,
-					sizeof(hpw->hotplug), 0);
+					sizeof(hpw->hotplug), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
 		goto free_hpw;
