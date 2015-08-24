@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/workqueue.h>
 
@@ -31,7 +32,9 @@ struct muc_svc_data {
 	struct platform_device *pdev;
 	struct workqueue_struct *wq;
 	struct kset *intf_kset;
+
 	bool authenticate;
+	u16 endo_mask;
 };
 struct muc_svc_data *svc_dd;
 
@@ -52,7 +55,6 @@ struct muc_svc_hotplug_work {
 
 /* XXX Move these into device tree? */
 #define MUC_SVC_AP_INTF_ID 1
-#define MUC_SVC_ENDO_ID 0x4755
 
 #define MUC_SVC_RESPONSE_TYPE 0
 
@@ -468,7 +470,7 @@ muc_svc_hello_req(struct mods_dl_device *dld, uint8_t ap_intf_id)
 		return -ENOMEM;
 
 	/* Send the endo id and the AP's interface ID */
-	hello->endo_id = cpu_to_le16(MUC_SVC_ENDO_ID);
+	hello->endo_id = cpu_to_le16(dd->endo_mask);
 	hello->interface_id = ap_intf_id;
 
 	msg = svc_gb_msg_send_sync(dld, (uint8_t *)hello,
@@ -961,6 +963,27 @@ static struct mods_dl_driver muc_svc_dl_driver = {
 	.message_cancel = muc_svc_msg_cancel,
 };
 
+static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
+{
+	int ret;
+	struct device_node *np = dev->of_node;
+	int val;
+
+	if (!np)
+		return -EINVAL;
+
+	dd->authenticate = of_property_read_bool(np, "mmi,use-authentication");
+
+	ret = of_property_read_u32(np, "mmi,endo-mask", &val);
+	if (ret) {
+		dev_err(dev, "Failed to retrieve endo-mask: %d\n", ret);
+		return ret;
+	}
+	dd->endo_mask = (u16)val;
+
+	return 0;
+}
+
 static int muc_svc_probe(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd;
@@ -969,6 +992,10 @@ static int muc_svc_probe(struct platform_device *pdev)
 	dd = devm_kzalloc(&pdev->dev, sizeof(*dd), GFP_KERNEL);
 	if (!dd)
 		return -ENOMEM;
+
+	ret = muc_svc_of_parse(dd, &pdev->dev);
+	if (ret)
+		return ret;
 
 	dd->dld = _mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev,
 			MODS_INTF_SVC);
@@ -1024,16 +1051,21 @@ static int muc_svc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static struct of_device_id muc_svc_match_tbl[] = {
+	{ .compatible = "mmi,muc_svc" },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, muc_svc_match_tbl);
+
 static struct platform_driver muc_svc_driver = {
 	.driver = {
 		.owner = THIS_MODULE,
 		.name = "muc_svc",
+		.of_match_table = muc_svc_match_tbl,
 	},
 	.probe = muc_svc_probe,
 	.remove  = muc_svc_remove,
 };
-
-static struct platform_device *muc_svc_device;
 
 int __init muc_svc_init(void)
 {
@@ -1045,31 +1077,10 @@ int __init muc_svc_init(void)
 		return ret;
 	}
 
-	muc_svc_device = platform_device_alloc("muc_svc", -1);
-	if (!muc_svc_device) {
-		ret = -ENOMEM;
-		pr_err("muc_svc failed to alloc device\n");
-		goto alloc_fail;
-	}
-
-	ret = platform_device_add(muc_svc_device);
-	if (ret) {
-		pr_err("muc_svc failed to add device: %d\n", ret);
-		goto add_fail;
-	}
-
 	return 0;
-
-add_fail:
-	platform_device_put(muc_svc_device);
-alloc_fail:
-	platform_driver_unregister(&muc_svc_driver);
-
-	return ret;
 }
 
 void __exit muc_svc_exit(void)
 {
 	platform_driver_unregister(&muc_svc_driver);
-	platform_device_unregister(muc_svc_device);
 }
