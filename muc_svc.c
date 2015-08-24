@@ -53,8 +53,8 @@ struct muc_svc_hotplug_work {
 	struct gb_svc_intf_hotplug_request hotplug;
 };
 
-/* XXX Move these into device tree? */
-#define MUC_SVC_AP_INTF_ID 1
+#define is_external_interface(i) \
+	((i != MODS_INTF_AP) && (i != MODS_INTF_SVC))
 
 #define MUC_SVC_RESPONSE_TYPE 0
 
@@ -828,8 +828,7 @@ put_kobj:
 
 static void muc_svc_destroy_dl_dev_sysfs(struct mods_dl_device *mods_dev)
 {
-	/* XXX Only setup for certain interfaces */
-	if (mods_dev->intf_id > MUC_SVC_AP_INTF_ID) {
+	if (is_external_interface(mods_dev->intf_id)) {
 		sysfs_remove_bin_file(&mods_dev->intf_kobj,
 					&mods_dev->manifest_attr);
 		kobject_put(&mods_dev->intf_kobj);
@@ -859,7 +858,6 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 {
 	int err;
 
-	/* XXX Temporary method to determine this is AP */
 	if (mods_dev->intf_id == MODS_INTF_AP) {
 		/* Special case for AP, we'll setup the routes right away */
 		err = mods_nw_add_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
@@ -870,7 +868,7 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		if (err)
 			goto free_svc_to_ap;
 
-		err = muc_svc_probe_ap(svc_dd->dld, MUC_SVC_AP_INTF_ID);
+		err = muc_svc_probe_ap(svc_dd->dld, MODS_INTF_AP);
 		if (err)
 			goto free_ap_to_svc;
 
@@ -905,8 +903,8 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 
 	mods_nw_add_dl_device(mods_dev);
 
-	/* XXX Only want this created for non AP/SVC */
-	if (intf_id > MUC_SVC_AP_INTF_ID) {
+	/* Sysfs entries only for non AP/SVC interfaces */
+	if (is_external_interface(intf_id)) {
 		err = muc_svc_create_dl_dev_sysfs(mods_dev);
 		if (err)
 			goto free_dev;
