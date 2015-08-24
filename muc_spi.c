@@ -287,6 +287,7 @@ static int muc_spi_gpio_init(struct muc_spi_data *dd)
 static int muc_spi_probe(struct spi_device *spi)
 {
 	struct muc_spi_data *dd;
+	u8 intf_id;
 
 	dev_info(&spi->dev, "%s: enter\n", __func__);
 
@@ -295,11 +296,16 @@ static int muc_spi_probe(struct spi_device *spi)
 		return -EINVAL;
 	}
 
+	if (of_property_read_u8(spi->dev.of_node, "mmi,intf-id", &intf_id)) {
+		dev_err(&spi->dev, "Couldn't get mmi,intf-id\n");
+		return -EINVAL;
+	}
+
 	dd = devm_kzalloc(&spi->dev, sizeof(*dd), GFP_KERNEL);
 	if (!dd)
 		return -ENOMEM;
 
-	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, MODS_INTF_MUC);
+	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, intf_id);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
 		        __func__);
