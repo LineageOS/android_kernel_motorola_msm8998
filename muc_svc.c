@@ -583,17 +583,13 @@ static void muc_svc_attach_work(struct work_struct *work)
 					sizeof(hpw->hotplug), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
-		goto free_hpw;
+		return;
 	}
 
 	dev_info(&svc_dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
 			hpw->hotplug.intf_id);
 
 	svc_gb_msg_free(msg);
-
-free_hpw:
-	kfree(hpw);
-	hpw->dld->hpw = NULL;
 }
 
 static int
@@ -714,6 +710,24 @@ static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 	return count;
 }
 
+static ssize_t vid_show(struct mods_dl_device *dev, char *buf)
+{
+	if (!dev->hpw)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04X",
+		dev->hpw->hotplug.data.ara_vend_id);
+}
+
+static ssize_t pid_show(struct mods_dl_device *dev, char *buf)
+{
+	if (!dev->hpw)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04X",
+		dev->hpw->hotplug.data.ara_prod_id);
+}
+
 static ssize_t
 hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 {
@@ -753,6 +767,9 @@ struct muc_svc_attribute muc_svc_attr_##_name = {\
 }
 
 static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
+static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
+static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
+
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -789,6 +806,8 @@ static const struct sysfs_ops muc_svc_sysfs_ops = {
 
 static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_hotplug.attr,
+	&muc_svc_attr_vid.attr,
+	&muc_svc_attr_pid.attr,
 	NULL,
 };
 
