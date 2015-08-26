@@ -60,6 +60,169 @@ struct muc_svc_hotplug_work {
 
 #define SVC_MSG_TIMEOUT 5000
 
+#define kobj_to_device(k) \
+	container_of(k, struct mods_dl_device, intf_kobj)
+
+static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
+				struct bin_attribute *attr, char *buf,
+				loff_t pos, size_t size)
+{
+	struct mods_dl_device *mods_dev = kobj_to_device(kobj);
+	ssize_t count = 0;
+
+	if (!mods_dev->manifest || !mods_dev->manifest_size)
+		return -EINVAL;
+
+	for ( ; size > 0 && pos < mods_dev->manifest_size; count++, size--)
+		*buf++ = mods_dev->manifest[pos++];
+
+	return count;
+}
+
+static ssize_t vid_show(struct mods_dl_device *dev, char *buf)
+{
+	if (!dev->hpw)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04X",
+		dev->hpw->hotplug.data.ara_vend_id);
+}
+
+static ssize_t pid_show(struct mods_dl_device *dev, char *buf)
+{
+	if (!dev->hpw)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04X",
+		dev->hpw->hotplug.data.ara_prod_id);
+}
+
+static ssize_t
+hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	/* If authentication is disabled, this is a no-op */
+	if (!svc_dd->authenticate)
+		return count;
+
+	/* Nothing to do, there is no hotplug */
+	if (!dev->hpw)
+		return -EINVAL;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val == 1)
+		queue_work(svc_dd->wq, &dev->hpw->work);
+
+	/* XXX What to do if told to 'deny' */
+
+	return count;
+}
+
+struct muc_svc_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
+	ssize_t (*store)(struct mods_dl_device *dev, const char *buf,
+			size_t count);
+};
+
+#define MUC_SVC_ATTR(_name, _mode, _show, _store) \
+struct muc_svc_attribute muc_svc_attr_##_name = {\
+	.attr = { .name = __stringify(_name), .mode = _mode }, \
+	.show = _show, \
+	.store = _store, \
+}
+
+static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
+static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
+static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
+
+
+#define to_muc_svc_attr(a) \
+	container_of(a, struct muc_svc_attribute, attr)
+
+static ssize_t
+muc_svc_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	struct mods_dl_device *dev = kobj_to_device(kobj);
+	struct muc_svc_attribute *pattr = to_muc_svc_attr(attr);
+
+	if (!pattr->show)
+		return -EIO;
+
+	return pattr->show(dev, buf);
+}
+
+static ssize_t
+muc_svc_sysfs_store(struct kobject *kobj, struct attribute *attr,
+			const char *buf, size_t count)
+{
+	struct mods_dl_device *dev = kobj_to_device(kobj);
+	struct muc_svc_attribute *pattr = to_muc_svc_attr(attr);
+
+	if (!pattr->store)
+		return -EIO;
+
+	return pattr->store(dev, buf, count);
+}
+
+static const struct sysfs_ops muc_svc_sysfs_ops = {
+	.show = muc_svc_sysfs_show,
+	.store = muc_svc_sysfs_store,
+};
+
+static struct attribute *muc_svc_default_attrs[] = {
+	&muc_svc_attr_hotplug.attr,
+	&muc_svc_attr_vid.attr,
+	&muc_svc_attr_pid.attr,
+	NULL,
+};
+
+static struct kobj_type ktype_muc_svc = {
+	.sysfs_ops = &muc_svc_sysfs_ops,
+	.default_attrs = muc_svc_default_attrs,
+};
+
+static int muc_svc_create_dl_dev_sysfs(struct mods_dl_device *mods_dev)
+{
+	int err;
+
+	mods_dev->intf_kobj.kset = svc_dd->intf_kset;
+	err = kobject_init_and_add(&mods_dev->intf_kobj, &ktype_muc_svc,
+					NULL, "%d", mods_dev->intf_id);
+	if (err)
+		goto put_kobj;
+
+	sysfs_bin_attr_init(&mods_dev->manifest_attr);
+	mods_dev->manifest_attr.attr.name = "manifest";
+	mods_dev->manifest_attr.attr.mode = S_IRUGO;
+	mods_dev->manifest_attr.read = manifest_read;
+	mods_dev->manifest_attr.size = 0;
+
+	err = sysfs_create_bin_file(&mods_dev->intf_kobj,
+					&mods_dev->manifest_attr);
+	if (err)
+		goto put_kobj;
+
+	return 0;
+
+put_kobj:
+	kobject_put(&mods_dev->intf_kobj);
+
+	return err;
+}
+
+static void muc_svc_destroy_dl_dev_sysfs(struct mods_dl_device *mods_dev)
+{
+	if (is_external_interface(mods_dev->intf_id)) {
+		sysfs_remove_bin_file(&mods_dev->intf_kobj,
+					&mods_dev->manifest_attr);
+		kobject_put(&mods_dev->intf_kobj);
+	}
+}
+
 /*
  * Map an enum gb_operation_status value (which is represented in a
  * message as a single byte) to an appropriate Linux negative errno.
@@ -747,169 +910,6 @@ free_hpw:
 	kfree(hpw);
 
 	return ERR_PTR(ret);
-}
-
-#define kobj_to_device(k) \
-	container_of(k, struct mods_dl_device, intf_kobj)
-
-static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
-				struct bin_attribute *attr, char *buf,
-				loff_t pos, size_t size)
-{
-	struct mods_dl_device *mods_dev = kobj_to_device(kobj);
-	ssize_t count = 0;
-
-	if (!mods_dev->manifest || !mods_dev->manifest_size)
-		return -EINVAL;
-
-	for ( ; size > 0 && pos < mods_dev->manifest_size; count++, size--)
-		*buf++ = mods_dev->manifest[pos++];
-
-	return count;
-}
-
-static ssize_t vid_show(struct mods_dl_device *dev, char *buf)
-{
-	if (!dev->hpw)
-		return -EINVAL;
-
-	return scnprintf(buf, PAGE_SIZE, "0x%04X",
-		dev->hpw->hotplug.data.ara_vend_id);
-}
-
-static ssize_t pid_show(struct mods_dl_device *dev, char *buf)
-{
-	if (!dev->hpw)
-		return -EINVAL;
-
-	return scnprintf(buf, PAGE_SIZE, "0x%04X",
-		dev->hpw->hotplug.data.ara_prod_id);
-}
-
-static ssize_t
-hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
-{
-	unsigned long val;
-
-	/* If authentication is disabled, this is a no-op */
-	if (!svc_dd->authenticate)
-		return count;
-
-	/* Nothing to do, there is no hotplug */
-	if (!dev->hpw)
-		return -EINVAL;
-
-	if (kstrtoul(buf, 10, &val) < 0)
-		return -EINVAL;
-
-	if (val == 1)
-		queue_work(svc_dd->wq, &dev->hpw->work);
-
-	/* XXX What to do if told to 'deny' */
-
-	return count;
-}
-
-struct muc_svc_attribute {
-	struct attribute attr;
-	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
-	ssize_t (*store)(struct mods_dl_device *dev, const char *buf,
-			size_t count);
-};
-
-#define MUC_SVC_ATTR(_name, _mode, _show, _store) \
-struct muc_svc_attribute muc_svc_attr_##_name = {\
-	.attr = { .name = __stringify(_name), .mode = _mode }, \
-	.show = _show, \
-	.store = _store, \
-}
-
-static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
-static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
-static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
-
-
-#define to_muc_svc_attr(a) \
-	container_of(a, struct muc_svc_attribute, attr)
-
-static ssize_t
-muc_svc_sysfs_show(struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	struct mods_dl_device *dev = kobj_to_device(kobj);
-	struct muc_svc_attribute *pattr = to_muc_svc_attr(attr);
-
-	if (!pattr->show)
-		return -EIO;
-
-	return pattr->show(dev, buf);
-}
-
-static ssize_t
-muc_svc_sysfs_store(struct kobject *kobj, struct attribute *attr,
-			const char *buf, size_t count)
-{
-	struct mods_dl_device *dev = kobj_to_device(kobj);
-	struct muc_svc_attribute *pattr = to_muc_svc_attr(attr);
-
-	if (!pattr->store)
-		return -EIO;
-
-	return pattr->store(dev, buf, count);
-}
-
-static const struct sysfs_ops muc_svc_sysfs_ops = {
-	.show = muc_svc_sysfs_show,
-	.store = muc_svc_sysfs_store,
-};
-
-static struct attribute *muc_svc_default_attrs[] = {
-	&muc_svc_attr_hotplug.attr,
-	&muc_svc_attr_vid.attr,
-	&muc_svc_attr_pid.attr,
-	NULL,
-};
-
-static struct kobj_type ktype_muc_svc = {
-	.sysfs_ops = &muc_svc_sysfs_ops,
-	.default_attrs = muc_svc_default_attrs,
-};
-
-static int muc_svc_create_dl_dev_sysfs(struct mods_dl_device *mods_dev)
-{
-	int err;
-
-	mods_dev->intf_kobj.kset = svc_dd->intf_kset;
-	err = kobject_init_and_add(&mods_dev->intf_kobj, &ktype_muc_svc,
-					NULL, "%d", mods_dev->intf_id);
-	if (err)
-		goto put_kobj;
-
-	sysfs_bin_attr_init(&mods_dev->manifest_attr);
-	mods_dev->manifest_attr.attr.name = "manifest";
-	mods_dev->manifest_attr.attr.mode = S_IRUGO;
-	mods_dev->manifest_attr.read = manifest_read;
-	mods_dev->manifest_attr.size = 0;
-
-	err = sysfs_create_bin_file(&mods_dev->intf_kobj,
-					&mods_dev->manifest_attr);
-	if (err)
-		goto put_kobj;
-
-	return 0;
-
-put_kobj:
-	kobject_put(&mods_dev->intf_kobj);
-
-	return err;
-}
-
-static void muc_svc_destroy_dl_dev_sysfs(struct mods_dl_device *mods_dev)
-{
-	if (is_external_interface(mods_dev->intf_id)) {
-		sysfs_remove_bin_file(&mods_dev->intf_kobj,
-					&mods_dev->manifest_attr);
-		kobject_put(&mods_dev->intf_kobj);
-	}
 }
 
 static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
