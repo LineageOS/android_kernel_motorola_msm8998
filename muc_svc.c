@@ -156,6 +156,23 @@ static inline size_t get_gb_payload_size(size_t message_size)
 	return message_size - sizeof(struct gb_operation_msg_hdr);
 }
 
+static int svc_set_intf_id(struct mods_dl_device *dld, struct gb_message *req)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct gb_svc_intf_device_id_request *id = req->payload;
+	struct mods_dl_device *mods_dev = mods_nw_get_dl_device(id->intf_id);
+
+	if (!mods_dev) {
+		dev_err(&dd->pdev->dev, "No device found for interface %d\n",
+			id->intf_id);
+		return -ENODEV;
+	}
+
+	mods_dev->device_id = id->intf_id;
+
+	return 0;
+}
+
 static int
 svc_gb_conn_create(struct mods_dl_device *dld, struct gb_message *req,
 		   uint8_t cport)
@@ -251,7 +268,7 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 
 	switch (hdr.type) {
 	case GB_SVC_TYPE_INTF_DEVICE_ID:
-		/* XXX Handle interface to device ID mapping */
+		ret = svc_set_intf_id(dld, op->request);
 		break;
 	case GB_SVC_TYPE_INTF_RESET:
 		/* XXX Handle interface reset request */

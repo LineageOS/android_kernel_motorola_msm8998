@@ -61,6 +61,7 @@ extern void mods_nw_del_route(u8 from_intf, u8 from_cport,
 		u8 to_intf, u8 to_cport);
 extern void mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
 extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
+extern struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id);
 
 /* send message to switch to connect to destination */
 extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg);

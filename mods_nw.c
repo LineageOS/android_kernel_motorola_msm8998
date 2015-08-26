@@ -46,6 +46,14 @@ static struct cport_set routes[CONFIG_MODS_DEV_MAX];
 /* TODO: reference counting  */
 /* TODO: clear all routes */
 
+struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id)
+{
+	if (intf_id >= CONFIG_MODS_DEV_MAX)
+		return NULL;
+
+	return routes[intf_id].dev;
+}
+
 /* add the dl device to the table */
 /* called by the svc while creating the dl device */
 void mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
