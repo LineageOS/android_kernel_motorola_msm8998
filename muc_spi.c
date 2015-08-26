@@ -199,6 +199,7 @@ static int muc_attach(struct notifier_block *nb,
 						      IRQF_ONESHOT,
 						      "muc_spi", dd))
 				dev_err(&spi->dev, "%s: Unable to request irq.\n", __func__);
+			dd->has_tranceived = 0;
 			err = mods_dl_dev_attached(dd->dld);
 			if (err) {
 				dev_err(&spi->dev, "Error attaching to SVC\n");
@@ -206,7 +207,7 @@ static int muc_attach(struct notifier_block *nb,
 			}
 		} else {
 			devm_free_irq(&spi->dev, spi->irq, dd);
-			/* XXX notify SVC of detach */
+			mods_dl_dev_detached(dd->dld);
 		}
 	}
 	return NOTIFY_OK;
@@ -330,6 +331,9 @@ static int muc_spi_remove(struct spi_device *spi)
 	struct muc_spi_data *dd = spi_get_drvdata(spi);
 
 	dev_info(&spi->dev, "%s: enter\n", __func__);
+
+	if (dd->present)
+		mods_dl_dev_detached(dd->dld);
 
 	gpio_free(dd->gpio_wake_n);
 	gpio_free(dd->gpio_rdy_n);
