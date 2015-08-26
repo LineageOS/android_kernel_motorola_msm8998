@@ -1,93 +1,30 @@
-.PHONY: build-greybus
-
-LOCAL_PATH := $(my-dir)
+LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES := greybus.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
+LOCAL_MODULE := greybus
+LOCAL_MODULE_TAGS := optional
+LOCAL_ADDITIONAL_DEPENDENCIES := build-greybus
+include $(BUILD_PHONY_PACKAGE)
 
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-phy.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
+GB_SRC_PATH := $(LOCAL_PATH)
+GB_KDIRARG := KERNELDIR="${ANDROID_PRODUCT_OUT}/obj/KERNEL_OBJ"
 
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-mods.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-es1.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-es2.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-vibrator.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-battery.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES := gb-vendor-moto.ko
-LOCAL_MODULE := $(LOCAL_SRC_FILES)
-LOCAL_MODULE_CLASS := EXECUTABLES
-LOCAL_MODULE_PATH := $(PRODUCT_OUT)/system/lib/modules
-$(LOCAL_PATH)/$(LOCAL_SRC_FILES): build-greybus
-include $(BUILD_PREBUILT)
-
-#######################
-# Local build code
-#######################
-GREYBUS_SRC_PATH := $(LOCAL_PATH)
-KDIRARG := KERNELDIR="${ANDROID_PRODUCT_OUT}/obj/KERNEL_OBJ"
-ifeq ($(TARGET_ARCH),arm64)
-  KERNEL_TOOLS_PREFIX=aarch64-linux-android-
+TARGET_KERNEL_CROSS_COMPILE_PREFIX := $(strip $(TARGET_KERNEL_CROSS_COMPILE_PREFIX))
+ifeq ($(TARGET_KERNEL_CROSS_COMPILE_PREFIX),)
+GB_KERNEL_TOOLS_PREFIX := arm-eabi-
 else
-  KERNEL_TOOLS_PREFIX:=arm-eabi-
-endif
-ARCHARG := ARCH=$(TARGET_ARCH)
-FLAGARG := EXTRA_CFLAGS+=-fno-pic
-ARGS := $(KDIRARG) $(ARCHARG) $(FLAGARG)
-
-# if building with mm then assume kernel is already built
-ifeq (,$(ONE_SHOT_MAKEFILE))
-LOCAL_GREYBUS_DEPEND :=  $(KERNEL_OUT)/arch/arm/boot/Image
+GB_KERNEL_TOOLS_PREFIX := $(TARGET_KERNEL_CROSS_COMPILE_PREFIX)
 endif
 
-build-greybus: $(LOCAL_GREYBUS_DEPEND)
-	make clean -C $(GREYBUS_SRC_PATH)
-	cd $(GREYBUS_SRC_PATH) &&\
-	$(MAKE) -j$(MAKE_JOBS) CROSS_COMPILE=$(KERNEL_TOOLS_PREFIX) $(ARGS)
-	ko=`find $(GREYBUS_SRC_PATH) -type f -name "*.ko"`;\
-	for i in $$ko; do $(KERNEL_TOOLS_PREFIX)strip --strip-unneeded $$i; done
+GB_ARCHARG := ARCH=$(TARGET_ARCH)
+GB_FLAGARG := EXTRA_CFLAGS+=-fno-pic
+GB_ARGS := $(GB_KDIRARG) $(GB_ARCHARG) $(GB_FLAGARG)
+
+build-greybus: $(ACP) $(INSTALLED_KERNEL_TARGET)
+	$(MAKE) clean -C $(GB_SRC_PATH)
+	$(MAKE) -j$(MAKE_JOBS) -C $(GB_SRC_PATH) CROSS_COMPILE=$(GB_KERNEL_TOOLS_PREFIX) $(GB_ARGS)
+	ko=`find $(GB_SRC_PATH) -type f -name "*.ko"`;\
+	for i in $$ko;\
+	do $(GB_KERNEL_TOOLS_PREFIX)strip --strip-unneeded $$i;\
+	$(ACP) -fp $$i $(TARGET_OUT)/lib/modules/;\
+	done
