@@ -887,6 +887,28 @@ static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
 	return 0;
 }
 
+void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
+{
+	struct gb_message *msg;
+	struct gb_svc_intf_hot_unplug_request unplug;
+
+	unplug.intf_id = mods_dev->intf_id;
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&unplug,
+					GB_SVC_TYPE_INTF_HOT_UNPLUG,
+					sizeof(unplug), GB_SVC_CPORT_ID);
+	if (IS_ERR(msg)) {
+		dev_err(&svc_dd->pdev->dev, "Failed to send UNPLUG to AP\n");
+		return;
+	}
+
+	dev_info(&svc_dd->pdev->dev, "Successfully sent unplug for IID: %d\n",
+			unplug.intf_id);
+
+	svc_gb_msg_free(msg);
+}
+EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
+
 /* Notifies that the DL device is in attached state and the
  * hotplug event can be kicked off
  */
