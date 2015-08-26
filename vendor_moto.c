@@ -20,8 +20,6 @@ struct gb_vendor_moto {
 	struct gb_connection *connection;
 	struct device *dev;
 	int minor;  /* vendor minor number */
-	u8 version_major;
-	u8 version_minor;
 };
 
 /* Version of the Greybus protocol we support */
@@ -29,7 +27,6 @@ struct gb_vendor_moto {
 #define	GB_VENDOR_MOTO_VERSION_MINOR		0x01
 
 /* Greybus Motorola vendor specific request types */
-#define	GB_VENDOR_MOTO_TYPE_PROTOCOL_VERSION	0x01
 #define	GB_VENDOR_MOTO_TYPE_CHARGE_BASE		0x02
 #define	GB_VENDOR_MOTO_TYPE_GET_DMESG		0x03
 #define	GB_VENDOR_MOTO_TYPE_GET_LAST_DMESG	0x04
@@ -47,9 +44,6 @@ struct gb_vendor_moto_charge_base_request {
 struct gb_vendor_moto_dmesg_response {
 	char	buf[GB_VENDOR_MOTO_DMESG_SIZE];
 };
-
-/* Define get_version() routine */
-define_get_version(gb_vendor_moto, VENDOR_MOTO);
 
 static ssize_t do_get_dmesg(struct device *dev, struct device_attribute *attr,
 			    char *buf, int type)
@@ -126,11 +120,6 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 
 	gb->connection = connection;
 	connection->private = gb;
-
-	/* Check the version */
-	retval = get_version(gb);
-	if (retval)
-		goto error;
 
 	/* Enable charging */
 	retval = charge_base(gb, 1);
