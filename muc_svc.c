@@ -60,6 +60,74 @@ struct muc_svc_hotplug_work {
 
 #define SVC_MSG_TIMEOUT 5000
 
+/*
+ * Map an enum gb_operation_status value (which is represented in a
+ * message as a single byte) to an appropriate Linux negative errno.
+ */
+static int gb_operation_status_map(u8 status)
+{
+	switch (status) {
+	case GB_OP_SUCCESS:
+		return 0;
+	case GB_OP_INTERRUPTED:
+		return -EINTR;
+	case GB_OP_TIMEOUT:
+		return -ETIMEDOUT;
+	case GB_OP_NO_MEMORY:
+		return -ENOMEM;
+	case GB_OP_PROTOCOL_BAD:
+		return -EPROTONOSUPPORT;
+	case GB_OP_OVERFLOW:
+		return -EMSGSIZE;
+	case GB_OP_INVALID:
+		return -EINVAL;
+	case GB_OP_RETRY:
+		return -EAGAIN;
+	case GB_OP_NONEXISTENT:
+		return -ENODEV;
+	case GB_OP_MALFUNCTION:
+		return -EILSEQ;
+	case GB_OP_UNKNOWN_ERROR:
+	default:
+		return -EIO;
+	}
+}
+
+/*
+ * Map a Linux errno value (from operation->errno) into the value
+ * that should represent it in a response message status sent
+ * over the wire.  Returns an enum gb_operation_status value (which
+ * is represented in a message as a single byte).
+ */
+static u8 gb_operation_errno_map(int errno)
+{
+	switch (errno) {
+	case 0:
+		return GB_OP_SUCCESS;
+	case -EINTR:
+		return GB_OP_INTERRUPTED;
+	case -ETIMEDOUT:
+		return GB_OP_TIMEOUT;
+	case -ENOMEM:
+		return GB_OP_NO_MEMORY;
+	case -EPROTONOSUPPORT:
+		return GB_OP_PROTOCOL_BAD;
+	case -EMSGSIZE:
+		return GB_OP_OVERFLOW;	/* Could be underflow too */
+	case -EINVAL:
+		return GB_OP_INVALID;
+	case -EAGAIN:
+		return GB_OP_RETRY;
+	case -EILSEQ:
+		return GB_OP_MALFUNCTION;
+	case -ENODEV:
+		return GB_OP_NONEXISTENT;
+	case -EIO:
+	default:
+		return GB_OP_UNKNOWN_ERROR;
+	}
+}
+
 static struct gb_message *svc_gb_msg_alloc(u8 type, size_t payload_size)
 {
 	struct gb_message *msg;
@@ -223,7 +291,7 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 	size_t payload_size = get_gb_payload_size(msg_size);
 	struct gb_operation_msg_hdr hdr;
 	struct svc_op *op;
-	int ret;
+	int ret = 0;
 
 	op = kzalloc(sizeof(*op), GFP_KERNEL);
 	if (!op)
@@ -268,6 +336,7 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 		/* Copy in the original request type and operation id */
 		op->response->header->type |= hdr.type;
 		op->response->header->operation_id = hdr.operation_id;
+		op->response->header->result = gb_operation_errno_map(ret);
 
 		ret = svc_route_msg(dld, cport, op->response);
 		if (ret) {
@@ -395,10 +464,11 @@ svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	msg = op->response;
 	kfree(op);
 
-	/* XXX Check result here? */
 	if (msg->header->result) {
-		svc_gb_msg_free(op->response);
-		return ERR_PTR(-EINVAL);
+		int err = gb_operation_status_map(msg->header->result);
+
+		svc_gb_msg_free(msg);
+		return ERR_PTR(err);
 	}
 
 	return msg;
