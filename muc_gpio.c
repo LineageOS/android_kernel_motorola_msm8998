@@ -152,6 +152,10 @@ static void muc_handle_detection(struct muc_data *cdata)
 		return;
 	}
 
+	/* Power on first when inserted */
+	if (tmp_detected)
+		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
+
 	err = muc_attach_notifier_call_chain((unsigned int)tmp_detected);
 	if (err)
 		pr_err("notification chain failed %d\n", err);
@@ -159,9 +163,8 @@ static void muc_handle_detection(struct muc_data *cdata)
 	pr_debug("%s:%d detected=%d\n", __func__, __LINE__, tmp_detected);
 	switch_set_state(&cdata->muc_detected, tmp_detected);
 
-	if (tmp_detected)
-		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
-	else
+	/* Power off on removal */
+	if (!tmp_detected)
 		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 
 	return;
