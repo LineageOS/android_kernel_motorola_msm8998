@@ -53,9 +53,6 @@ struct muc_svc_hotplug_work {
 	struct gb_svc_intf_hotplug_request hotplug;
 };
 
-#define is_external_interface(i) \
-	((i != MODS_INTF_AP) && (i != MODS_INTF_SVC))
-
 #define MUC_SVC_RESPONSE_TYPE 0
 
 #define SVC_MSG_TIMEOUT 5000
@@ -206,6 +203,8 @@ static int muc_svc_create_dl_dev_sysfs(struct mods_dl_device *mods_dev)
 	if (err)
 		goto put_kobj;
 
+	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ADD);
+
 	return 0;
 
 put_kobj:
@@ -216,11 +215,13 @@ put_kobj:
 
 static void muc_svc_destroy_dl_dev_sysfs(struct mods_dl_device *mods_dev)
 {
-	if (is_external_interface(mods_dev->intf_id)) {
-		sysfs_remove_bin_file(&mods_dev->intf_kobj,
-					&mods_dev->manifest_attr);
-		kobject_put(&mods_dev->intf_kobj);
-	}
+	if (!mods_dev->intf_kobj.state_initialized)
+		return;
+
+	sysfs_remove_bin_file(&mods_dev->intf_kobj,
+				&mods_dev->manifest_attr);
+	kobject_put(&mods_dev->intf_kobj);
+	memset(&mods_dev->intf_kobj, 0, sizeof(mods_dev->intf_kobj));
 }
 
 /*
@@ -856,7 +857,10 @@ muc_svc_get_manifest(struct mods_dl_device *mods_dev, u8 out_cport)
 
 	/* Update with the latest size and notify userspace */
 	mods_dev->manifest_attr.size = mods_dev->manifest_size;
-	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ADD);
+
+	err = muc_svc_create_dl_dev_sysfs(mods_dev);
+	if (err)
+		goto free_manifest;
 
 	return 0;
 
@@ -933,6 +937,8 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	struct gb_message *msg;
 	struct gb_svc_intf_hot_unplug_request unplug;
 
+	muc_svc_destroy_dl_dev_sysfs(mods_dev);
+
 	unplug.intf_id = mods_dev->intf_id;
 
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&unplug,
@@ -989,7 +995,6 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *dev, u8 intf_id)
 {
 	struct mods_dl_device *mods_dev;
-	int err;
 
 	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), intf_id);
 	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
@@ -1002,19 +1007,7 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 
 	mods_nw_add_dl_device(mods_dev);
 
-	/* Sysfs entries only for non AP/SVC interfaces */
-	if (is_external_interface(intf_id)) {
-		err = muc_svc_create_dl_dev_sysfs(mods_dev);
-		if (err)
-			goto free_dev;
-	}
-
 	return mods_dev;
-
-free_dev:
-	kfree(mods_dev);
-
-	return ERR_PTR(err);
 }
 
 struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
@@ -1030,7 +1023,6 @@ EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
-	muc_svc_destroy_dl_dev_sysfs(dev);
 	mods_nw_del_dl_device(dev);
 	kfree(dev->hpw);
 	kfree(dev);
