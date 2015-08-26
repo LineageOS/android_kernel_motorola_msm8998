@@ -201,9 +201,8 @@ mod_attach(struct notifier_block *nb, unsigned long now_present, void *unused)
 			dev_err(&mud->pdev->dev, "Error attaching to SVC\n");
 			mud->present = 0;
 		}
-	}
-
-	/* XXX hook into detach when available */
+	} else
+		mods_dl_dev_detached(mud->dld);
 
 	return NOTIFY_OK;
 }
@@ -332,6 +331,9 @@ static int mods_uart_remove(struct platform_device *pdev)
 {
 	struct mods_uart_data *mud = platform_get_drvdata(pdev);
 	struct tty_struct *tty = mud->tty;
+
+	if (mud->present)
+		mods_dl_dev_detached(mud->dld);
 
 	device_remove_file(&pdev->dev, &dev_attr_ldisc_rel);
 
