@@ -218,10 +218,14 @@ static int muc_spi_message_send(struct mods_dl_device *dld,
 				   uint8_t *buf, size_t len)
 {
 	struct muc_spi_msg *m;
+	struct muc_spi_data *dd = dld_to_dd(dld);
 	int remaining = len;
 	uint8_t *dbuf = (uint8_t *)buf;
 	int pl_size;
 	bool more;
+
+	if (!dd->present)
+		return -ENODEV;
 
 	while (remaining > 0) {
 		m = kzalloc(sizeof(struct muc_spi_msg), GFP_KERNEL);
@@ -236,7 +240,7 @@ static int muc_spi_message_send(struct mods_dl_device *dld,
 		memcpy(m->data, dbuf, pl_size);
 		m->crc16 = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
 
-		muc_spi_transfer(dld_to_dd(dld), (uint8_t *)m, more);
+		muc_spi_transfer(dd, (uint8_t *)m, more);
 
 		remaining -= pl_size;
 		dbuf += pl_size;
