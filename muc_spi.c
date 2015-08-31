@@ -21,6 +21,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #include <linux/spi/spi.h>
+#include <linux/wait.h>
 
 #include "crc.h"
 #include "muc_attach.h"
@@ -34,6 +35,8 @@
 #define HDR_BIT_MORE            (0x01 << 6)
 #define HDR_BIT_RSVD            (0x3F << 0)
 
+#define RDY_TIMEOUT_JIFFIES     (1 * HZ) /* 1 sec */
+
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 struct muc_spi_data {
@@ -42,6 +45,7 @@ struct muc_spi_data {
 	bool present;
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;
+	wait_queue_head_t rdy_wq;
 
 	int gpio_wake_n;
 	int gpio_rdy_n;
@@ -88,7 +92,12 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 
 	if (dd->has_tranceived) {
 		/* Wait for RDY to be deasserted */
-		while (!gpio_get_value(dd->gpio_rdy_n));
+		ret = wait_event_timeout(dd->rdy_wq, gpio_get_value(dd->gpio_rdy_n),
+					 RDY_TIMEOUT_JIFFIES);
+		if (ret <= 0) {
+			dev_err(&dd->spi->dev, "Timeout waiting for rdy to deassert\n");
+			return ret;
+		}
 	}
 	dd->has_tranceived = 1;
 
@@ -102,11 +111,21 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	}
 
 	/* Wait for RDY to be asserted */
-	while (gpio_get_value(dd->gpio_rdy_n));
+	ret = wait_event_timeout(dd->rdy_wq, !gpio_get_value(dd->gpio_rdy_n),
+				 RDY_TIMEOUT_JIFFIES);
 
 	if (!keep_wake) {
 		/* Deassert WAKE */
 		gpio_set_value(dd->gpio_wake_n, 1);
+	}
+
+	/*
+	 * Check that RDY successfully was asserted after wake deassert to ensure
+	 * wake line is deasserted if requested.
+	 */
+	if (ret <= 0) {
+		dev_err(&dd->spi->dev, "Timeout waiting for rdy to assert\n");
+		return ret;
 	}
 
 	ret = spi_sync_transfer(dd->spi, t, 1);
@@ -180,6 +199,16 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static irqreturn_t muc_spi_rdy_isr(int irq, void *data)
+{
+	struct muc_spi_data *dd = data;
+
+	/* Wake up SPI transfer */
+	wake_up(&dd->rdy_wq);
+
+	return IRQ_HANDLED;
+}
+
 static int muc_attach(struct notifier_block *nb,
 		      unsigned long now_present, void *not_used)
 {
@@ -199,13 +228,23 @@ static int muc_attach(struct notifier_block *nb,
 						      IRQF_ONESHOT,
 						      "muc_spi", dd))
 				dev_err(&spi->dev, "%s: Unable to request irq.\n", __func__);
+
+			if (devm_request_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n),
+					     muc_spi_rdy_isr,
+					     IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
+					     "muc_spi_rdy", dd))
+				dev_err(&spi->dev, "%s: Unable to request rdy.\n", __func__);
+
 			dd->has_tranceived = 0;
+
 			err = mods_dl_dev_attached(dd->dld);
 			if (err) {
 				dev_err(&spi->dev, "Error attaching to SVC\n");
+				devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
 				devm_free_irq(&spi->dev, spi->irq, dd);
 			}
 		} else {
+			devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
 			devm_free_irq(&spi->dev, spi->irq, dd);
 			mods_dl_dev_detached(dd->dld);
 		}
@@ -322,6 +361,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	dd->attach_nb.notifier_call = muc_attach;
 	muc_spi_gpio_init(dd);
 	mutex_init(&dd->mutex);
+	init_waitqueue_head(&dd->rdy_wq);
 
 	spi_set_drvdata(spi, dd);
 
