@@ -1235,6 +1235,26 @@ static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
 	return 0;
 }
 
+static int muc_svc_base_sysfs_init(struct muc_svc_data *dd)
+{
+	struct platform_device *pdev = dd->pdev;
+
+	/* Create an 'interfaces' directory in sysfs */
+	dd->intf_kset = kset_create_and_add("mods_interfaces", NULL,
+						&pdev->dev.kobj);
+	if (!dd->intf_kset) {
+		dev_err(&pdev->dev, "Failed to create 'interfaces' sysfs\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void muc_svc_base_sysfs_exit(struct muc_svc_data *dd)
+{
+	kset_unregister(dd->intf_kset);
+}
+
 static int muc_svc_probe(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd;
@@ -1268,12 +1288,10 @@ static int muc_svc_probe(struct platform_device *pdev)
 	atomic_set(&dd->msg_num, 1);
 	INIT_LIST_HEAD(&dd->operations);
 
-	/* Create an 'interfaces' directory in sysfs */
-	dd->intf_kset = kset_create_and_add("mods_interfaces", NULL,
-						&pdev->dev.kobj);
-	if (!dd->intf_kset) {
-		dev_err(&pdev->dev, "Failed to create 'interfaces' sysfs\n");
-		ret = -ENOMEM;
+	/* Create the core sysfs structure */
+	ret = muc_svc_base_sysfs_init(dd);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to create base sysfs\n");
 		goto free_wq;
 	}
 
@@ -1304,7 +1322,7 @@ static int muc_svc_remove(struct platform_device *pdev)
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 
 	muc_svc_remove_ap_filters(dd);
-	kset_unregister(dd->intf_kset);
+	muc_svc_base_sysfs_exit(dd);
 	destroy_workqueue(dd->wq);
 	mods_remove_dl_device(dd->dld);
 
