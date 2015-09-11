@@ -52,6 +52,9 @@ struct mods_dl_device {
 	struct muc_svc_hotplug_work *hpw;
 	char *manifest;
 	__le16 manifest_size;
+
+	__le64 uid_low;
+	__le64 uid_high;
 };
 
 /* interfaces with the svc */

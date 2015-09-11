@@ -45,7 +45,9 @@ struct gb_control_get_ids_response {
 	__le32    unipro_prod_id;
 	__le32    ara_vend_id;
 	__le32    ara_prod_id;
-};
+	__le64    uid_low;
+	__le64    uid_high;
+} __packed;
 
 struct muc_svc_hotplug_work {
 	struct work_struct work;
@@ -74,6 +76,16 @@ static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 		*buf++ = mods_dev->manifest[pos++];
 
 	return count;
+}
+
+static ssize_t serial_show(struct mods_dl_device *dev, char *buf)
+{
+	/* Zero's for the serial number indicate unsupported */
+	if (!dev->uid_low && !dev->uid_high)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%016llX%016llX",
+		dev->uid_high, dev->uid_low);
 }
 
 static ssize_t vid_show(struct mods_dl_device *dev, char *buf)
@@ -135,6 +147,7 @@ struct muc_svc_attribute muc_svc_attr_##_name = {\
 static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
 static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
 static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
+static MUC_SVC_ATTR(serial, 0444, serial_show, NULL);
 
 
 #define to_muc_svc_attr(a) \
@@ -174,6 +187,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_hotplug.attr,
 	&muc_svc_attr_vid.attr,
 	&muc_svc_attr_pid.attr,
+	&muc_svc_attr_serial.attr,
 	NULL,
 };
 
@@ -734,7 +748,7 @@ muc_svc_probe_ap(struct mods_dl_device *dld, uint8_t ap_intf_id)
 static int
 muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 			struct gb_svc_intf_hotplug_request *hotplug,
-			u8 out_cport)
+			struct mods_dl_device *mods_dev)
 {
 	struct gb_control_get_ids_response *ids;
 	struct muc_svc_data *dd = dld_get_dd(dld);
@@ -742,7 +756,7 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 
 	/* GET_IDs has no payload */
 	msg = svc_gb_msg_send_sync(dld, NULL, GB_CONTROL_TYPE_GET_IDS, 0,
-				   out_cport);
+				   mods_dev->intf_id);
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to get GET_IDS\n");
 		return PTR_ERR(msg);
@@ -755,9 +769,15 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	hotplug->data.ara_vend_id = le32_to_cpu(ids->ara_vend_id);
 	hotplug->data.ara_prod_id = le32_to_cpu(ids->ara_prod_id);
 
+	/* Save interface device specific data */
+	mods_dev->uid_low = le64_to_cpu(ids->uid_low);
+	mods_dev->uid_high = le64_to_cpu(ids->uid_high);
+
 	dev_info(&dd->pdev->dev, "UNIPRO_IDS: %x:%x ARA_IDS: %x:%x\n",
 		hotplug->data.unipro_mfg_id, hotplug->data.unipro_prod_id,
 		hotplug->data.ara_vend_id, hotplug->data.ara_prod_id);
+	dev_info(&dd->pdev->dev, "MOD SERIAL: %016llX%016llX\n",
+		mods_dev->uid_high, mods_dev->uid_low);
 
 	svc_gb_msg_free(msg);
 
@@ -893,8 +913,7 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 	}
 
 	/* Get the hotplug IDs */
-	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug,
-					mods_dev->intf_id);
+	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug, mods_dev);
 	if (ret)
 		goto free_route;
 
