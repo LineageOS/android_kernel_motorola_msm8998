@@ -45,5 +45,20 @@ void muc_intr_destroy(struct muc_data *cdata, struct device *dev);
 /* Global variables */
 extern struct muc_data *muc_misc_data;
 
+/* Driver Initializations */
+int muc_spi_init(void);
+void muc_spi_exit(void);
+
+int muc_core_init(void);
+void muc_core_exit(void);
+
+int mods_uart_init(void);
+void mods_uart_exit(void);
+
+int muc_svc_init(void);
+void muc_svc_exit(void);
+
+int mods_ap_init(void);
+void mods_ap_exit(void);
 #endif  /* __MUC_H__ */
 

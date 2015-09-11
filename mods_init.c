@@ -15,20 +15,7 @@
 
 #include <linux/module.h>
 
-extern int muc_core_init(void);
-extern void muc_core_exit(void);
-
-extern int muc_spi_init(void);
-extern void muc_spi_exit(void);
-
-extern int mods_uart_init(void);
-extern void mods_uart_exit(void);
-
-extern int muc_svc_init(void);
-extern void muc_svc_exit(void);
-
-extern int mods_ap_init(void);
-extern void mods_ap_exit(void);
+#include "muc.h"
 
 static int __init mods_init(void)
 {
