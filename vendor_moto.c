@@ -27,9 +27,10 @@ struct gb_vendor_moto {
 #define	GB_VENDOR_MOTO_VERSION_MINOR		0x01
 
 /* Greybus Motorola vendor specific request types */
-#define	GB_VENDOR_MOTO_TYPE_CHARGE_BASE		0x02
-#define	GB_VENDOR_MOTO_TYPE_GET_DMESG		0x03
-#define	GB_VENDOR_MOTO_TYPE_GET_LAST_DMESG	0x04
+#define	GB_VENDOR_MOTO_TYPE_CHARGE_BASE			0x02
+#define	GB_VENDOR_MOTO_TYPE_GET_DMESG			0x03
+#define	GB_VENDOR_MOTO_TYPE_GET_LAST_DMESG		0x04
+#define	GB_VENDOR_MOTO_TYPE_GET_PWR_UP_REASON	0x05
 
 /*
  * This is slightly less than max greybus payload size to allow for headers
@@ -41,9 +42,15 @@ struct gb_vendor_moto_charge_base_request {
 	__u8	enable;
 };
 
+/* get (last) dmesg request has no payload */
 struct gb_vendor_moto_dmesg_response {
 	char	buf[GB_VENDOR_MOTO_DMESG_SIZE];
 };
+
+/* power up reason request has no payload */
+struct gb_vendor_moto_pwr_up_reason_response {
+	__le32	reason;
+} __packed;
 
 static ssize_t do_get_dmesg(struct device *dev, struct device_attribute *attr,
 			    char *buf, int type)
@@ -82,9 +89,27 @@ static ssize_t last_dmesg_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(last_dmesg);
 
+static ssize_t pwr_up_reason_show(struct device *dev,
+			          struct device_attribute *attr, char *buf)
+{
+	struct gb_vendor_moto *gb = dev_get_drvdata(dev);
+	struct gb_vendor_moto_pwr_up_reason_response rsp;
+	int ret;
+
+	ret = gb_operation_sync(gb->connection,
+				GB_VENDOR_MOTO_TYPE_GET_PWR_UP_REASON,
+				NULL, 0, &rsp, sizeof(rsp));
+	if (ret)
+		return ret;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%08X\n", le32_to_cpu(rsp.reason));
+}
+static DEVICE_ATTR_RO(pwr_up_reason);
+
 static struct attribute *vendor_attrs[] = {
 	&dev_attr_dmesg.attr,
 	&dev_attr_last_dmesg.attr,
+	&dev_attr_pwr_up_reason.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(vendor);
