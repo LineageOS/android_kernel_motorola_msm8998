@@ -22,6 +22,7 @@
 
 #include "greybus.h"
 
+#include "muc.h"
 #include "muc_svc.h"
 #include "mods_nw.h"
 
@@ -39,6 +40,9 @@ struct muc_svc_data {
 	u16 endo_mask;
 };
 struct muc_svc_data *svc_dd;
+
+/* Special Control Message to reboot an interface */
+#define GB_CONTROL_TYPE_REBOOT_FLASH 0x7e
 
 /* Special Control Message to get IDs */
 #define GB_CONTROL_TYPE_GET_IDS 0x7f
@@ -1304,9 +1308,80 @@ static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
 	return 0;
 }
 
+static int muc_svc_send_reboot(struct mods_dl_device *mods_dev)
+{
+	int ret;
+
+	ret = muc_svc_create_control_route(mods_dev->intf_id);
+	if (ret)
+		return ret;
+
+	ret = svc_gb_msg_send_no_resp(svc_dd->dld, NULL,
+				GB_CONTROL_TYPE_REBOOT_FLASH, 0,
+				mods_dev->intf_id);
+
+	muc_svc_destroy_control_route(mods_dev->intf_id);
+
+	return ret;
+}
+
+static int muc_svc_enter_fw_flash(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct muc_svc_data *dd = platform_get_drvdata(pdev);
+	struct mods_dl_device *mods_dev;
+
+	/* Need to generate a hot unplug for each interface and then
+	 * issue the reboot command */
+	list_for_each_entry(mods_dev, &dd->ext_intf, list) {
+		muc_svc_generate_unplug(mods_dev);
+
+		/* XXX What to do if a single interface fails? Clear the
+		 * other ones?
+		 */
+		if (muc_svc_send_reboot(mods_dev))
+			dev_warn(dev, "INTF: %d, failed to enter flashmode\n",
+				mods_dev->intf_id);
+	}
+
+	/* Reset the muc, to trigger the tear-down and re-init */
+	muc_reset();
+
+	return 0;
+}
+
+static ssize_t flashmode_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val != 1) {
+		dev_err(dev, "Invalid FLASH Mode\n");
+		return -EINVAL;
+	}
+
+	dev_info(dev, "Entering FLASH mode\n");
+	if (muc_svc_enter_fw_flash(dev))
+		return -EINVAL;
+
+	return count;
+}
+static DEVICE_ATTR_WO(flashmode);
+
+static struct attribute *muc_svc_base_attrs[] = {
+	&dev_attr_flashmode.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(muc_svc_base);
+
 static int muc_svc_base_sysfs_init(struct muc_svc_data *dd)
 {
 	struct platform_device *pdev = dd->pdev;
+	int ret;
 
 	/* Create an 'interfaces' directory in sysfs */
 	dd->intf_kset = kset_create_and_add("mods_interfaces", NULL,
@@ -1316,11 +1391,24 @@ static int muc_svc_base_sysfs_init(struct muc_svc_data *dd)
 		return -ENOMEM;
 	}
 
+	ret = sysfs_create_groups(&pdev->dev.kobj, muc_svc_base_groups);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to create base sysfs attr\n");
+		goto free_kset;
+	}
+
 	return 0;
+
+free_kset:
+	kset_unregister(dd->intf_kset);
+	dd->intf_kset = NULL;
+
+	return ret;
 }
 
 static void muc_svc_base_sysfs_exit(struct muc_svc_data *dd)
 {
+	sysfs_remove_groups(&dd->pdev->dev.kobj, muc_svc_base_groups);
 	kset_unregister(dd->intf_kset);
 }
 
