@@ -33,6 +33,8 @@ struct muc_svc_data {
 	struct workqueue_struct *wq;
 	struct kset *intf_kset;
 
+	struct list_head ext_intf;
+
 	bool authenticate;
 	u16 endo_mask;
 };
@@ -993,6 +995,8 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 
 	unplug.intf_id = mods_dev->intf_id;
 
+	list_del(&mods_dev->list);
+
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&unplug,
 					GB_SVC_TYPE_INTF_HOT_UNPLUG,
 					sizeof(unplug), GB_SVC_CPORT_ID);
@@ -1032,7 +1036,11 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		return 0;
 	}
 
-	return muc_svc_generate_hotplug(mods_dev);
+	err = muc_svc_generate_hotplug(mods_dev);
+	if (!err)
+		list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
+
+	return err;
 
 free_ap_to_svc:
 	mods_nw_del_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
@@ -1308,6 +1316,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 	dd->pdev = pdev;
 	atomic_set(&dd->msg_num, 1);
 	INIT_LIST_HEAD(&dd->operations);
+	INIT_LIST_HEAD(&dd->ext_intf);
 
 	/* Create the core sysfs structure */
 	ret = muc_svc_base_sysfs_init(dd);
