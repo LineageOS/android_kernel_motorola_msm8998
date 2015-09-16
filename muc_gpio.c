@@ -20,6 +20,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/slab.h>
 
 #include "muc.h"
 
@@ -249,12 +250,18 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 {
 	int ret;
 
+	cdata->wq = alloc_workqueue("muc_reset", WQ_UNBOUND, 1);
+	if (!cdata->wq) {
+		dev_err(dev, "Failed to create reset workqueue\n");
+		return -ENOMEM;
+	}
+
 	/* Mandatory configuration */
 	ret = muc_gpio_setup(cdata, dev);
 	if (ret) {
 		dev_err(dev, "%s:%d: failed to read gpios.\n",
 			__func__, __LINE__);
-		return ret;
+		goto freewq;
 	}
 
 	/* Optional configuration */
@@ -287,10 +294,46 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 	muc_handle_detection(cdata);
 
 	return 0;
+
+freewq:
+	destroy_workqueue(cdata->wq);
+
+	return ret;
 }
 
 void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 {
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+	destroy_workqueue(cdata->wq);
+}
+
+struct muc_reset_work {
+	struct work_struct work;
+};
+
+static void muc_reset_do_work(struct work_struct *work)
+{
+	muc_attach_notifier_call_chain(0);
+	/* XXX suSleep revived. Early mods won't have a way to detect
+	 * a reset. So we just sleep for now. This shall be replaced
+	 * with a completion mechanism and tie into the 'removal'
+	 * interrupt.... or more than likely live forever in here.
+	 */
+	msleep(2000);
+	muc_attach_notifier_call_chain(1);
+
+	kfree(work);
+}
+
+void muc_reset(void)
+{
+	struct muc_reset_work *reset;
+
+	reset = kmalloc(sizeof(*reset), GFP_KERNEL);
+	if (!reset)
+		return;
+
+	INIT_WORK(&reset->work, muc_reset_do_work);
+	queue_work(muc_misc_data->wq, &reset->work);
 }
