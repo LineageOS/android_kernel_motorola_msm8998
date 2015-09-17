@@ -222,26 +222,33 @@ static int muc_attach(struct notifier_block *nb,
 		dd->present = now_present;
 
 		if (now_present) {
-			if (devm_request_threaded_irq(&spi->dev, spi->irq,
-						      NULL, muc_spi_isr,
-						      IRQF_TRIGGER_LOW |
-						      IRQF_ONESHOT,
-						      "muc_spi", dd))
-				dev_err(&spi->dev, "%s: Unable to request irq.\n", __func__);
+			err = devm_request_threaded_irq(&spi->dev, spi->irq,
+							NULL, muc_spi_isr,
+							IRQF_TRIGGER_LOW |
+							IRQF_ONESHOT,
+							"muc_spi", dd);
+			if (err) {
+				dev_err(&spi->dev, "Unable to request irq.\n");
+				goto set_missing;
+			}
 
-			if (devm_request_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n),
-					     muc_spi_rdy_isr,
-					     IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
-					     "muc_spi_rdy", dd))
-				dev_err(&spi->dev, "%s: Unable to request rdy.\n", __func__);
+			err = devm_request_irq(&spi->dev,
+					       gpio_to_irq(dd->gpio_rdy_n),
+					       muc_spi_rdy_isr,
+					       IRQF_TRIGGER_RISING |
+					       IRQF_TRIGGER_FALLING,
+					       "muc_spi_rdy", dd);
+			if (err) {
+				dev_err(&spi->dev, "Unable to request rdy.\n");
+				goto free_irq;
+			}
 
 			dd->has_tranceived = 0;
 
 			err = mods_dl_dev_attached(dd->dld);
 			if (err) {
 				dev_err(&spi->dev, "Error attaching to SVC\n");
-				devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
-				devm_free_irq(&spi->dev, spi->irq, dd);
+				goto free_rdy;
 			}
 		} else {
 			devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
@@ -249,6 +256,15 @@ static int muc_attach(struct notifier_block *nb,
 			mods_dl_dev_detached(dd->dld);
 		}
 	}
+	return NOTIFY_OK;
+
+free_rdy:
+	devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
+free_irq:
+	devm_free_irq(&spi->dev, spi->irq, dd);
+set_missing:
+	dd->present = 0;
+
 	return NOTIFY_OK;
 }
 
