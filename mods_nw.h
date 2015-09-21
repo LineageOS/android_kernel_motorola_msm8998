@@ -56,6 +56,7 @@ struct mods_dl_device {
 
 	__le64 uid_low;
 	__le64 uid_high;
+	__le32 fw_version;
 };
 
 struct mods_nw_msg_filter {

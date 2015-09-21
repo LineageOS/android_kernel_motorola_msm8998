@@ -60,6 +60,7 @@ struct gb_control_get_ids_response {
 	__le32    ara_prod_id;
 	__le64    uid_low;
 	__le64    uid_high;
+	__le32    fw_version;
 } __packed;
 
 struct muc_svc_hotplug_work {
@@ -89,6 +90,11 @@ static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 		*buf++ = mods_dev->manifest[pos++];
 
 	return count;
+}
+
+static ssize_t fw_version_show(struct mods_dl_device *dev, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "0x%08X", dev->fw_version);
 }
 
 static ssize_t serial_show(struct mods_dl_device *dev, char *buf)
@@ -173,6 +179,7 @@ static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
 static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
 static MUC_SVC_ATTR(serial, 0444, serial_show, NULL);
 static MUC_SVC_ATTR(uevent, 0200, NULL, uevent_store);
+static MUC_SVC_ATTR(fw_version, 0444, fw_version_show, NULL);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -213,6 +220,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_pid.attr,
 	&muc_svc_attr_serial.attr,
 	&muc_svc_attr_uevent.attr,
+	&muc_svc_attr_fw_version.attr,
 	NULL,
 };
 
@@ -998,6 +1006,7 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	/* Save interface device specific data */
 	mods_dev->uid_low = le64_to_cpu(ids->uid_low);
 	mods_dev->uid_high = le64_to_cpu(ids->uid_high);
+	mods_dev->fw_version = le32_to_cpu(ids->fw_version);
 
 	dev_info(&dd->pdev->dev, "UNIPRO_IDS: %x:%x ARA_IDS: %x:%x\n",
 		hotplug->data.unipro_mfg_id, hotplug->data.unipro_prod_id,
