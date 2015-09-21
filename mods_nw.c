@@ -34,6 +34,8 @@
 struct dest_entry {
 	struct mods_dl_device *dev;
 	u8 cport;
+	u8 protocol_id;
+	u8 protocol_valid:1;
 };
 
 struct cport_set {
@@ -77,6 +79,8 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	int err = 0;
 	struct cport_set *from_cset;
 	struct mods_dl_device *to_dev;
+	uint8_t protocol;
+	bool proto_found = false;
 
 	BUG_ON(from_intf >= CONFIG_MODS_DEV_MAX);
 	BUG_ON(to_intf >= CONFIG_MODS_DEV_MAX);
@@ -85,9 +89,27 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 
 	from_cset = &routes[from_intf];
 	to_dev = routes[to_intf].dev;
+	if (from_cset->dev && from_cset->dev->drv->get_protocol) {
+		if (!from_cset->dev->drv->get_protocol(from_cport, &protocol)) {
+			from_cset->dest[from_cport].protocol_valid = true;
+			from_cset->dest[from_cport].protocol_id = protocol;
+			pr_debug("added %d:%d and %d:%d with protocol %d\n",
+				from_intf, from_cport, to_intf, to_cport,
+				protocol);
+			proto_found = true;
+		} else {
+			pr_err("Failed to find protocol for cport %d\n",
+				from_cport);
+		}
+	}
+
 	if (from_cset->dev && to_dev) {
 		from_cset->dest[from_cport].cport = to_cport;
 		from_cset->dest[from_cport].dev = routes[to_intf].dev;
+		if (proto_found) {
+			routes[to_intf].dest[to_cport].protocol_id = protocol;
+			routes[to_intf].dest[to_cport].protocol_valid = true;
+		}
 	} else {
 		pr_err("unable to add route %u:%u -> %u:%u\n",
 			from_intf, from_cport, to_intf, to_cport);

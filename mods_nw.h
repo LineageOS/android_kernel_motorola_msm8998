@@ -37,6 +37,7 @@ struct mods_dl_driver {
 	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
 			size_t size);
 	void (*message_cancel)(void *cookie);
+	int (*get_protocol)(uint8_t cport_id, uint8_t *protocol);
 };
 
 struct mods_dl_device {
