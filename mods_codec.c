@@ -14,6 +14,9 @@
 #include <sound/tlv.h>
 #include "audio.h"
 
+#define MODS_VOL_STEP		50
+#define MODS_MIN_VOL		-12750
+
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
 	atomic_t pcm_triggered;
@@ -21,6 +24,51 @@ struct mods_codec_dai {
 	struct workqueue_struct	*workqueue;
 	struct work_struct work;
 	struct snd_pcm_substream *substream;
+	struct snd_soc_codec *codec;
+	uint32_t vol_step;
+	uint8_t use_case;
+	int sys_vol_step;
+};
+
+/* declare 0 to -127.5 vol range with step 0.5 db */
+static const DECLARE_TLV_DB_SCALE(mods_tlv_0_5, \
+											MODS_MIN_VOL, MODS_VOL_STEP, 0);
+static const DECLARE_TLV_DB_SCALE(mods_sys_tlv_0_5, \
+											MODS_MIN_VOL, MODS_VOL_STEP, 0);
+
+static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_get_usecase(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_get_vol(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_get_sys_vol(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+
+static const char *const mods_use_case[] = {
+	"None",
+	"Music",
+	"Voice",
+	"Low Latency",
+};
+
+static const struct soc_enum mods_codec_enum[] = {
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(mods_use_case), mods_use_case),
+};
+
+static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
+	SOC_SINGLE_EXT_TLV("Mods Codec Volume", SND_SOC_NOPM,
+			0, 0xff, 0, mods_codec_get_vol, mods_codec_set_vol, mods_tlv_0_5),
+	SOC_SINGLE_EXT_TLV("Mods Codec System Volume", SND_SOC_NOPM,
+			0, 0xff, 0, mods_codec_get_sys_vol, mods_codec_set_sys_vol,
+				mods_sys_tlv_0_5),
+	SOC_ENUM_EXT("Mods Set Use Case", mods_codec_enum[0],
+				mods_codec_get_usecase,
+				mods_codec_set_usecase),
 };
 
 static void mods_codec_work(struct work_struct *work)
@@ -39,44 +87,164 @@ static void mods_codec_work(struct work_struct *work)
 
 	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
 
-		if (snd_dev && snd_dev->mgmt_connection &&
-					(snd_dev->i2s_rx_connection || snd_dev->i2s_tx_connection)) {
-			if (priv->substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-				port = snd_dev->i2s_tx_connection->intf_cport_id;
+		if (!snd_dev || !snd_dev->mgmt_connection)
+			continue;
+		if (!snd_dev->i2s_rx_connection && !snd_dev->i2s_tx_connection)
+			continue;
+
+		if (priv->substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			port = snd_dev->i2s_tx_connection->intf_cport_id;
+		else
+			port = snd_dev->i2s_rx_connection->intf_cport_id;
+
+		if (!snd_dev->cport_active &&
+			atomic_read(&priv->pcm_triggered)) {
+			pr_debug("%s(): activate snd dev i2s port: %d\n",
+					__func__, port);
+			err = gb_i2s_mgmt_activate_cport(snd_dev->mgmt_connection,
+					port);
+			if (err)
+				pr_err("%s() failed to activate I2S port %d\n",
+					__func__, port);
 			else
-				port = snd_dev->i2s_rx_connection->intf_cport_id;
-
-			if (!snd_dev->cport_active &&
-					atomic_read(&priv->pcm_triggered)) {
-				pr_debug("%s(): activate snd dev i2s port: %d\n",
-						__func__, port);
-				err = gb_i2s_mgmt_activate_cport(snd_dev->mgmt_connection,
+				snd_dev->cport_active = true;
+		} else if (snd_dev->cport_active &&
+				!atomic_read(&priv->pcm_triggered)) {
+			pr_debug("%s(): deactivate snd dev i2s port: %d\n",
+					__func__, port);
+			err = gb_i2s_mgmt_deactivate_cport(snd_dev->mgmt_connection,
 						port);
-				if (err)
-					pr_err("%s() failed to activate I2S port %d\n",
-						__func__, port);
-				else
-					snd_dev->cport_active = true;
-			} else if (snd_dev->cport_active &&
-					!atomic_read(&priv->pcm_triggered)) {
-				pr_debug("%s(): deactivate snd dev i2s port: %d\n",
-						__func__, port);
-				err = gb_i2s_mgmt_deactivate_cport(snd_dev->mgmt_connection,
-							port);
-				if (err)
-					pr_err("%s() failed to deactivate I2S port %d\n",
-							__func__, port);
-					else
-						snd_dev->cport_active = false;
-
-			}
+			if (err)
+				pr_err("%s() failed to deactivate I2S port %d\n",
+					__func__, port);
+			else
+				snd_dev->cport_active = false;
 		}
 	}
 }
 
+static int mods_codec_get_usecase(struct snd_kcontrol *kcontrol,
+					  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = priv->use_case;
+
+	return 0;
+}
+
+static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+	struct gb_snd *snd_dev;
+	uint8_t use_case = ucontrol->value.integer.value[0];
+	int ret;
+
+	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
+
+		if (!snd_dev || !snd_dev->mods_aud_connection || !use_case)
+			continue;
+		if (snd_dev->use_cases->use_cases & BIT(use_case)) {
+			ret = gb_mods_aud_set_supported_usecase(
+						snd_dev->mods_aud_connection,
+						BIT(use_case));
+			if (ret) {
+				pr_err("%s: failed to set mods codec use case\n", __func__);
+				return -EIO;
+			}
+			priv->use_case = use_case;
+		}
+	}
+
+	return 0;
+}
+
+static int mods_codec_get_vol(struct snd_kcontrol *kcontrol,
+					  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+
+	/* should we read vol step from remote end instead of cached value ?*/
+	ucontrol->value.integer.value[0] = priv->vol_step;
+
+	return 0;
+}
+
+static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+	struct gb_snd *snd_dev;
+	uint32_t mods_vol_step;
+	int ret;
+	uint32_t vol_step = ucontrol->value.integer.value[0];
+
+	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
+
+		if (!snd_dev || !snd_dev->mods_aud_connection || !snd_dev->vol_range)
+			continue;
+		/* calculate remote codec vol step */
+		mods_vol_step = (vol_step*MODS_VOL_STEP)/(snd_dev->vol_range->vol_range.step);
+		ret = gb_mods_aud_set_vol(snd_dev->mods_aud_connection, mods_vol_step);
+		if (ret) {
+			pr_err("%s: failed to set mods codec volume\n", __func__);
+			return -EIO;
+		}
+		priv->vol_step = mods_vol_step;
+	}
+	return 0;
+}
+
+
+static int mods_codec_get_sys_vol(struct snd_kcontrol *kcontrol,
+					  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = priv->sys_vol_step;
+
+	return 0;
+}
+
+static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+	struct gb_snd *snd_dev;
+	int mods_vol_db;
+	int ret;
+	uint32_t vol_step = ucontrol->value.integer.value[0];
+
+	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
+
+		if (!snd_dev || !snd_dev->mods_aud_connection)
+			continue;
+		/* calculate remote codec vol db */
+		mods_vol_db = (vol_step*MODS_VOL_STEP);
+		ret = gb_mods_aud_set_sys_vol(snd_dev->mods_aud_connection,
+				mods_vol_db);
+		if (ret) {
+			pr_err("%s: failed to set mods codec sys volume\n", __func__);
+			return -EIO;
+		}
+		priv->sys_vol_step = vol_step;
+	}
+	return 0;
+}
+
 static int mods_codec_hw_params(struct snd_pcm_substream *substream,
-			     struct snd_pcm_hw_params *params,
-			     struct snd_soc_dai *dai)
+				 struct snd_pcm_hw_params *params,
+				 struct snd_soc_dai *dai)
 {
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
@@ -91,7 +259,8 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 
 	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
 		if (snd_dev && snd_dev->mgmt_connection) {
-			err = gb_i2s_mgmt_set_cfg(snd_dev, rate, chans, bytes_per_chan, is_le);
+			err = gb_i2s_mgmt_set_cfg(snd_dev, rate, chans,
+							bytes_per_chan, is_le);
 			if (!err)
 				priv->is_params_set = true;
 		}
@@ -104,6 +273,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 				struct snd_soc_dai *dai)
 {
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
+
 	priv->substream = substream;
 
 	switch (cmd) {
@@ -159,9 +329,14 @@ static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
 
 static int mods_codec_probe(struct snd_soc_codec *codec)
 {
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+
+	priv->codec = codec;
 
 	snd_soc_dapm_add_routes(&codec->dapm, mods_codec_dapm_routes,
 			ARRAY_SIZE(mods_codec_dapm_routes));
+	snd_soc_add_codec_controls(codec, mods_codec_snd_controls,
+				 ARRAY_SIZE(mods_codec_snd_controls));
 	snd_soc_dapm_sync(&codec->dapm);
 
 	pr_info("mods codec probed\n");
@@ -207,7 +382,7 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 	struct mods_codec_dai *priv;
 
 	priv = devm_kzalloc(&pdev->dev, sizeof(struct mods_codec_dai),
-			       GFP_KERNEL);
+				GFP_KERNEL);
 	if (priv == NULL)
 		return -ENOMEM;
 

@@ -26,6 +26,7 @@
 
 #define GB_AUDIO_DATA_DRIVER_NAME		"gb_audio_data"
 #define GB_AUDIO_MGMT_DRIVER_NAME		"gb_audio_mgmt"
+#define GB_MODS_AUDIO_DRIVER_NAME		"gb_mods_audio"
 
 #define RT5647_I2C_ADAPTER_NR			6
 #define RT5647_I2C_ADDR				0x1b
@@ -322,6 +323,73 @@ err_free_snd_dev:
 	return ret;
 }
 
+static int gb_mods_audio_connection_init(struct gb_connection *connection)
+{
+	struct gb_snd *snd_dev;
+	unsigned long flags;
+	struct gb_audio_get_volume_db_range_response *get_vol;
+	struct gb_audio_get_supported_usecases_response *get_use_cases;
+	int ret;
+
+	snd_dev = gb_get_snd(connection->bundle->id);
+	if (!snd_dev)
+		return -ENOMEM;
+
+	spin_lock_irqsave(&snd_dev->lock, flags);
+	snd_dev->mods_aud_connection = connection;
+	connection->private = snd_dev;
+	spin_unlock_irqrestore(&snd_dev->lock, flags);
+
+	get_vol = kmalloc(sizeof(*get_vol), GFP_KERNEL);
+	if (!get_vol) {
+		ret = -ENOMEM;
+		goto free_snd_dev;
+	}
+	ret = gb_mods_aud_get_vol_range(get_vol, connection);
+	if (ret) {
+		dev_err(&connection->dev, "failed to get aud dev vol range: %d\n", ret);
+		goto free_get_vol;
+	}
+	snd_dev->vol_range = get_vol;
+
+	get_use_cases = kmalloc(sizeof(*get_use_cases), GFP_KERNEL);
+	if (!get_use_cases) {
+		ret = -ENOMEM;
+		goto set_vol_null;
+	}
+	ret = gb_mods_aud_get_supported_usecase(get_use_cases,
+						  connection);
+	if (ret) {
+		dev_err(&connection->dev, "failed to get aud dev supp usecases %d\n", ret);
+		goto free_use_case;
+	}
+	snd_dev->use_cases = get_use_cases;
+	return 0;
+
+free_use_case:
+	kfree(get_use_cases);
+set_vol_null:
+	snd_dev->vol_range = NULL;
+free_get_vol:
+	kfree(get_vol);
+free_snd_dev:
+	gb_free_snd(snd_dev);
+	return ret;
+}
+
+static void gb_mods_audio_connection_exit(struct gb_connection *connection)
+{
+	struct gb_snd *snd_dev;
+
+	snd_dev = (struct gb_snd *)connection->private;
+	kfree(snd_dev->vol_range);
+	snd_dev->vol_range = NULL;
+	kfree(snd_dev->use_cases);
+	snd_dev->use_cases = NULL;
+	snd_dev->mods_aud_connection = NULL;
+	gb_free_snd(snd_dev);
+}
+
 static void gb_i2s_mgmt_connection_exit(struct gb_connection *connection)
 {
 	struct gb_snd *snd_dev = (struct gb_snd *)connection->private;
@@ -443,6 +511,15 @@ static struct gb_protocol gb_i2s_mgmt_protocol = {
 	.request_recv		= gb_i2s_mgmt_report_event_recv,
 };
 
+static struct gb_protocol gb_mods_audio_protocol = {
+	.name			= GB_MODS_AUDIO_DRIVER_NAME,
+	.id			= GREYBUS_PROTOCOL_MODS_AUDIO,
+	.major			= 0,
+	.minor			= 1,
+	.connection_init	= gb_mods_audio_connection_init,
+	.connection_exit	= gb_mods_audio_connection_exit,
+	.request_recv		= NULL,
+};
 
 /*
  * This is the basic hook get things initialized and registered w/ gb
@@ -462,6 +539,12 @@ int gb_audio_protocol_init(void)
 	if (err) {
 		pr_err("Can't register Audio protocol driver: %d\n", -err);
 		goto err_unregister_i2s_mgmt;
+	}
+
+	err = gb_protocol_register(&gb_mods_audio_protocol);
+	if (err) {
+		pr_err("Can't register mods Audio protocol: %d\n", -err);
+		goto err_unregister_mods_aud;
 	}
 
 	err = platform_driver_register(&gb_audio_plat_driver);
@@ -489,6 +572,8 @@ int gb_audio_protocol_init(void)
 err_unregister_pcm:
 	platform_driver_unregister(&gb_audio_plat_driver);
 err_unregister_plat:
+	gb_protocol_deregister(&gb_mods_audio_protocol);
+err_unregister_mods_aud:
 	gb_protocol_deregister(&gb_i2s_receiver_protocol);
 err_unregister_i2s_mgmt:
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);

@@ -655,6 +655,76 @@ struct gb_i2s_send_data_request {
 } __packed;
 /* send data has no response at all */
 
+/* Mods Audio protocol*/
+
+/* Commands */
+#define GB_AUDIO_GET_VOLUME_DB_RANGE        0x02
+#define GB_AUDIO_GET_SUPPORTED_USE_CASES    0x03
+#define GB_AUDIO_SET_USE_CASE               0x04
+#define GB_AUDIO_SET_VOLUME                 0x05
+#define GB_AUDIO_SET_SYSTEM_VOLUME          0x06
+
+/* use cases bit mask*/
+
+/* Music */
+#define GB_AUDIO_MUSIC_USE_CASE         BIT(0x1)
+/* voice call */
+#define GB_AUDIO_VOICE_CALL_SPKR_USE_CASE   BIT(0x2)
+/* Low latency stream use cases (ringer, alarm, system sounds ..) which demand min processing delay*/
+#define GB_AUDIO_LOW_LATENCY_USE_CASE   BIT(0x3)
+
+/* version request has no payload */
+struct gb_audio_proto_version_response {
+    __u8    major;
+    __u8    minor;
+} __packed;
+
+/* Audio bundle will indicate supported use cases to help
+ * host make routing decisions.
+ * Remote audio bundle should support Music use case at minimum.
+ * Remote audio bundle will indicate support for voice call speaker phone
+ * use case if it supports either of the three cases
+ *  1) echo cancellation on chip,
+ *  2) capable of looping back output signal to host
+ *  3) no non linear processing, in this case HOST can use internal signal for echo cancellation
+ * Remote audio bundle will indicate support for low latency use case if it supports max processing
+ * delay required.
+*/
+
+struct gb_audio_get_supported_usecases_response {
+    __u8                    use_cases;
+} __packed;
+
+struct gb_aud_vol_range {
+    __le32 min;
+    __le32 step;
+} __packed;
+
+/* get volume range min, max and volume step in DB */
+struct gb_audio_get_volume_db_range_response {
+      struct gb_aud_vol_range vol_range;
+} __packed;
+
+/* get current volume step of the audio device */
+struct gb_audio_get_volume_step_response {
+    __le32                  vol_step;
+} __packed;
+
+/* set current use case */
+struct gb_audio_set_use_case_request {
+    __u8                    use_case;
+} __packed;
+
+/* set volume */
+struct gb_audio_set_volume_db_request {
+    __le32                  vol_step;
+} __packed;
+
+/* set system volume peak db */
+struct gb_audio_set_system_volume_db_request {
+    __le32                  vol_db;
+} __packed;
+
 /* SPI */
 
 /* Version of the Greybus spi protocol we support */

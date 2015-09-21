@@ -53,8 +53,11 @@ struct gb_snd {
 	struct gb_connection		*mgmt_connection;
 	struct gb_connection		*i2s_tx_connection;
 	struct gb_connection		*i2s_rx_connection;
+	struct gb_connection		*mods_aud_connection;
 	struct gb_i2s_mgmt_get_supported_configurations_response
 					*i2s_configs;
+	struct gb_audio_get_volume_db_range_response *vol_range;
+	struct gb_audio_get_supported_usecases_response *use_cases;
 	char				*send_data_req_buf;
 	long				send_data_sample_count;
 	int				gb_bundle_id;
@@ -105,7 +108,19 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd *snd_dev, int rate, int chans,
 int gb_i2s_send_data(struct gb_connection *connection, void *req_buf,
 				void *source_addr, size_t len, int sample_num);
 
-
+/* GB Mods Audio Cmd functions */
+int gb_mods_aud_get_vol_range(
+			struct gb_audio_get_volume_db_range_response *vol,
+			struct gb_connection *connection);
+int gb_mods_aud_get_supported_usecase(
+			struct gb_audio_get_supported_usecases_response *usecase,
+			struct gb_connection *connection);
+int gb_mods_aud_set_vol(struct gb_connection *connection,
+			uint32_t vol_step);
+int gb_mods_aud_set_sys_vol(struct gb_connection *connection,
+			int vol_db);
+int gb_mods_aud_set_supported_usecase(struct gb_connection *connection,
+			uint8_t usecase);
 /*
  * GB PCM hooks
  */

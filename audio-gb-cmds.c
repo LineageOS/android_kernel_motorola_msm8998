@@ -186,3 +186,75 @@ int gb_i2s_send_data(struct gb_connection *connection,
 				(void *) gb_req, SEND_DATA_BUF_LEN, NULL, 0);
 	return ret;
 }
+
+int gb_mods_aud_get_vol_range(
+			struct gb_audio_get_volume_db_range_response *get_vol,
+			struct gb_connection *connection)
+{
+	int ret;
+	size_t size = sizeof(*get_vol);
+
+	ret = gb_operation_sync(connection,
+				 GB_AUDIO_GET_VOLUME_DB_RANGE,
+				 NULL, 0, get_vol, size);
+	if (ret) {
+		pr_err("get vol failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+
+int gb_mods_aud_get_supported_usecase(
+		struct gb_audio_get_supported_usecases_response *get_usecase,
+		struct gb_connection *connection)
+{
+	int ret;
+	size_t size = sizeof(*get_usecase);
+
+	ret = gb_operation_sync(connection,
+				 GB_AUDIO_GET_SUPPORTED_USE_CASES,
+				 NULL, 0, get_usecase, size);
+	if (ret) {
+		pr_err("get usecase failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int gb_mods_aud_set_vol(struct gb_connection *connection,
+			uint32_t vol_step)
+{
+	struct gb_audio_set_volume_db_request request;
+
+	request.vol_step = cpu_to_le32(vol_step);
+
+	return gb_operation_sync(connection, GB_AUDIO_SET_VOLUME,
+				 &request, sizeof(request), NULL, 0);
+
+}
+
+int gb_mods_aud_set_sys_vol(struct gb_connection *connection,
+			int vol_db)
+{
+	struct gb_audio_set_system_volume_db_request request;
+
+	request.vol_db = cpu_to_le32(vol_db);
+
+	return gb_operation_sync(connection, GB_AUDIO_SET_SYSTEM_VOLUME,
+				 &request, sizeof(request), NULL, 0);
+
+}
+
+int gb_mods_aud_set_supported_usecase(struct gb_connection *connection,
+			uint8_t usecase)
+{
+	struct gb_audio_set_use_case_request request;
+
+	request.use_case = usecase;
+
+	return gb_operation_sync(connection, GB_AUDIO_SET_USE_CASE,
+				 &request, sizeof(request), NULL, 0);
+}
