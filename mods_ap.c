@@ -41,9 +41,29 @@ static int mods_ap_message_send(struct mods_dl_device *dld,
 	return 0;
 }
 
+/* Get the corresponding connection's protocol */
+static int mods_ap_get_protocol(uint8_t cport_id, uint8_t *protocol)
+{
+	struct gb_connection *conn;
+
+	if (!g_hd)
+		return -ENODEV;
+
+	conn = gb_connection_hd_find(g_hd, cport_id);
+	if (!conn) {
+		pr_err("mods_ap: couldn't find protocol for: %d\n", cport_id);
+		return -ENODEV;
+	}
+
+	*protocol = conn->protocol_id;
+
+	return 0;
+}
+
 static struct mods_dl_driver mods_ap_dl_driver = {
 	.dl_priv_size		= sizeof(struct mods_ap_data),
 	.message_send		= mods_ap_message_send,
+	.get_protocol		= mods_ap_get_protocol,
 };
 
 /* received a message from the AP to send to the switch */
