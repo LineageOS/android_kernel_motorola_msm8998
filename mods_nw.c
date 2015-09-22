@@ -128,10 +128,9 @@ void mods_nw_del_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	BUG_ON(to_cport >= CONFIG_CPORT_ID_MAX);
 
 	from_cset = &routes[from_intf];
-	if (from_cset->dev) {
-		from_cset->dest[from_cport].dev = NULL;
-		from_cset->dest[from_cport].cport = 0;
-	}
+	if (from_cset->dev)
+		memset(&from_cset->dest[from_cport], 0,
+			sizeof(struct dest_entry));
 }
 
 int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
