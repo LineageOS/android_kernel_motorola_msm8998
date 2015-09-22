@@ -160,16 +160,22 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 		err = -EINVAL;
 		goto out;
 	}
-	if (routes[from->intf_id].dev) {
-		dest = routes[from->intf_id].dest[mm->hdr.cport];
-		if (dest.dev) {
-			mm->hdr.cport = dest.cport;
-			err = dest.dev->drv->message_send(dest.dev, msg,
-					size);
-		}
-	} else
+
+	if (!routes[from->intf_id].dev) {
+		dev_err(from->dev, "No device defined for %u:%u\n",
+			from->intf_id, mm->hdr.cport);
+		goto out;
+	}
+
+	dest = routes[from->intf_id].dest[mm->hdr.cport];
+	if (!dest.dev) {
 		dev_err(from->dev, "No route for %u:%u\n",
 				from->intf_id, mm->hdr.cport);
+		goto out;
+	}
+
+	mm->hdr.cport = dest.cport;
+	err = dest.dev->drv->message_send(dest.dev, msg, size);
 
 out:
 	return err;
