@@ -1048,6 +1048,137 @@ void mods_remove_dl_device(struct mods_dl_device *dev)
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
+static inline uint16_t
+svc_get_unsigned_manifest_size(struct mods_dl_device *mods_dev)
+{
+	struct greybus_manifest_header *hdr;
+
+	if (!mods_dev->manifest || !mods_dev->manifest_size)
+		return 0;
+
+	hdr = (struct greybus_manifest_header *)mods_dev->manifest;
+
+	return le16_to_cpu(hdr->size);
+}
+
+static int
+svc_filter_ap_manifest_size(struct mods_dl_device *orig_dev,
+			uint8_t *payload, size_t size)
+{
+	struct muc_msg *mm = (struct muc_msg *)payload;
+	struct gb_operation_msg_hdr *hdr;
+	struct gb_message *msg;
+	struct device *dev = &svc_dd->pdev->dev;
+	struct gb_control_get_manifest_size_response resp;
+	uint8_t type;
+	int ret;
+
+	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
+	type = hdr->type | GB_MESSAGE_TYPE_RESPONSE;
+
+	/* Get the unsigned manifest size */
+	resp.size = svc_get_unsigned_manifest_size(orig_dev);
+	if (!resp.size)
+		return -EINVAL;
+
+	msg = svc_gb_msg_alloc(type, sizeof(resp));
+	if (!msg)
+		return -ENOMEM;
+
+	msg->header->operation_id = hdr->operation_id;
+	msg->header->result = GB_OP_SUCCESS;
+
+	memcpy(msg->payload, &resp, sizeof(resp));
+
+	ret = svc_route_msg(orig_dev, mm->hdr.cport, msg);
+	if (ret)
+		dev_err(dev, "Failed to route manifest size\n");
+
+	svc_gb_msg_free(msg);
+
+	return ret;
+}
+
+static int
+svc_filter_ap_manifest(struct mods_dl_device *orig_dev,
+			uint8_t *payload, size_t size)
+{
+	struct muc_msg *mm = (struct muc_msg *)payload;
+	struct gb_operation_msg_hdr *hdr;
+	struct gb_message *msg;
+	struct device *dev = &svc_dd->pdev->dev;
+	uint8_t type;
+	uint16_t mnf_size;
+	int ret;
+
+	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
+	type = hdr->type | GB_MESSAGE_TYPE_RESPONSE;
+
+	/* Only allocate the actual manifest size, not signed */
+	mnf_size = svc_get_unsigned_manifest_size(orig_dev);
+	if (!mnf_size)
+		return -EINVAL;
+
+	msg = svc_gb_msg_alloc(type, mnf_size);
+	if (!msg)
+		return -ENOMEM;
+
+	msg->header->operation_id = hdr->operation_id;
+	msg->header->result = GB_OP_SUCCESS;
+
+	/* We skip intermediate copy to 'get_manifest_response' */
+	memcpy(msg->payload, orig_dev->manifest, mnf_size);
+
+	ret = svc_route_msg(orig_dev, mm->hdr.cport, msg);
+	if (ret)
+		dev_err(dev, "Failed to route manifest size\n");
+
+	svc_gb_msg_free(msg);
+
+	return ret;
+}
+
+struct mods_nw_msg_filter svc_ap_filters[] = {
+	{
+		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
+		.type = GB_CONTROL_TYPE_GET_MANIFEST_SIZE,
+		.filter_handler = svc_filter_ap_manifest_size,
+	},
+	{
+		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
+		.type = GB_CONTROL_TYPE_GET_MANIFEST,
+		.filter_handler = svc_filter_ap_manifest,
+	},
+};
+
+static int muc_svc_install_ap_filters(struct muc_svc_data *dd)
+{
+	int ret;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(svc_ap_filters); i++) {
+		ret = mods_nw_register_filter(&svc_ap_filters[i]);
+		if (ret)
+			goto free_filters;
+	}
+
+	return 0;
+
+free_filters:
+	for (--i; i >= 0; i--)
+		mods_nw_unregister_filter(&svc_ap_filters[i]);
+
+	return ret;
+}
+
+static void muc_svc_remove_ap_filters(struct muc_svc_data *dd)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(svc_ap_filters); i++)
+		mods_nw_unregister_filter(&svc_ap_filters[i]);
+}
+
 /* Handle the muc_msg and strip out its envelope to pass along the
  * actual gb_message we're interested in.
  */
@@ -1134,12 +1265,20 @@ static int muc_svc_probe(struct platform_device *pdev)
 		goto free_wq;
 	}
 
+	ret = muc_svc_install_ap_filters(svc_dd);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to install nw filters\n");
+		goto free_kset;
+	}
+
 	platform_set_drvdata(pdev, dd);
 
 	svc_dd = dd;
 
 	return 0;
 
+free_kset:
+	kset_unregister(dd->intf_kset);
 free_wq:
 	destroy_workqueue(dd->wq);
 free_dl_dev:
@@ -1152,6 +1291,7 @@ static int muc_svc_remove(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 
+	muc_svc_remove_ap_filters(dd);
 	kset_unregister(dd->intf_kset);
 	destroy_workqueue(dd->wq);
 	mods_remove_dl_device(dd->dld);
