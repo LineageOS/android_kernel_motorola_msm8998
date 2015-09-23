@@ -130,6 +130,17 @@ hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 	return count;
 }
 
+static ssize_t
+uevent_store(struct mods_dl_device *dev, const char *buf, size_t count)
+{
+	if (strncmp(buf, "add", 3))
+		return -EINVAL;
+
+	kobject_uevent(&dev->intf_kobj, KOBJ_ADD);
+
+	return count;
+}
+
 struct muc_svc_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
@@ -148,7 +159,7 @@ static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
 static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
 static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
 static MUC_SVC_ATTR(serial, 0444, serial_show, NULL);
-
+static MUC_SVC_ATTR(uevent, 0200, NULL, uevent_store);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -188,6 +199,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_vid.attr,
 	&muc_svc_attr_pid.attr,
 	&muc_svc_attr_serial.attr,
+	&muc_svc_attr_uevent.attr,
 	NULL,
 };
 
