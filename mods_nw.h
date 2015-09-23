@@ -58,6 +58,15 @@ struct mods_dl_device {
 	__le64 uid_high;
 };
 
+struct mods_nw_msg_filter {
+	struct list_head entry;
+	uint8_t protocol_id;
+	uint8_t type;
+	uint8_t initialized;
+	int (*filter_handler)(struct mods_dl_device *nd, uint8_t *payload,
+			size_t size);
+};
+
 /* interfaces with the svc */
 extern int mods_nw_add_route(u8 from_intf, u8 from_cport,
 		u8 to_intf, u8 to_cport);
@@ -69,4 +78,8 @@ extern struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id);
 
 /* send message to switch to connect to destination */
 extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg);
+
+/* register a message filter callback */
+extern int mods_nw_register_filter(struct mods_nw_msg_filter *filter);
+extern void mods_nw_unregister_filter(struct mods_nw_msg_filter *filter);
 #endif

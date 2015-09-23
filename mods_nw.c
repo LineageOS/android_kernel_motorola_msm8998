@@ -36,6 +36,7 @@ struct dest_entry {
 	u8 cport;
 	u8 protocol_id;
 	u8 protocol_valid:1;
+	u8 filter:1;
 };
 
 struct cport_set {
@@ -45,8 +46,47 @@ struct cport_set {
 
 static struct cport_set routes[CONFIG_MODS_DEV_MAX];
 
+static LIST_HEAD(mods_nw_filters);
+
 /* TODO: reference counting  */
 /* TODO: clear all routes */
+
+static inline bool _mods_nw_filter_present(uint8_t protocol)
+{
+	struct mods_nw_msg_filter *tmp, *existing;
+
+	/* Check for a filter installed on this protocol */
+	list_for_each_entry_safe(existing, tmp, &mods_nw_filters, entry)
+		if (existing->protocol_id == protocol)
+			return true;
+
+	return false;
+}
+
+static inline int
+_mods_nw_apply_filter(struct dest_entry *dest, struct mods_dl_device *to,
+			uint8_t *payload, size_t size)
+{
+	struct mods_nw_msg_filter *tmp, *e;
+	uint8_t protocol;
+	struct muc_msg *mm;
+	struct gb_operation_msg_hdr *hdr;
+
+	/* Exit if no filter is present */
+	if (!dest->filter)
+		return -ENOENT;
+
+	mm = (struct muc_msg *)payload;
+	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
+	protocol = dest->protocol_id;
+
+	/* Check for a filter installed on this protocol */
+	list_for_each_entry_safe(e, tmp, &mods_nw_filters, entry)
+		if (e->protocol_id == protocol && e->type == hdr->type)
+			return e->filter_handler(to, payload, size);
+
+	return -ENOENT;
+}
 
 struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id)
 {
@@ -81,6 +121,7 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	struct mods_dl_device *to_dev;
 	uint8_t protocol;
 	bool proto_found = false;
+	bool filter = false;
 
 	BUG_ON(from_intf >= CONFIG_MODS_DEV_MAX);
 	BUG_ON(to_intf >= CONFIG_MODS_DEV_MAX);
@@ -91,11 +132,14 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	to_dev = routes[to_intf].dev;
 	if (from_cset->dev && from_cset->dev->drv->get_protocol) {
 		if (!from_cset->dev->drv->get_protocol(from_cport, &protocol)) {
+			filter = _mods_nw_filter_present(protocol);
+
 			from_cset->dest[from_cport].protocol_valid = true;
 			from_cset->dest[from_cport].protocol_id = protocol;
-			pr_debug("added %d:%d and %d:%d with protocol %d\n",
+			from_cset->dest[from_cport].filter = filter;
+			pr_debug("added %d:%d and %d:%d protocol %d %s\n",
 				from_intf, from_cport, to_intf, to_cport,
-				protocol);
+				protocol, filter ? "(filter)" : "");
 			proto_found = true;
 		} else {
 			pr_err("Failed to find protocol for cport %d\n",
@@ -109,6 +153,7 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 		if (proto_found) {
 			routes[to_intf].dest[to_cport].protocol_id = protocol;
 			routes[to_intf].dest[to_cport].protocol_valid = true;
+			routes[to_intf].dest[to_cport].filter = filter;
 		}
 	} else {
 		pr_err("unable to add route %u:%u -> %u:%u\n",
@@ -174,8 +219,99 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	}
 
 	mm->hdr.cport = dest.cport;
-	err = dest.dev->drv->message_send(dest.dev, msg, size);
+
+	/* Try to apply any filter installed, or run standard message
+	 * send if no filter was present. A filter can also choose
+	 * to allow the message to continue to pass through with this
+	 * error code.
+	 */
+	err = _mods_nw_apply_filter(&dest, dest.dev, msg, size);
+	if (err == -ENOENT)
+		err = dest.dev->drv->message_send(dest.dev, msg, size);
 
 out:
 	return err;
+}
+
+int mods_nw_register_filter(struct mods_nw_msg_filter *filter)
+{
+	struct mods_nw_msg_filter *tmp, *e;
+	uint8_t type;
+	uint8_t protocol;
+	int intf;
+	int cport;
+	bool protocol_match = false;
+
+	if (!filter)
+		return -EINVAL;
+
+	if (filter->initialized) {
+		pr_warn("filter %d:%d already initialized\n", protocol, type);
+		return 0;
+	}
+
+	type = filter->type;
+	protocol = filter->protocol_id;
+
+	/* Make sure the filter doesn't already exist */
+	list_for_each_entry_safe(e, tmp, &mods_nw_filters, entry) {
+		if (e->protocol_id != protocol)
+			continue;
+		protocol_match = true;
+		if (e->type == type)
+			return -EEXIST;
+	}
+
+	list_add_tail(&filter->entry, &mods_nw_filters);
+	filter->initialized = 1;
+
+	/* If there was an existing protocol, it will have been flagged */
+	if (protocol_match)
+		return 0;
+
+	/* Mark existing connections with filter availabile */
+	for (intf = 0; intf < ARRAY_SIZE(routes); intf++) {
+		if (!routes[intf].dev)
+			continue;
+
+		for (cport = 0; cport < CONFIG_CPORT_ID_MAX; cport++) {
+			if (!routes[intf].dest[cport].protocol_valid)
+				continue;
+			if (routes[intf].dest[cport].protocol_id == protocol)
+				routes[intf].dest[cport].filter = true;
+		}
+	}
+
+	return 0;
+}
+
+void mods_nw_unregister_filter(struct mods_nw_msg_filter *filter)
+{
+	int intf;
+	int cport;
+	uint8_t protocol;
+
+	if (!filter || !filter->initialized)
+		return;
+
+	protocol = filter->protocol_id;
+	list_del(&filter->entry);
+	filter->initialized = 0;
+
+	/* Exit if protocol still has filters */
+	if (_mods_nw_filter_present(filter->protocol_id))
+		return;
+
+	/* This was last filter for the protocol, clear its availability */
+	for (intf = 0; intf < ARRAY_SIZE(routes); intf++) {
+		if (!routes[intf].dev)
+			continue;
+
+		for (cport = 0; cport < CONFIG_CPORT_ID_MAX; cport++) {
+			if (!routes[intf].dest[cport].protocol_valid)
+				continue;
+			if (routes[intf].dest[cport].protocol_id == protocol)
+				routes[intf].dest[cport].filter = false;
+		}
+	}
 }
