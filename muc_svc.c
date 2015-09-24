@@ -512,7 +512,8 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 		/* XXX Handle connection destroy */
 		break;
 	case GB_SVC_TYPE_ROUTE_CREATE:
-		/* XXX Handle route create intf:devid <-> intf:devid */
+	case GB_SVC_TYPE_ROUTE_DESTROY:
+		/* Just send an ACK, we do not have use for device id */
 		break;
 	default:
 		dev_err(&dd->pdev->dev, "Unsupported type: %d\n", hdr.type);
