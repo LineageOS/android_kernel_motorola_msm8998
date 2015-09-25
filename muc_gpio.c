@@ -351,30 +351,3 @@ void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 }
-
-bool muc_vbus_is_enabled(struct muc_data *cdata)
-{
-	int gpio = cdata->gpios[MUC_GPIO_VBUS_EN];
-
-	return gpio_get_value(gpio);
-}
-
-void muc_vbus_enable(struct muc_data *cdata)
-{
-	int gpio = cdata->gpios[MUC_GPIO_VBUS_EN];
-
-	pr_debug("%s:%d: set gpio=%d to value=%d\n",
-		__func__, __LINE__, gpio, 1);
-
-	gpio_set_value(gpio, 1);
-}
-
-void muc_vbus_disable(struct muc_data *cdata)
-{
-	int gpio = cdata->gpios[MUC_GPIO_VBUS_EN];
-
-	pr_debug("%s:%d: set gpio=%d to value=%d\n",
-		__func__, __LINE__, gpio, 0);
-
-	gpio_set_value(gpio, 0);
-}
