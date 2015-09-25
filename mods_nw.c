@@ -118,9 +118,8 @@ int mods_nw_add_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 {
 	int err = 0;
 	struct cport_set *from_cset;
-	struct mods_dl_device *to_dev;
+	struct cport_set *to_cset;
 	uint8_t protocol;
-	bool proto_found = false;
 	bool filter = false;
 
 	BUG_ON(from_intf >= CONFIG_MODS_DEV_MAX);
@@ -129,38 +128,43 @@ int mods_nw_add_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 	BUG_ON(to_cport >= CONFIG_CPORT_ID_MAX);
 
 	from_cset = &routes[from_intf];
-	to_dev = routes[to_intf].dev;
-	if (from_cset->dev && from_cset->dev->drv->get_protocol) {
-		if (!from_cset->dev->drv->get_protocol(from_cport, &protocol)) {
-			filter = _mods_nw_filter_present(protocol);
+	to_cset = &routes[to_intf];
 
-			from_cset->dest[from_cport].protocol_valid = true;
-			from_cset->dest[from_cport].protocol_id = protocol;
-			from_cset->dest[from_cport].filter = filter;
-			pr_debug("added %d:%d and %d:%d protocol %d %s\n",
-				from_intf, from_cport, to_intf, to_cport,
-				protocol, filter ? "(filter)" : "");
-			proto_found = true;
-		} else {
-			pr_err("Failed to find protocol for cport %d\n",
-				from_cport);
-		}
-	}
-
-	if (from_cset->dev && to_dev) {
-		from_cset->dest[from_cport].cport = to_cport;
-		from_cset->dest[from_cport].dev = routes[to_intf].dev;
-		if (proto_found) {
-			routes[to_intf].dest[to_cport].protocol_id = protocol;
-			routes[to_intf].dest[to_cport].protocol_valid = true;
-			routes[to_intf].dest[to_cport].filter = filter;
-		}
-	} else {
-		pr_err("unable to add route %u:%u -> %u:%u\n",
+	if (!from_cset->dev || !to_cset->dev) {
+		pr_err("Unable to add route %u:%u -> %u:%u\n",
 			from_intf, from_cport, to_intf, to_cport);
-		err = -ENODEV;
+		return -ENODEV;
 	}
-	return err;
+
+	/* Set the destination port and device */
+	from_cset->dest[from_cport].cport = to_cport;
+	from_cset->dest[from_cport].dev = to_cset->dev;
+
+	/* If there is no protocol handler, we are done */
+	if (!from_cset->dev->drv->get_protocol)
+		return 0;
+
+	/* Try to get the protocol, any error should be fatal */
+	err = from_cset->dev->drv->get_protocol(from_cport, &protocol);
+	if (err) {
+		pr_warn("Unable to get a protocol for %d:%d\n",
+				from_intf, from_cport);
+		return err;
+	}
+
+	/* Look for previously installed filters */
+	filter = _mods_nw_filter_present(protocol);
+
+	/* Save the protocol and filter status */
+	from_cset->dest[from_cport].protocol_valid = true;
+	from_cset->dest[from_cport].protocol_id = protocol;
+	from_cset->dest[from_cport].filter = filter;
+
+	to_cset->dest[to_cport].protocol_id = protocol;
+	to_cset->dest[to_cport].protocol_valid = true;
+	to_cset->dest[to_cport].filter = filter;
+
+	return 0;
 }
 
 void mods_nw_del_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
