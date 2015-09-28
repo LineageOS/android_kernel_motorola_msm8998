@@ -33,7 +33,7 @@
 
 struct dest_entry {
 	struct mods_dl_device *dev;
-	u8 cport;
+	u16 cport;
 	u8 protocol_id;
 	u8 protocol_valid:1;
 	u8 filter:1;
@@ -114,7 +114,7 @@ void mods_nw_del_dl_device(struct mods_dl_device *mods_dev)
 	memset(&routes[mods_dev->intf_id], 0, sizeof(struct cport_set));
 }
 
-int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
+int mods_nw_add_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 {
 	int err = 0;
 	struct cport_set *from_cset;
@@ -163,7 +163,7 @@ int mods_nw_add_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
 	return err;
 }
 
-void mods_nw_del_route(u8 from_intf, u8 from_cport, u8 to_intf, u8 to_cport)
+void mods_nw_del_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 {
 	struct cport_set *from_cset = &routes[from_intf];
 
@@ -199,7 +199,7 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 		err = -EINVAL;
 		goto out;
 	}
-	if (mm->hdr.cport >= CONFIG_CPORT_ID_MAX) {
+	if (le16_to_cpu(mm->hdr.cport) >= CONFIG_CPORT_ID_MAX) {
 		dev_err(from->dev, "Attempt to send on invalid cport\n");
 		err = -EINVAL;
 		goto out;
@@ -207,18 +207,18 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 
 	if (!routes[from->intf_id].dev) {
 		dev_err(from->dev, "No device defined for %u:%u\n",
-			from->intf_id, mm->hdr.cport);
+			from->intf_id, le16_to_cpu(mm->hdr.cport));
 		goto out;
 	}
 
-	dest = routes[from->intf_id].dest[mm->hdr.cport];
+	dest = routes[from->intf_id].dest[le16_to_cpu(mm->hdr.cport)];
 	if (!dest.dev) {
 		dev_err(from->dev, "No route for %u:%u\n",
-				from->intf_id, mm->hdr.cport);
+				from->intf_id, le16_to_cpu(mm->hdr.cport));
 		goto out;
 	}
 
-	mm->hdr.cport = dest.cport;
+	mm->hdr.cport = cpu_to_le16(dest.cport);
 
 	/* Try to apply any filter installed, or run standard message
 	 * send if no filter was present. A filter can also choose

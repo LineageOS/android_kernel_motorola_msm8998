@@ -388,7 +388,7 @@ static struct svc_op *svc_find_op(struct muc_svc_data *dd, uint16_t id)
  * envelope that it understands.
  */
 static int
-svc_route_msg(struct mods_dl_device *dld, uint8_t cport,
+svc_route_msg(struct mods_dl_device *dld, uint16_t cport,
 		struct gb_message *msg)
 {
 	struct muc_msg *m;
@@ -401,7 +401,7 @@ svc_route_msg(struct mods_dl_device *dld, uint8_t cport,
 
 	memcpy(m->gb_msg, msg->buffer, muc_payload);
 	m->hdr.gb_msg_size = msg->header->size;
-	m->hdr.cport = cport;
+	m->hdr.cport = cpu_to_le16(cport);
 
 	mods_nw_switch(dld, (uint8_t *)m);
 	kfree(m);
@@ -433,7 +433,7 @@ static int svc_set_intf_id(struct mods_dl_device *dld, struct gb_message *req)
 
 static int
 svc_gb_conn_create(struct mods_dl_device *dld, struct gb_message *req,
-		   uint8_t cport)
+		   uint16_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_svc_conn_create_request *conn = req->payload;
@@ -475,7 +475,7 @@ del_route:
 
 static int
 svc_gb_conn_destroy(struct mods_dl_device *dld, struct gb_message *req,
-		    uint8_t cport)
+		    uint16_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_svc_conn_destroy_request *conn = req->payload;
@@ -495,7 +495,7 @@ svc_gb_conn_destroy(struct mods_dl_device *dld, struct gb_message *req,
 
 static int
 muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
-			  size_t msg_size, uint8_t cport)
+			  size_t msg_size, uint16_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	size_t payload_size = get_gb_payload_size(msg_size);
@@ -582,7 +582,7 @@ gb_msg_alloc:
  */
 static int
 svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
-		size_t msg_size, uint8_t cport)
+		size_t msg_size, uint16_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -622,7 +622,7 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 /* Send a message out the specified CPORT and wait for a response */
 static struct gb_message *
 svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
-		size_t payload_size, uint8_t cport)
+		size_t payload_size, uint16_t cport)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -868,7 +868,7 @@ static void muc_svc_attach_work(struct work_struct *work)
 }
 
 static int
-muc_svc_get_manifest(struct mods_dl_device *mods_dev, u8 out_cport)
+muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 {
 	struct gb_control_get_manifest_size_response *size_resp;
 	struct gb_message *msg;
@@ -1123,7 +1123,7 @@ svc_filter_ap_manifest_size(struct mods_dl_device *orig_dev,
 
 	memcpy(msg->payload, &resp, sizeof(resp));
 
-	ret = svc_route_msg(orig_dev, mm->hdr.cport, msg);
+	ret = svc_route_msg(orig_dev, le16_to_cpu(mm->hdr.cport), msg);
 	if (ret)
 		dev_err(dev, "Failed to route manifest size\n");
 
@@ -1162,7 +1162,7 @@ svc_filter_ap_manifest(struct mods_dl_device *orig_dev,
 	/* We skip intermediate copy to 'get_manifest_response' */
 	memcpy(msg->payload, orig_dev->manifest, mnf_size);
 
-	ret = svc_route_msg(orig_dev, mm->hdr.cport, msg);
+	ret = svc_route_msg(orig_dev, le16_to_cpu(mm->hdr.cport), msg);
 	if (ret)
 		dev_err(dev, "Failed to route manifest size\n");
 
@@ -1221,7 +1221,7 @@ muc_svc_msg_send(struct mods_dl_device *dld, uint8_t *buf, size_t len)
 	struct muc_msg *m = (struct muc_msg *)buf;
 
 	return svc_gb_msg_recv(dld, m->gb_msg, m->hdr.gb_msg_size,
-				m->hdr.cport);
+				le16_to_cpu(m->hdr.cport));
 }
 
 static void muc_svc_msg_cancel(void *cookie)

@@ -19,7 +19,7 @@ struct mods_dl_device;
 #pragma pack(push, 1)
 struct muc_msg_hdr {
 	__le16  gb_msg_size;
-	__u8    cport;
+	__le16  cport;
 };
 
 struct muc_msg {
@@ -37,7 +37,7 @@ struct mods_dl_driver {
 	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
 			size_t size);
 	void (*message_cancel)(void *cookie);
-	int (*get_protocol)(uint8_t cport_id, uint8_t *protocol);
+	int (*get_protocol)(uint16_t cport_id, uint8_t *protocol);
 };
 
 struct mods_dl_device {
@@ -68,10 +68,10 @@ struct mods_nw_msg_filter {
 };
 
 /* interfaces with the svc */
-extern int mods_nw_add_route(u8 from_intf, u8 from_cport,
-		u8 to_intf, u8 to_cport);
-extern void mods_nw_del_route(u8 from_intf, u8 from_cport,
-		u8 to_intf, u8 to_cport);
+extern int mods_nw_add_route(u8 from_intf, u16 from_cport,
+		u8 to_intf, u16 to_cport);
+extern void mods_nw_del_route(u8 from_intf, u16 from_cport,
+		u8 to_intf, u16 to_cport);
 extern void mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
 extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
 extern struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id);

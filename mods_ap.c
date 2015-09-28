@@ -36,13 +36,13 @@ static int mods_ap_message_send(struct mods_dl_device *dld,
 {
 	struct muc_msg *msg = (struct muc_msg *)buf;
 
-	greybus_data_rcvd(g_hd, msg->hdr.cport,
+	greybus_data_rcvd(g_hd, le16_to_cpu(msg->hdr.cport),
 			msg->gb_msg, msg->hdr.gb_msg_size);
 	return 0;
 }
 
 /* Get the corresponding connection's protocol */
-static int mods_ap_get_protocol(uint8_t cport_id, uint8_t *protocol)
+static int mods_ap_get_protocol(uint16_t cport_id, uint8_t *protocol)
 {
 	struct gb_connection *conn;
 
@@ -90,7 +90,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 	if (!msg)
 		return -ENOMEM;
 
-	msg->hdr.cport = hd_cport_id;
+	msg->hdr.cport = cpu_to_le16(hd_cport_id);
 	msg->hdr.gb_msg_size = buffer_size;
 	memcpy(&msg->gb_msg[0], message->buffer, buffer_size);
 
