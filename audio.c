@@ -582,9 +582,11 @@ err_unregister_i2s_mgmt:
 
 void gb_audio_protocol_exit(void)
 {
+	platform_device_unregister(&snd_codec.codec_dev);
+	platform_driver_unregister(&gb_audio_mods_driver);
 	platform_driver_unregister(&gb_audio_pcm_driver);
 	platform_driver_unregister(&gb_audio_plat_driver);
+	gb_protocol_deregister(&gb_mods_audio_protocol);
 	gb_protocol_deregister(&gb_i2s_receiver_protocol);
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);
-	platform_driver_unregister(&gb_audio_mods_driver);
 }
