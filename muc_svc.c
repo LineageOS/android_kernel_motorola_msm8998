@@ -986,29 +986,37 @@ static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
 	return 0;
 }
 
-void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
+static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 {
 	struct gb_message *msg;
 	struct gb_svc_intf_hot_unplug_request unplug;
 
-	muc_svc_destroy_dl_dev_sysfs(mods_dev);
-
 	unplug.intf_id = mods_dev->intf_id;
-
-	list_del(&mods_dev->list);
 
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&unplug,
 					GB_SVC_TYPE_INTF_HOT_UNPLUG,
 					sizeof(unplug), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "Failed to send UNPLUG to AP\n");
-		return;
+		return PTR_ERR(msg);
 	}
 
-	dev_info(&svc_dd->pdev->dev, "Successfully sent unplug for IID: %d\n",
-			unplug.intf_id);
-
 	svc_gb_msg_free(msg);
+
+	return 0;
+}
+
+void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
+{
+	muc_svc_destroy_dl_dev_sysfs(mods_dev);
+	list_del(&mods_dev->list);
+
+	/* XXX need to track if unplug already sent... */
+	if (muc_svc_generate_unplug(mods_dev))
+		return;
+
+	dev_info(&svc_dd->pdev->dev, "Successfully sent unplug for IID: %d\n",
+			mods_dev->intf_id);
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 
