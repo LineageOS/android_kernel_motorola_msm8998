@@ -50,8 +50,6 @@ struct muc_spi_data {
 	int gpio_wake_n;
 	int gpio_rdy_n;
 
-	__u8 has_tranceived;
-
 	/*
 	 * Buffer to hold incoming payload (which could be spread across
 	 * multiple packets)
@@ -89,17 +87,6 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 		},
 	};
 	int ret;
-
-	if (dd->has_tranceived) {
-		/* Wait for RDY to be deasserted */
-		ret = wait_event_timeout(dd->rdy_wq, gpio_get_value(dd->gpio_rdy_n),
-					 RDY_TIMEOUT_JIFFIES);
-		if (ret <= 0) {
-			dev_err(&dd->spi->dev, "Timeout waiting for rdy to deassert\n");
-			return ret;
-		}
-	}
-	dd->has_tranceived = 1;
 
 	/* Check if WAKE is not asserted */
 	if (gpio_get_value(dd->gpio_wake_n)) {
@@ -242,8 +229,6 @@ static int muc_attach(struct notifier_block *nb,
 				dev_err(&spi->dev, "Unable to request rdy.\n");
 				goto free_irq;
 			}
-
-			dd->has_tranceived = 0;
 
 			err = mods_dl_dev_attached(dd->dld);
 			if (err) {
