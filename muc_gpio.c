@@ -12,6 +12,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/device.h>
 #include <linux/err.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
@@ -19,8 +20,6 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
-#include <linux/spi/spi.h>
-#include <linux/switch.h>
 
 #include "muc.h"
 
@@ -41,7 +40,7 @@ unsigned long muc_attach_get_state(void)
 	if (!muc_misc_data)
 		return 0;
 
-	return (unsigned long)muc_misc_data->muc_detected.state;
+	return (unsigned long)muc_misc_data->muc_detected;
 }
 EXPORT_SYMBOL(muc_attach_get_state);
 
@@ -98,55 +97,13 @@ static void muc_seq(struct muc_data *cdata, u32 seq[],
 	}
 }
 
-static ssize_t muc_reset_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	ssize_t ret = snprintf(buf, PAGE_SIZE, "%ld\n", 0l);
-	return ret;
-}
-
-static ssize_t
-muc_reset_store(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
-{
-	int retval;
-	long value;
-	struct muc_data *cdata = muc_misc_data;
-
-	if (!cdata)
-		return -EINVAL;
-
-	retval = kstrtol(buf, 10, &value);
-	if (retval < 0)
-		return retval;
-
-	if (value)
-		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
-
-	return count;
-}
-DEVICE_ATTR(reset, S_IRUGO | S_IWUSR, muc_reset_show, muc_reset_store);
-
-ssize_t muc_detected_print_name(struct switch_dev *switch_dev, char *buf)
-{
-	#define MUC_NOT_PRESENT_STR ("None\n")
-	#define MUC_PRESENT_STR ("Present\n")
-
-	if (switch_get_state(switch_dev))
-		return snprintf(buf, ARRAY_SIZE(MUC_PRESENT_STR),
-						MUC_PRESENT_STR);
-	else
-		return snprintf(buf, ARRAY_SIZE(MUC_NOT_PRESENT_STR),
-						MUC_NOT_PRESENT_STR);
-}
-
 static void muc_handle_detection(struct muc_data *cdata)
 {
 	int err;
 	/* Detection gpio is active-low. */
 	bool tmp_detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 
-	if (tmp_detected == switch_get_state(&cdata->muc_detected)) {
+	if (tmp_detected == cdata->muc_detected) {
 		pr_debug("%s:%d: detection has not changed: %d\n",
 			__func__, __LINE__, tmp_detected);
 		return;
@@ -161,7 +118,7 @@ static void muc_handle_detection(struct muc_data *cdata)
 		pr_err("notification chain failed %d\n", err);
 
 	pr_debug("%s:%d detected=%d\n", __func__, __LINE__, tmp_detected);
-	switch_set_state(&cdata->muc_detected, tmp_detected);
+	cdata->muc_detected = tmp_detected;
 
 	/* Power off on removal */
 	if (!tmp_detected)
@@ -292,23 +249,11 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 {
 	int ret;
 
-	cdata->muc_detected.name = "muc_detected";
-	cdata->muc_detected.print_name = muc_detected_print_name;
-	ret = switch_dev_register(&cdata->muc_detected);
-	if (ret) {
-		dev_err(dev,
-			"%s:%d failed to register switch device.\n",
-			__func__, __LINE__);
-		cdata->muc_detected.dev = NULL;
-		return ret;
-	}
-
 	/* Mandatory configuration */
 	ret = muc_gpio_setup(cdata, dev);
 	if (ret) {
 		dev_err(dev, "%s:%d: failed to read gpios.\n",
 			__func__, __LINE__);
-		switch_dev_unregister(&cdata->muc_detected);
 		return ret;
 	}
 
@@ -346,8 +291,6 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 
 void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 {
-	switch_dev_unregister(&cdata->muc_detected);
-
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 }

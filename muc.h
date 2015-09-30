@@ -21,15 +21,10 @@ enum {
 };
 
 #define MUC_MAX_SEQ (MUC_MAX_GPIOS*8)
-#define MUC_MAXDATA_LENGTH 256
 
 struct muc_data {
 	struct device *dev;
-	struct mutex lock;
-	int hw_initialized;
-	atomic_t enabled;
-
-	struct switch_dev muc_detected;
+	u8 muc_detected;
 
 	/* Configuration */
 	int gpios[MUC_MAX_GPIOS];

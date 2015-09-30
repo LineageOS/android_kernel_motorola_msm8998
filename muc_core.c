@@ -11,71 +11,17 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/device.h>
 #include <linux/err.h>
 #include <linux/of.h>
-#include <linux/of_gpio.h>
-#include <linux/gpio.h>
-#include <linux/irq.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-#include <linux/switch.h>
-#include <linux/workqueue.h>
 
 #include "muc.h"
 
 #define MUC_NAME "muc"
 
 struct muc_data *muc_misc_data;
-
-static int muc_hw_init(struct muc_data *ps_muc)
-{
-	int err = 0;
-
-	dev_dbg(ps_muc->dev, "%s\n", __func__);
-	ps_muc->hw_initialized = 1;
-
-	return err;
-}
-
-static void muc_device_power_off(struct muc_data *ps_muc)
-{
-	dev_dbg(ps_muc->dev, "%s\n", __func__);
-	ps_muc->hw_initialized = 0;
-}
-
-static int muc_device_power_on(struct muc_data *ps_muc)
-{
-	int err = 0;
-
-	dev_dbg(ps_muc->dev, "%s\n", __func__);
-	if (!ps_muc->hw_initialized) {
-		err = muc_hw_init(ps_muc);
-		if (err < 0) {
-			muc_device_power_off(ps_muc);
-			return err;
-		}
-	}
-
-	return err;
-}
-
-int muc_enable(struct muc_data *ps_muc)
-{
-	int err = 0;
-
-	dev_dbg(ps_muc->dev, "%s\n", __func__);
-	if (!atomic_cmpxchg(&ps_muc->enabled, 0, 1)) {
-		err = muc_device_power_on(ps_muc);
-		if (err < 0) {
-			atomic_set(&ps_muc->enabled, 0);
-			dev_err(ps_muc->dev,
-				"muc_enable returned with %d\n", err);
-			return err;
-		}
-	}
-
-	return err;
-}
 
 static int muc_probe(struct platform_device *pdev)
 {
@@ -91,17 +37,6 @@ static int muc_probe(struct platform_device *pdev)
 
 	muc_misc_data = ps_muc;
 
-	mutex_init(&ps_muc->lock);
-	mutex_lock(&ps_muc->lock);
-
-	err = muc_device_power_on(ps_muc);
-	if (err < 0) {
-		dev_err(dev, "power on failed: %d\n", err);
-		goto err1;
-	}
-
-	atomic_set(&ps_muc->enabled, 1);
-
 	err = muc_gpio_init(dev, ps_muc);
 	if (err) {
 		dev_err(dev, "gpio init failed\n");
@@ -115,8 +50,6 @@ static int muc_probe(struct platform_device *pdev)
 		goto err_intr_init;
 	}
 
-	mutex_unlock(&ps_muc->lock);
-
 	dev_info(dev, "probed finished");
 
 	return 0;
@@ -124,11 +57,6 @@ static int muc_probe(struct platform_device *pdev)
 err_intr_init:
 	muc_gpio_exit(dev, ps_muc);
 err_gpio_init:
-	muc_device_power_off(ps_muc);
-err1:
-	mutex_unlock(&ps_muc->lock);
-	mutex_destroy(&ps_muc->lock);
-
 	muc_misc_data = NULL;
 
 	return err;
@@ -141,7 +69,6 @@ static int muc_remove(struct platform_device *pdev)
 
 	muc_intr_destroy(ps_muc, dev);
 	muc_gpio_exit(dev, ps_muc);
-	muc_device_power_off(ps_muc);
 
 	return 0;
 }
