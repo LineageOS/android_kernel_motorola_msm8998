@@ -1223,6 +1223,20 @@ svc_filter_ap_manifest(struct mods_dl_device *orig_dev,
 	return ret;
 }
 
+static int
+svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
+			uint8_t *payload, size_t size)
+{
+	struct device *dev = &svc_dd->pdev->dev;
+
+	dev_info(dev, "Firmware flashing complete; resetting: %d\n",
+		orig_dev->intf_id);
+
+	muc_reset();
+
+	return 0;
+}
+
 struct mods_nw_msg_filter svc_ap_filters[] = {
 	{
 		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
@@ -1233,6 +1247,11 @@ struct mods_nw_msg_filter svc_ap_filters[] = {
 		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
 		.type = GB_CONTROL_TYPE_GET_MANIFEST,
 		.filter_handler = svc_filter_ap_manifest,
+	},
+	{
+		.protocol_id = GREYBUS_PROTOCOL_FIRMWARE,
+		.type = GB_FIRMWARE_TYPE_READY_TO_BOOT,
+		.filter_handler = svc_filter_ready_to_boot,
 	},
 };
 
