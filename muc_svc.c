@@ -623,8 +623,8 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 
 /* Send a message out the specified CPORT and wait for a response */
 static struct gb_message *
-svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
-		size_t payload_size, uint16_t cport)
+_svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
+		size_t payload_size, uint16_t cport, bool response)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -642,22 +642,33 @@ svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 		goto gb_msg_alloc;
 	}
 
-	cycle = (u16)atomic_inc_return(&dd->msg_num);
-	op->msg_id = cycle % U16_MAX + 1;
-	init_completion(&op->completion);
-
-	msg->header->operation_id = cpu_to_le16(op->msg_id);
 	if (payload_size)
 		memcpy(msg->payload, data, payload_size);
 	op->request = msg;
 
-	list_add_tail(&op->entry, &dd->operations);
+	/* Only set the operation id when we want a response */
+	if (response) {
+		cycle = (u16)atomic_inc_return(&dd->msg_num);
+		op->msg_id = cycle % U16_MAX + 1;
+		init_completion(&op->completion);
+
+		msg->header->operation_id = cpu_to_le16(op->msg_id);
+		list_add_tail(&op->entry, &dd->operations);
+	}
 
 	/* Send to NW Routing Layer */
 	ret = svc_route_msg(dld, cport, msg);
 	if (ret) {
 		dev_err(&dd->pdev->dev, "failed sending svc msg: %d\n", ret);
 		goto remove_op;
+	}
+
+	/* If not waiting for response, we're done */
+	if (!response) {
+		svc_gb_msg_free(op->request);
+		kfree(op);
+
+		return NULL;
 	}
 
 	ret = wait_for_completion_interruptible_timeout(&op->completion,
@@ -694,6 +705,27 @@ gb_msg_alloc:
 
 	return ERR_PTR(ret);
 }
+
+static inline struct gb_message *
+svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
+		size_t size, uint16_t cport)
+{
+	return _svc_gb_msg_send_sync(dld, data, type, size, cport, true);
+}
+
+static inline int
+svc_gb_msg_send_no_resp(struct mods_dl_device *dld, uint8_t *data,
+		uint8_t type, size_t size, uint16_t cport)
+{
+	struct gb_message *msg;
+
+	msg = _svc_gb_msg_send_sync(dld, data, type, size, cport, false);
+	if (IS_ERR(msg))
+		return PTR_ERR(msg);
+
+	return 0;
+}
+
 
 static int muc_svc_version_check(struct mods_dl_device *dld)
 {
