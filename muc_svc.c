@@ -42,7 +42,14 @@ struct muc_svc_data {
 struct muc_svc_data *svc_dd;
 
 /* Special Control Message to reboot an interface */
-#define GB_CONTROL_TYPE_REBOOT_FLASH 0x7e
+#define GB_CONTROL_TYPE_REBOOT 0x7e
+
+#define GB_CONTROL_REBOOT_MODE_RESET 0x01
+#define GB_CONTROL_REBOOT_MODE_BOOTLOADER 0x02
+
+struct gb_control_reboot_request {
+	__u8      mode;
+} __packed;
 
 /* Special Control Message to get IDs */
 #define GB_CONTROL_TYPE_GET_IDS 0x7f
@@ -1327,16 +1334,19 @@ static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
 	return 0;
 }
 
-static int muc_svc_send_reboot(struct mods_dl_device *mods_dev)
+static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode)
 {
 	int ret;
+	struct gb_control_reboot_request req;
+
+	req.mode = mode;
 
 	ret = muc_svc_create_control_route(mods_dev->intf_id);
 	if (ret)
 		return ret;
 
-	ret = svc_gb_msg_send_no_resp(svc_dd->dld, NULL,
-				GB_CONTROL_TYPE_REBOOT_FLASH, 0,
+	ret = svc_gb_msg_send_no_resp(svc_dd->dld, (uint8_t *)&req,
+				GB_CONTROL_TYPE_REBOOT, sizeof(req),
 				mods_dev->intf_id);
 
 	muc_svc_destroy_control_route(mods_dev->intf_id);
@@ -1349,6 +1359,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 	struct mods_dl_device *mods_dev;
+	uint8_t mode = GB_CONTROL_REBOOT_MODE_BOOTLOADER;
 
 	/* Need to generate a hot unplug for each interface and then
 	 * issue the reboot command */
@@ -1358,7 +1369,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 		/* XXX What to do if a single interface fails? Clear the
 		 * other ones?
 		 */
-		if (muc_svc_send_reboot(mods_dev))
+		if (muc_svc_send_reboot(mods_dev, mode))
 			dev_warn(dev, "INTF: %d, failed to enter flashmode\n",
 				mods_dev->intf_id);
 	}
