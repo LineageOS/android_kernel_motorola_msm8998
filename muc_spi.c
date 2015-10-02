@@ -31,9 +31,9 @@
 /* Size of payload of individual SPI packet (in bytes) */
 #define MUC_SPI_PAYLOAD_SZ_MAX  (32)
 
-#define HDR_BIT_VALID           (0x01 << 7)
-#define HDR_BIT_MORE            (0x01 << 6)
-#define HDR_BIT_RSVD            (0x3F << 0)
+#define HDR_BIT_VALID  (0x01 << 7)  /* 1 = valid packet, 0 = dummy packet */
+#define HDR_BIT_RSVD   (0x03 << 5)  /* Reserved */
+#define HDR_BIT_PKTS   (0x1F << 0)  /* How many additional packets to expect */
 
 #define RDY_TIMEOUT_JIFFIES     (1 * HZ) /* 1 sec */
 
@@ -164,9 +164,9 @@ static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *buf)
 	       MUC_SPI_PAYLOAD_SZ_MAX);
 	dd->rcvd_payload_idx += MUC_SPI_PAYLOAD_SZ_MAX;
 
-	if (m->hdr_bits & HDR_BIT_MORE) {
+	if (m->hdr_bits & HDR_BIT_PKTS) {
 		/* Need additional packets */
-		muc_spi_transfer_locked(dd, NULL, false);
+		muc_spi_transfer_locked(dd, NULL, ((m->hdr_bits & HDR_BIT_PKTS) > 1));
 		return;
 	}
 
@@ -263,25 +263,29 @@ static int muc_spi_message_send(struct mods_dl_device *dld,
 	int remaining = len;
 	uint8_t *dbuf = (uint8_t *)buf;
 	int pl_size;
-	bool more;
+	int packets;
 
 	if (!dd->present)
 		return -ENODEV;
 
-	while (remaining > 0) {
+	/* Calculate how many packets are required to send whole payload */
+	packets = (remaining + MUC_SPI_PAYLOAD_SZ_MAX - 1) / MUC_SPI_PAYLOAD_SZ_MAX;
+
+	while ((remaining > 0) && (packets > 0)) {
 		m = kzalloc(sizeof(struct muc_spi_msg), GFP_KERNEL);
 		if (!m)
 			return -ENOMEM;
 
+		/* Determine the payload size of this packet */
 		pl_size = MIN(remaining, MUC_SPI_PAYLOAD_SZ_MAX);
-		more = remaining > MUC_SPI_PAYLOAD_SZ_MAX;
 
+		/* Populate the SPI message */
 		m->hdr_bits |= HDR_BIT_VALID;
-		m->hdr_bits |= more ? HDR_BIT_MORE : 0;
+		m->hdr_bits |= (--packets & HDR_BIT_PKTS);
 		memcpy(m->data, dbuf, pl_size);
 		m->crc16 = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
 
-		muc_spi_transfer(dd, (uint8_t *)m, more);
+		muc_spi_transfer(dd, (uint8_t *)m, (packets > 0));
 
 		remaining -= pl_size;
 		dbuf += pl_size;
