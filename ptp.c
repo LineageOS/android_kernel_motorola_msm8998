@@ -247,6 +247,8 @@ static int gb_ptp_get_property(struct power_supply *psy,
 			return retval;
 		val->intval = to_external_property(ext);
 		break;
+	case POWER_SUPPLY_PROP_PTP_CURRENT_FLOW:
+		return -ENODEV; /* to make power_supply_uevent() happy */
 	case POWER_SUPPLY_PROP_PTP_EXTERNAL_PRESENT:
 		retval = gb_ptp_ext_power_present(ptp, &present);
 		if (retval)
@@ -306,7 +308,7 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 	connection->private = ptp;
 
 	/* Create a power supply */
-	ptp->psy.name		= "gb-ptp";
+	ptp->psy.name		= "gb_ptp";
 	ptp->psy.type		= POWER_SUPPLY_TYPE_PTP;
 	ptp->psy.properties	= gb_ptp_props;
 	ptp->psy.num_properties	= ARRAY_SIZE(gb_ptp_props);
