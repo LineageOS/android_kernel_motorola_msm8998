@@ -840,6 +840,14 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 		return PTR_ERR(msg);
 	}
 
+	if (msg->payload_size != sizeof(*ids)) {
+		dev_err(&dd->pdev->dev,
+			"Invalid GET_IDS response size: %zu vs %zu\n",
+			msg->payload_size, sizeof(*ids));
+		svc_gb_msg_free(msg);
+		return -EINVAL;
+	}
+
 	ids = msg->payload;
 
 	hotplug->data.unipro_mfg_id = le32_to_cpu(ids->unipro_mfg_id);
