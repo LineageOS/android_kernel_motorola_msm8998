@@ -50,6 +50,8 @@ struct muc_spi_data {
 	int gpio_wake_n;
 	int gpio_rdy_n;
 
+	__u8 *rx_buf;
+
 	/*
 	 * Buffer to hold incoming payload (which could be spread across
 	 * multiple packets)
@@ -78,11 +80,10 @@ static inline struct muc_spi_data *dld_to_dd(struct mods_dl_device *dld)
 static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 				   uint8_t *tx_buf, bool keep_wake)
 {
-	uint8_t rx_buf[sizeof(struct muc_spi_msg)];
 	struct spi_transfer t[] = {
 		{
 			.tx_buf = tx_buf,
-			.rx_buf = rx_buf,
+			.rx_buf = dd->rx_buf,
 			.len = sizeof(struct muc_spi_msg),
 		},
 	};
@@ -118,7 +119,7 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	ret = spi_sync_transfer(dd->spi, t, 1);
 
 	if (!ret) {
-		parse_rx_dl(dd, rx_buf);
+		parse_rx_dl(dd, dd->rx_buf);
 	}
 
 	return ret;
@@ -348,6 +349,11 @@ static int muc_spi_probe(struct spi_device *spi)
 
 	dd = devm_kzalloc(&spi->dev, sizeof(*dd), GFP_KERNEL);
 	if (!dd)
+		return -ENOMEM;
+
+	dd->rx_buf = devm_kzalloc(&spi->dev, sizeof(struct muc_spi_msg),
+					GFP_KERNEL);
+	if (!dd->rx_buf)
 		return -ENOMEM;
 
 	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, intf_id);
