@@ -531,6 +531,125 @@ svc_gb_send_response(struct mods_dl_device *dld, uint16_t cport,
 	return ret;
 }
 
+struct svc_gb_dme_entry {
+	u16 attr;
+	u16 selector;
+	u32 default_value;
+	int (*dme_get)(struct mods_dl_device *dld, u8 intf_id,
+			u16 attr, u16 selector, u32 *value);
+	int (*dme_set)(struct mods_dl_device *dld, u8 intf_id,
+			u16 attr, u16 selector, u32 value);
+};
+
+static struct svc_gb_dme_entry dme_entries[] = {
+	{
+		.attr = DME_ATTR_T_TST_SRC_INCREMENT,
+		.selector = DME_ATTR_SELECTOR_INDEX,
+		.default_value = 0xB007ED,
+	},
+};
+
+static struct svc_gb_dme_entry *svc_gb_get_dme_entry(u16 attr, u16 selector)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(dme_entries); i++) {
+		if (dme_entries[i].attr != attr)
+			continue;
+		if (dme_entries[i].selector != selector)
+			continue;
+		return &dme_entries[i];
+	}
+
+	return NULL;
+}
+
+static int
+svc_gb_dme_get(struct mods_dl_device *dld, struct gb_message *req_msg,
+		uint16_t cport)
+{
+	struct gb_svc_dme_peer_get_request *req;
+	struct gb_svc_dme_peer_get_response resp;
+	struct svc_gb_dme_entry *entry;
+	int ret;
+	u16 attr;
+	u16 selector;
+
+	req = (struct gb_svc_dme_peer_get_request *)req_msg->payload;
+	attr = le16_to_cpu(req->attr);
+	selector = le16_to_cpu(req->selector);
+
+	entry = svc_gb_get_dme_entry(attr, selector);
+	if (!entry) {
+		resp.result_code = GB_OP_NONEXISTENT;
+		goto send_response;
+	}
+
+	/* If there is a specific handler, use it, otherwise lets just
+	 * use the default value we always want to return.
+	 */
+	if (entry->dme_get) {
+		ret = entry->dme_get(dld, req->intf_id, attr,
+					selector, &resp.attr_value);
+		resp.result_code = gb_operation_errno_map(ret);
+	} else {
+		resp.result_code = GB_OP_SUCCESS;
+		resp.attr_value = entry->default_value;
+	}
+
+send_response:
+	ret = svc_gb_send_response(dld, cport, req_msg, sizeof(resp),
+					&resp, GB_OP_SUCCESS);
+	if (ret)
+		dev_err(&svc_dd->pdev->dev,
+			"Failed response to DME_GET request for intf_id: %d\n",
+			req->intf_id);
+
+	return 0;
+}
+
+static int
+svc_gb_dme_set(struct mods_dl_device *dld, struct gb_message *req_msg,
+		uint16_t cport)
+{
+	struct gb_svc_dme_peer_set_request *req;
+	struct gb_svc_dme_peer_set_response resp;
+	struct svc_gb_dme_entry *entry;
+	int ret;
+	u16 attr;
+	u16 selector;
+
+	req = (struct gb_svc_dme_peer_set_request *)req_msg->payload;
+	attr = le16_to_cpu(req->attr);
+	selector = le16_to_cpu(req->selector);
+
+	entry = svc_gb_get_dme_entry(attr, selector);
+	if (!entry) {
+		resp.result_code = GB_OP_NONEXISTENT;
+		goto send_response;
+	}
+
+	/* If there is a specific handler, use it, otherwise done
+	 */
+	if (entry->dme_set) {
+		ret = entry->dme_set(dld, req->intf_id, attr, selector,
+					le32_to_cpu(req->value));
+		resp.result_code = gb_operation_errno_map(ret);
+	} else {
+		resp.result_code = GB_OP_SUCCESS;
+	}
+
+send_response:
+	ret = svc_gb_send_response(dld, cport, req_msg, sizeof(resp),
+					&resp, GB_OP_SUCCESS);
+	if (ret)
+		dev_err(&svc_dd->pdev->dev,
+			"Failed response to DME_SET request for intf_id: %d\n",
+			req->intf_id);
+
+	return 0;
+}
+
 static int
 muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 			  size_t msg_size, uint16_t cport)
@@ -573,6 +692,12 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 	case GB_SVC_TYPE_ROUTE_DESTROY:
 		/* Just send an ACK, we do not have use for device id */
 		break;
+	case GB_SVC_TYPE_DME_PEER_GET:
+		ret = svc_gb_dme_get(dld, op->request, cport);
+		goto skip_generic_response;
+	case GB_SVC_TYPE_DME_PEER_SET:
+		ret = svc_gb_dme_set(dld, op->request, cport);
+		goto skip_generic_response;
 	default:
 		dev_err(&dd->pdev->dev, "Unsupported type: %d\n", hdr.type);
 		goto free_request;
@@ -590,6 +715,7 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 		}
 	}
 
+skip_generic_response:
 	/* Done with the request and op */
 	svc_gb_msg_free(op->request);
 	kfree(op);
