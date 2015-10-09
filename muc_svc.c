@@ -507,6 +507,31 @@ svc_gb_conn_destroy(struct mods_dl_device *dld, struct gb_message *req,
 }
 
 static int
+svc_gb_send_response(struct mods_dl_device *dld, uint16_t cport,
+			struct gb_message *req_msg, size_t payload_size,
+			void *payload, uint8_t status)
+{
+	struct gb_message *resp_msg;
+	int ret;
+	u8 type = req_msg->header->type | GB_MESSAGE_TYPE_RESPONSE;
+
+	resp_msg = svc_gb_msg_alloc(type, payload_size);
+	if (!resp_msg)
+		return -ENOMEM;
+
+	resp_msg->header->operation_id = req_msg->header->operation_id;
+	resp_msg->header->result = status;
+	if (payload_size)
+		memcpy(resp_msg->payload, payload, payload_size);
+
+	ret = svc_route_msg(dld, cport, resp_msg);
+
+	svc_gb_msg_free(resp_msg);
+
+	return ret;
+}
+
+static int
 muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 			  size_t msg_size, uint16_t cport)
 {
@@ -550,28 +575,19 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 		break;
 	default:
 		dev_err(&dd->pdev->dev, "Unsupported type: %d\n", hdr.type);
-		goto unknown_type;
+		goto free_request;
 	}
 
 	/* If hdr operation id is non-zero, it expects a response */
 	if (hdr.operation_id) {
-		op->response = svc_gb_msg_alloc(GB_MESSAGE_TYPE_RESPONSE, 0);
-
-		/* Copy in the original request type and operation id */
-		op->response->header->type |= hdr.type;
-		op->response->header->operation_id = hdr.operation_id;
-		op->response->header->result = gb_operation_errno_map(ret);
-
-		ret = svc_route_msg(dld, cport, op->response);
+		ret = svc_gb_send_response(dld, cport, op->request, 0,
+					NULL, gb_operation_errno_map(ret));
 		if (ret) {
 			dev_err(&dd->pdev->dev,
 				"Failed to send response for type: %d\n",
 				hdr.type);
-			goto free_response;
+			goto free_request;
 		}
-
-		/* Done with the response */
-		svc_gb_msg_free(op->response);
 	}
 
 	/* Done with the request and op */
@@ -580,9 +596,7 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 
 	return 0;
 
-free_response:
-	svc_gb_msg_free(op->response);
-unknown_type:
+free_request:
 	svc_gb_msg_free(op->request);
 gb_msg_alloc:
 	kfree(op);
@@ -1166,35 +1180,22 @@ svc_filter_ap_manifest_size(struct mods_dl_device *orig_dev,
 			uint8_t *payload, size_t size)
 {
 	struct muc_msg *mm = (struct muc_msg *)payload;
-	struct gb_operation_msg_hdr *hdr;
-	struct gb_message *msg;
+	struct gb_message msg;
 	struct device *dev = &svc_dd->pdev->dev;
 	struct gb_control_get_manifest_size_response resp;
-	uint8_t type;
 	int ret;
 
-	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
-	type = hdr->type | GB_MESSAGE_TYPE_RESPONSE;
+	msg.header = (struct gb_operation_msg_hdr *)mm->gb_msg;
 
 	/* Get the unsigned manifest size */
 	resp.size = svc_get_unsigned_manifest_size(orig_dev);
 	if (!resp.size)
 		return -EINVAL;
 
-	msg = svc_gb_msg_alloc(type, sizeof(resp));
-	if (!msg)
-		return -ENOMEM;
-
-	msg->header->operation_id = hdr->operation_id;
-	msg->header->result = GB_OP_SUCCESS;
-
-	memcpy(msg->payload, &resp, sizeof(resp));
-
-	ret = svc_route_msg(orig_dev, le16_to_cpu(mm->hdr.cport), msg);
+	ret = svc_gb_send_response(orig_dev, le16_to_cpu(mm->hdr.cport), &msg,
+					sizeof(resp), &resp, GB_OP_SUCCESS);
 	if (ret)
 		dev_err(dev, "Failed to route manifest size\n");
-
-	svc_gb_msg_free(msg);
 
 	return ret;
 }
@@ -1204,36 +1205,24 @@ svc_filter_ap_manifest(struct mods_dl_device *orig_dev,
 			uint8_t *payload, size_t size)
 {
 	struct muc_msg *mm = (struct muc_msg *)payload;
-	struct gb_operation_msg_hdr *hdr;
-	struct gb_message *msg;
+	struct gb_message msg;
 	struct device *dev = &svc_dd->pdev->dev;
-	uint8_t type;
 	uint16_t mnf_size;
 	int ret;
 
-	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
-	type = hdr->type | GB_MESSAGE_TYPE_RESPONSE;
+	msg.header = (struct gb_operation_msg_hdr *)mm->gb_msg;
 
 	/* Only allocate the actual manifest size, not signed */
 	mnf_size = svc_get_unsigned_manifest_size(orig_dev);
 	if (!mnf_size)
 		return -EINVAL;
 
-	msg = svc_gb_msg_alloc(type, mnf_size);
-	if (!msg)
-		return -ENOMEM;
-
-	msg->header->operation_id = hdr->operation_id;
-	msg->header->result = GB_OP_SUCCESS;
-
 	/* We skip intermediate copy to 'get_manifest_response' */
-	memcpy(msg->payload, orig_dev->manifest, mnf_size);
-
-	ret = svc_route_msg(orig_dev, le16_to_cpu(mm->hdr.cport), msg);
+	ret = svc_gb_send_response(orig_dev, le16_to_cpu(mm->hdr.cport), &msg,
+					mnf_size, orig_dev->manifest,
+					GB_OP_SUCCESS);
 	if (ret)
-		dev_err(dev, "Failed to route manifest size\n");
-
-	svc_gb_msg_free(msg);
+		dev_err(dev, "Failed to route manifest\n");
 
 	return ret;
 }
