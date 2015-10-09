@@ -31,20 +31,23 @@
 #define DRIVERNAME	"mods_uart"
 #define N_MODS_UART	25
 
+#pragma pack(push, 1)
+struct uart_msg_hdr {
+	__le16  nw_msg_size;
+};
+#pragma pack(pop)
+
+#define MODS_UART_MAX_SIZE (MUC_MSG_SIZE_MAX + sizeof(struct uart_msg_hdr))
+
 struct mods_uart_data {
 	struct platform_device *pdev;
 	struct tty_struct *tty;
 	struct mods_dl_device *dld;
 	struct notifier_block attach_nb;
 	bool present;
+	char rx_data[MODS_UART_MAX_SIZE];
+	size_t rx_len;
 };
-
-#pragma pack(push, 1)
-struct uart_msg_hdr
-{
-	__le16  nw_msg_size;
-};
-#pragma pack(pop)
 
 /* Found in tty_io.c */
 extern struct mutex tty_mutex;
@@ -401,24 +404,49 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 	struct mods_uart_data *mud = tty->disc_data;
 	struct device *dev = &mud->pdev->dev;
 	uint16_t calc_crc;
-	uint16_t *rcvd_crc = (uint16_t *)&cp[count - sizeof(calc_crc)];
-	struct uart_msg_hdr *hdr = (struct uart_msg_hdr *) cp;
-	uint8_t *payload = ((uint8_t *)cp) + sizeof(struct uart_msg_hdr);
+	uint16_t *rcvd_crc;
+	struct uart_msg_hdr *hdr;
+	uint8_t *payload;
+	size_t content_size;
 
-	calc_crc = gen_crc16((uint8_t *)cp, count - sizeof(calc_crc));
-	if (*rcvd_crc != calc_crc) {
+	if (mud->rx_len + count > MODS_UART_MAX_SIZE) {
+		dev_err(dev, "%s: RX buffer overflow\n", __func__);
+		/* Should not happen as long as data in uart is read out
+		   constantly. */
+		mud->rx_len = 0;
+		return count;
+	}
+
+	memcpy(&mud->rx_data[mud->rx_len], cp, count);
+	mud->rx_len += count;
+
+	if (mud->rx_len < sizeof(*hdr))
+		return count;
+
+	hdr = (struct uart_msg_hdr *) mud->rx_data;
+	content_size = sizeof(*hdr) + le16_to_cpu(hdr->nw_msg_size);
+
+	if (mud->rx_len < content_size + sizeof(calc_crc))
+		return count;
+
+	rcvd_crc = (uint16_t *)&mud->rx_data[content_size];
+	calc_crc = gen_crc16((uint8_t *) mud->rx_data, content_size);
+	if (le16_to_cpu(*rcvd_crc) != calc_crc) {
 		dev_err(dev, "%s: CRC mismatch, received: 0x%x, "
-			"calculated: 0x%x\n", __func__, *rcvd_crc, calc_crc);
+			"calculated: 0x%x\n", __func__,
+			le16_to_cpu(*rcvd_crc), calc_crc);
 
 		/*
 		 * Not sure what is best to return in this case. Since the
 		 * entire buf was technically received and parsed, return the
 		 * total count.
 		 */
-		return count;
+	} else {
+		payload = ((uint8_t *)mud->rx_data) + sizeof(*hdr);
+		mods_nw_switch(mud->dld, payload,
+			       le16_to_cpu(hdr->nw_msg_size));
 	}
-
-	mods_nw_switch(mud->dld, payload, hdr->nw_msg_size);
+	mud->rx_len = 0;
 	return count;
 }
 
