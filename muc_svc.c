@@ -1616,6 +1616,13 @@ static int muc_svc_probe(struct platform_device *pdev)
 
 	svc_dd = dd;
 
+	/* XXX Let's re-notify user space the device is added... since the
+	 * OF framework will create our platform device during parsing,
+	 * userspace won't be able to know new sysfs entries have been
+	 * created....
+	 */
+	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
+
 	return 0;
 
 free_kset:
