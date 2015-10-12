@@ -31,6 +31,7 @@ gb-mods-y :=	muc_core.o \
 		muc_svc.o \
 		mods_init.o \
 		muc_spi.o \
+		apba.o \
 		mods_uart.o \
 		mods_nw.o \
 		crc.o

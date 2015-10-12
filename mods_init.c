@@ -16,6 +16,7 @@
 #include <linux/module.h>
 
 #include "muc.h"
+#include "apba.h"
 
 static int __init mods_init(void)
 {
@@ -25,6 +26,7 @@ static int __init mods_init(void)
 	err |= muc_svc_init();
 	err |= mods_ap_init();
 	err |= muc_spi_init();
+	err |= apba_ctrl_init();
 	err |= mods_uart_init();
 
 	return (err ? -ENODEV : 0);
@@ -35,6 +37,7 @@ static void __exit mods_exit(void)
 	muc_spi_exit();
 	mods_ap_exit();
 	mods_uart_exit();
+	apba_ctrl_exit();
 	muc_svc_exit();
 	muc_core_exit();
 }
