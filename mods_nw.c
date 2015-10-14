@@ -178,12 +178,11 @@ void mods_nw_del_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 			sizeof(struct dest_entry));
 }
 
-int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
+int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 {
 	struct muc_msg *mm;
 	struct dest_entry dest;
 	int err = -ENODEV;
-	size_t size;
 
 	if (!msg || !from) {
 		pr_err("bad arguments\n");
@@ -191,8 +190,6 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	}
 
 	mm = (struct muc_msg *)msg;
-
-	size = mm->hdr.gb_msg_size + sizeof(struct muc_msg);
 
 	if (from->intf_id >= CONFIG_MODS_DEV_MAX) {
 		dev_err(from->dev, "Attempt to send with invalid IID\n");
@@ -225,9 +222,9 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg)
 	 * to allow the message to continue to pass through with this
 	 * error code.
 	 */
-	err = _mods_nw_apply_filter(&dest, dest.dev, msg, size);
+	err = _mods_nw_apply_filter(&dest, dest.dev, msg, len);
 	if (err == -ENOENT)
-		err = dest.dev->drv->message_send(dest.dev, msg, size);
+		err = dest.dev->drv->message_send(dest.dev, msg, len);
 
 out:
 	return err;

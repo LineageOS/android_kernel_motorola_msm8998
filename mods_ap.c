@@ -37,7 +37,7 @@ static int mods_ap_message_send(struct mods_dl_device *dld,
 	struct muc_msg *msg = (struct muc_msg *)buf;
 
 	greybus_data_rcvd(g_hd, le16_to_cpu(msg->hdr.cport),
-			msg->gb_msg, msg->hdr.gb_msg_size);
+			msg->gb_msg, (len - sizeof(msg->hdr)));
 	return 0;
 }
 
@@ -73,6 +73,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 		gfp_t gfp_mask)
 {
 	size_t buffer_size;
+	size_t msg_size;
 	struct muc_msg *msg;
 	struct mods_ap_data *data;
 	struct mods_dl_device *dl;
@@ -86,16 +87,16 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 
 	buffer_size = sizeof(*message->header) + message->payload_size;
 
-	msg = kzalloc(buffer_size + sizeof(struct muc_msg_hdr), gfp_mask);
+	msg_size = buffer_size + sizeof(struct muc_msg_hdr);
+	msg = kzalloc(msg_size, gfp_mask);
 	if (!msg)
 		return -ENOMEM;
 
 	msg->hdr.cport = cpu_to_le16(hd_cport_id);
-	msg->hdr.gb_msg_size = buffer_size;
 	memcpy(&msg->gb_msg[0], message->buffer, buffer_size);
 
 	/* hand off to the nw layer */
-	rv = mods_nw_switch(dl, (uint8_t *)msg);
+	rv = mods_nw_switch(dl, (uint8_t *)msg, msg_size);
 
 	/* Tell submitter that the message send (attempt) is
 	 * complete and save the status.

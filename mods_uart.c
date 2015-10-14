@@ -39,6 +39,13 @@ struct mods_uart_data {
 	bool present;
 };
 
+#pragma pack(push, 1)
+struct uart_msg_hdr
+{
+	__le16  nw_msg_size;
+};
+#pragma pack(pop)
+
 /* Found in tty_io.c */
 extern struct mutex tty_mutex;
 
@@ -67,25 +74,43 @@ static int mods_uart_message_send(struct mods_dl_device *dld,
 	struct mods_uart_data *mud = (struct mods_uart_data *)dld->dl_priv;
 	struct device *dev = &mud->pdev->dev;
 	int ret;
+	u8 *pkt;
+	size_t pkt_size;
+	struct uart_msg_hdr *hdr;
 	__le16 crc16;
 
-	crc16 = gen_crc16(buf, len);
+	pkt_size = sizeof(struct uart_msg_hdr) + len;
+	pkt = kmalloc(pkt_size, GFP_KERNEL);
+	if (!pkt)
+		return -ENOMEM;
 
-	/* First send the message payload */
-	ret = mud->tty->ops->write(mud->tty, buf, len);
-	if (ret != len) {
+	/* Populate the packet */
+	hdr = (struct uart_msg_hdr *) pkt;
+	hdr->nw_msg_size = cpu_to_le16(len);
+	memcpy(pkt + sizeof(*hdr), buf, len);
+
+	crc16 = gen_crc16(pkt, pkt_size);
+
+	/* First send the message */
+	ret = mud->tty->ops->write(mud->tty, pkt, pkt_size);
+	if (ret != pkt_size) {
 		dev_err(dev, "%s: Failed to send message\n", __func__);
-		return -EIO;
+		goto send_err;
 	}
 
 	/* Then send the CRC */
 	ret = mud->tty->ops->write(mud->tty, (uint8_t *)&crc16, sizeof(crc16));
 	if (ret != sizeof(crc16)) {
 		dev_err(dev, "%s: Failed to send CRC\n", __func__);
-		return -EIO;
+		goto send_err;
 	}
 
+	kfree(pkt);
 	return 0;
+
+send_err:
+	kfree(pkt);
+	return -EIO;
 }
 
 /*
@@ -377,6 +402,8 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 	struct device *dev = &mud->pdev->dev;
 	uint16_t calc_crc;
 	uint16_t *rcvd_crc = (uint16_t *)&cp[count - sizeof(calc_crc)];
+	struct uart_msg_hdr *hdr = (struct uart_msg_hdr *) cp;
+	uint8_t *payload = ((uint8_t *)cp) + sizeof(struct uart_msg_hdr);
 
 	calc_crc = gen_crc16((uint8_t *)cp, count - sizeof(calc_crc));
 	if (*rcvd_crc != calc_crc) {
@@ -391,7 +418,7 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 		return count;
 	}
 
-	mods_nw_switch(mud->dld, (uint8_t *)cp);
+	mods_nw_switch(mud->dld, payload, hdr->nw_msg_size);
 	return count;
 }
 

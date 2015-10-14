@@ -18,7 +18,6 @@ struct mods_dl_device;
 
 #pragma pack(push, 1)
 struct muc_msg_hdr {
-	__le16  gb_msg_size;
 	__le16  cport;
 };
 
@@ -78,7 +77,7 @@ extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
 extern struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id);
 
 /* send message to switch to connect to destination */
-extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg);
+extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len);
 
 /* register a message filter callback */
 extern int mods_nw_register_filter(struct mods_nw_msg_filter *filter);

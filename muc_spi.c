@@ -170,8 +170,7 @@ static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *buf)
 		return;
 	}
 
-	mods_nw_switch(dd->dld, dd->rcvd_payload);
-	memset(dd->rcvd_payload, 0, MUC_MSG_SIZE_MAX);
+	mods_nw_switch(dd->dld, dd->rcvd_payload, dd->rcvd_payload_idx);
 	dd->rcvd_payload_idx = 0;
 }
 
