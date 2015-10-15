@@ -125,6 +125,24 @@ static ssize_t pid_show(struct mods_dl_device *dev, char *buf)
 		dev->hpw->hotplug.data.ara_prod_id);
 }
 
+static ssize_t unipro_mid_show(struct mods_dl_device *dev, char *buf)
+{
+	if (!dev->hpw)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04X",
+		dev->hpw->hotplug.data.unipro_mfg_id);
+}
+
+static ssize_t unipro_pid_show(struct mods_dl_device *dev, char *buf)
+{
+	if (!dev->hpw)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04X",
+		dev->hpw->hotplug.data.unipro_prod_id);
+}
+
 static ssize_t
 hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 {
@@ -177,6 +195,8 @@ struct muc_svc_attribute muc_svc_attr_##_name = {\
 static MUC_SVC_ATTR(hotplug, 0200, NULL, hotplug_store);
 static MUC_SVC_ATTR(vid, 0444, vid_show, NULL);
 static MUC_SVC_ATTR(pid, 0444, pid_show, NULL);
+static MUC_SVC_ATTR(unipro_mid, 0444, unipro_mid_show, NULL);
+static MUC_SVC_ATTR(unipro_pid, 0444, unipro_pid_show, NULL);
 static MUC_SVC_ATTR(serial, 0444, serial_show, NULL);
 static MUC_SVC_ATTR(uevent, 0200, NULL, uevent_store);
 static MUC_SVC_ATTR(fw_version, 0444, fw_version_show, NULL);
@@ -218,6 +238,8 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_hotplug.attr,
 	&muc_svc_attr_vid.attr,
 	&muc_svc_attr_pid.attr,
+	&muc_svc_attr_unipro_mid.attr,
+	&muc_svc_attr_unipro_pid.attr,
 	&muc_svc_attr_serial.attr,
 	&muc_svc_attr_uevent.attr,
 	&muc_svc_attr_fw_version.attr,
