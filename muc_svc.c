@@ -1001,6 +1001,7 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	struct gb_control_get_ids_response *ids;
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_message *msg;
+	int ret;
 
 	/* GET_IDs has no payload */
 	msg = svc_gb_msg_send_sync(dld, NULL, GB_CONTROL_TYPE_GET_IDS, 0,
@@ -1010,15 +1011,13 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 		return PTR_ERR(msg);
 	}
 
-	if (msg->payload_size != sizeof(*ids)) {
-		dev_err(&dd->pdev->dev,
-			"Invalid GET_IDS response size: %zu vs %zu\n",
-			msg->payload_size, sizeof(*ids));
-		svc_gb_msg_free(msg);
-		return -EINVAL;
+	ids = kzalloc(sizeof(*ids), GFP_KERNEL);
+	if (!ids) {
+		ret = -ENOMEM;
+		goto free_gb_msg;
 	}
 
-	ids = msg->payload;
+	memcpy(ids, msg->payload, min(msg->payload_size, sizeof(*ids)));
 
 	hotplug->data.unipro_mfg_id = le32_to_cpu(ids->unipro_mfg_id);
 	hotplug->data.unipro_prod_id = le32_to_cpu(ids->unipro_prod_id);
@@ -1037,8 +1036,14 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 		mods_dev->uid_high, mods_dev->uid_low);
 
 	svc_gb_msg_free(msg);
+	kfree(ids);
 
 	return 0;
+
+free_gb_msg:
+	svc_gb_msg_free(msg);
+
+	return ret;
 }
 
 static int muc_svc_create_control_route(u8 intf_id)
