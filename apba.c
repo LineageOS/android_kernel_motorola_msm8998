@@ -41,6 +41,7 @@ struct apba_ctrl {
 	struct clk *mclk;
 	int gpio_cnt;
 	int gpios[APBA_NUM_GPIOS];
+	const char *gpio_labels[APBA_NUM_GPIOS];
 	int int_index;
 	int irq;
 	struct apba_seq enable_seq;
@@ -359,20 +360,23 @@ static int apba_int_setup(struct apba_ctrl *ctrl,
 	ret = of_property_read_u32(dev->of_node,
 		"mmi,int-index", &ctrl->int_index);
 	if (ret) {
-		dev_warn(dev, "%s:%d failed to read int index.\n",
-			__func__, __LINE__);
+		dev_err(dev, "failed to read int index.\n");
+		return ret;
+	}
+
+	if (ctrl->int_index < 0 || ctrl->int_index >= ctrl->gpio_cnt) {
+		dev_err(dev, "int index out of range: %d\n", ctrl->int_index);
+		return -EINVAL;
 	}
 
 	gpio = ctrl->gpios[ctrl->int_index];
 	ctrl->irq = gpio_to_irq(gpio);
-	dev_dbg(dev, "%s: irq: gpio=%d irq=%d\n",
-		__func__, gpio, ctrl->irq);
+	dev_dbg(dev, "irq: gpio=%d irq=%d\n", gpio, ctrl->irq);
 
-	ret = request_threaded_irq(ctrl->irq, NULL /* handler */,
+	ret = devm_request_threaded_irq(dev, ctrl->irq, NULL /* handler */,
 		apba_isr, flags, "apba_ctrl", ctrl);
 	if (ret) {
-		dev_err(dev, "%s:%d irq request failed: %d\n",
-			__func__, __LINE__, ret);
+		dev_err(dev, "irq request failed: %d\n", ret);
 		return ret;
 	}
 
@@ -381,13 +385,28 @@ static int apba_int_setup(struct apba_ctrl *ctrl,
 	return ret;
 }
 
-static int apba_gpio_setup(struct apba_ctrl *ctrl,
-	struct device *dev)
+static void apba_gpio_free(struct apba_ctrl *ctrl, struct device *dev)
+{
+	int i;
+
+	for (i = 0; i < ctrl->gpio_cnt; i++) {
+		sysfs_remove_link(&dev->kobj, ctrl->gpio_labels[i]);
+		gpio_unexport(ctrl->gpios[i]);
+	}
+}
+
+static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 {
 	int i;
 	int gpio_cnt = of_gpio_count(dev->of_node);
 	const char *label_prop = "mmi,gpio-labels";
 	int label_cnt = of_property_count_strings(dev->of_node, label_prop);
+	int ret;
+
+	if (gpio_cnt <= 0) {
+		dev_err(dev, "No GPIOs were defined\n");
+		return -EINVAL;
+	}
 
 	if (gpio_cnt > ARRAY_SIZE(ctrl->gpios)) {
 		dev_err(dev, "%s:%d gpio count is greater than %zu.\n",
@@ -407,28 +426,47 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl,
 		const char *label = NULL;
 
 		gpio = of_get_gpio_flags(dev->of_node, i, &flags);
-		if (gpio < 0) {
-			dev_err(dev, "%s:%d of_get_gpio failed: %d\n",
-				__func__, __LINE__, gpio);
-			return gpio;
+		if (!gpio_is_valid(gpio)) {
+			dev_err(dev, "of_get_gpio failed: %d\n", gpio);
+			ret = -EINVAL;
+			goto gpio_cleanup;
 		}
 
-		if (i < label_cnt)
-			of_property_read_string_index(dev->of_node, label_prop,
-				i, &label);
+		ret = of_property_read_string_index(dev->of_node,
+					label_prop, i, &label);
+		if (ret) {
+			dev_err(dev, "reading label failed: %d\n", ret);
+			goto gpio_cleanup;
+		}
 
-		gpio_request_one(gpio, flags, label);
-		gpio_export(gpio, true);
-		gpio_export_link(dev, label, gpio);
+		ret = devm_gpio_request_one(dev, gpio, flags, label);
+		if (ret)
+			goto gpio_cleanup;
+
+		ret = gpio_export(gpio, true);
+		if (ret)
+			goto gpio_cleanup;
+
+		ret = gpio_export_link(dev, label, gpio);
+		if (ret) {
+			gpio_unexport(gpio);
+			goto gpio_cleanup;
+		}
 
 		dev_dbg(dev, "%s: gpio=%d, flags=0x%x, label=%s\n",
 			__func__, gpio, flags, label);
 
-		ctrl->gpio_cnt = gpio_cnt;
 		ctrl->gpios[i] = gpio;
+		ctrl->gpio_labels[i] = label;
+		ctrl->gpio_cnt++;
 	}
 
 	return 0;
+
+gpio_cleanup:
+	apba_gpio_free(ctrl, dev);
+
+	return ret;
 }
 
 static int apba_ctrl_probe(struct platform_device *pdev)
@@ -464,67 +502,82 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	ret = apba_gpio_setup(ctrl, &pdev->dev);
 	if (ret) {
-		dev_err(&pdev->dev, "%s:%d: failed to read gpios.\n",
-			__func__, __LINE__);
-		return ret;
+		dev_err(&pdev->dev, "failed to read gpios.\n");
+		goto disable_clk;
 	}
 
 	ret = apba_int_setup(ctrl, &pdev->dev);
-	if (ret) {
-		dev_err(&pdev->dev, "%s:%d: failed to setup interrupt.\n",
-			__func__, __LINE__);
-		return ret;
-	}
+	if (ret)
+		goto free_gpios;
 
 	ctrl->enable_seq.len = ARRAY_SIZE(ctrl->enable_seq.val);
 	ret = apba_parse_seq(&pdev->dev, "mmi,enable-seq",
 		&ctrl->enable_seq);
-	if (ret) {
-		dev_err(&pdev->dev, "%s:%d failed to read enable sequence.\n",
-			__func__, __LINE__);
-		ctrl->enable_seq.len = 0;
-		return ret;
-	}
+	if (ret)
+		goto disable_irq;
 
 	ctrl->disable_seq.len = ARRAY_SIZE(ctrl->disable_seq.val);
 	ret = apba_parse_seq(&pdev->dev, "mmi,disable-seq",
 		&ctrl->disable_seq);
-	if (ret) {
-		dev_err(&pdev->dev, "%s:%d failed to read disable sequence.\n",
-			__func__, __LINE__);
-		ctrl->disable_seq.len = 0;
-		return ret;
-	}
+	if (ret)
+		goto disable_irq;
 
 	ctrl->wake_seq.len = ARRAY_SIZE(ctrl->wake_seq.val);
 	ret = apba_parse_seq(&pdev->dev, "mmi,wake-seq",
 		&ctrl->wake_seq);
-	if (ret) {
-		dev_err(&pdev->dev, "%s:%d failed to read wake sequence.\n",
-			__func__, __LINE__);
-		ctrl->wake_seq.len = 0;
-		return ret;
-	}
+	if (ret)
+		goto disable_irq;
 
 	ret = request_firmware_nowait(THIS_MODULE, true, APBA_FIRMWARE_NAME,
 	    &pdev->dev, GFP_KERNEL, ctrl, apba_firmware_callback);
 	if (ret) {
-		dev_err(&pdev->dev, "%s:%d failed to request firmware.\n",
-			__func__, __LINE__);
-		return ret;
+		dev_err(&pdev->dev, "failed to request firmware.\n");
+		goto disable_irq;
 	}
 
-	device_create_file(ctrl->dev, &dev_attr_erase_firmware);
-	device_create_file(ctrl->dev, &dev_attr_flash_firmware);
+	ret = device_create_file(ctrl->dev, &dev_attr_erase_firmware);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to create erase fw sysfs\n");
+		goto disable_irq;
+	}
+
+	ret = device_create_file(ctrl->dev, &dev_attr_flash_firmware);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to create flash fw sysfs\n");
+		goto free_erase_sysfs;
+	}
+
 	g_ctrl = ctrl;
 
 	platform_set_drvdata(pdev, ctrl);
 
 	return 0;
+
+free_erase_sysfs:
+	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
+disable_irq:
+	disable_irq_wake(ctrl->irq);
+free_gpios:
+	apba_gpio_free(ctrl, &pdev->dev);
+disable_clk:
+	clk_disable_unprepare(ctrl->mclk);
+
+	return ret;
 }
 
 static int apba_ctrl_remove(struct platform_device *pdev)
 {
+	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
+
+	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
+	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
+
+	disable_irq_wake(ctrl->irq);
+
+	apba_gpio_free(ctrl, &pdev->dev);
+
+	clk_disable_unprepare(ctrl->mclk);
+
 	return 0;
 }
 
