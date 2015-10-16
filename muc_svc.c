@@ -1241,6 +1241,8 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	if (muc_svc_generate_unplug(mods_dev))
 		return;
 
+	kfree(mods_dev->manifest);
+
 	dev_info(&svc_dd->pdev->dev, "Successfully sent unplug for IID: %d\n",
 			mods_dev->intf_id);
 }
