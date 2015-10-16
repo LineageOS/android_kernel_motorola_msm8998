@@ -15,8 +15,9 @@
 
 #include <linux/module.h>
 
-#include "muc.h"
 #include "apba.h"
+#include "mods_uart.h"
+#include "muc.h"
 
 static int __init mods_init(void)
 {

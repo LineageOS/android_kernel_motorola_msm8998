@@ -56,9 +56,6 @@ void muc_spi_exit(void);
 int muc_core_init(void);
 void muc_core_exit(void);
 
-int mods_uart_init(void);
-void mods_uart_exit(void);
-
 int muc_svc_init(void);
 void muc_svc_exit(void);
 

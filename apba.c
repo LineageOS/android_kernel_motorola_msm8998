@@ -47,6 +47,7 @@ struct apba_ctrl {
 	struct apba_seq enable_seq;
 	struct apba_seq disable_seq;
 	struct apba_seq wake_seq;
+	void *mods_uart;
 } *g_ctrl;
 
 static inline struct apba_ctrl *apba_sysfs_to_ctrl(struct device *dev)
@@ -467,6 +468,19 @@ gpio_cleanup:
 	apba_gpio_free(ctrl, dev);
 
 	return ret;
+}
+
+int apba_uart_register(void *mods_uart)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	g_ctrl->mods_uart = mods_uart;
+	return 0;
+}
+
+void apba_handle_message(void *payload, size_t len)
+{
 }
 
 static int apba_ctrl_probe(struct platform_device *pdev)

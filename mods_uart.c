@@ -23,6 +23,7 @@
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 
+#include "apba.h"
 #include "crc.h"
 #include "muc_attach.h"
 #include "mods_nw.h"
@@ -33,7 +34,8 @@
 
 #pragma pack(push, 1)
 struct uart_msg_hdr {
-	__le16  nw_msg_size;
+	__le16 nw_msg_size;
+	__le16 msg_type;
 };
 #pragma pack(pop)
 
@@ -47,6 +49,11 @@ struct mods_uart_data {
 	bool present;
 	char rx_data[MODS_UART_MAX_SIZE];
 	size_t rx_len;
+};
+
+enum {
+	MODS_UART_DL_GB,
+	MODS_UART_DL_APBA
 };
 
 /* Found in tty_io.c */
@@ -71,10 +78,9 @@ static ssize_t ldisc_rel_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(ldisc_rel);
 
-static int mods_uart_message_send(struct mods_dl_device *dld,
-				  uint8_t *buf, size_t len)
+static int mods_uart_send_internal(struct mods_uart_data *mud,
+				  __le16 type, uint8_t *buf, size_t len)
 {
-	struct mods_uart_data *mud = (struct mods_uart_data *)dld->dl_priv;
 	struct device *dev = &mud->pdev->dev;
 	int ret;
 	u8 *pkt;
@@ -90,10 +96,12 @@ static int mods_uart_message_send(struct mods_dl_device *dld,
 	/* Populate the packet */
 	hdr = (struct uart_msg_hdr *) pkt;
 	hdr->nw_msg_size = cpu_to_le16(len);
+	hdr->msg_type = cpu_to_le16(type);
 	memcpy(pkt + sizeof(*hdr), buf, len);
 
 	crc16 = gen_crc16(pkt, pkt_size);
 
+	mutex_lock(&tty_mutex);
 	/* First send the message */
 	ret = mud->tty->ops->write(mud->tty, pkt, pkt_size);
 	if (ret != pkt_size) {
@@ -108,12 +116,29 @@ static int mods_uart_message_send(struct mods_dl_device *dld,
 		goto send_err;
 	}
 
+	mutex_unlock(&tty_mutex);
 	kfree(pkt);
 	return 0;
 
 send_err:
+	mutex_unlock(&tty_mutex);
 	kfree(pkt);
 	return -EIO;
+}
+
+static int mods_uart_message_send(struct mods_dl_device *dld,
+				  uint8_t *buf, size_t len)
+{
+	struct mods_uart_data *mud = (struct mods_uart_data *)dld->dl_priv;
+
+	return mods_uart_send_internal(mud, MODS_UART_DL_GB, buf, len);
+}
+
+int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len)
+{
+	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
+
+	return mods_uart_send_internal(mud, MODS_UART_DL_APBA, buf, len);
 }
 
 /*
@@ -255,12 +280,17 @@ static int mods_uart_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	/* apba_ctrl must be probed and initialized */
+	if (apba_uart_register(mud))
+		return -EPROBE_DEFER;
+
 	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
 					intf_id);
 	if (IS_ERR(mud->dld)) {
 		dev_err(&pdev->dev, "%s: Unable to create data link device\n",
 			__func__);
-		return PTR_ERR(mud->dld);
+		ret = PTR_ERR(mud->dld);
+		goto unreg_apba;
 	}
 
 	mud->dld->dl_priv = (void *)mud;
@@ -352,6 +382,9 @@ release_tty:
 free_dld:
 	mods_remove_dl_device(mud->dld);
 
+unreg_apba:
+	apba_uart_register(NULL);
+
 	return ret;
 }
 
@@ -364,6 +397,8 @@ static int mods_uart_remove(struct platform_device *pdev)
 		mods_dl_dev_detached(mud->dld);
 
 	device_remove_file(&pdev->dev, &dev_attr_ldisc_rel);
+
+	apba_uart_register(NULL);
 
 	unregister_muc_attach_notifier(&mud->attach_nb);
 	mods_remove_dl_device(mud->dld);
@@ -443,8 +478,20 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 		 */
 	} else {
 		payload = ((uint8_t *)mud->rx_data) + sizeof(*hdr);
-		mods_nw_switch(mud->dld, payload,
-			       le16_to_cpu(hdr->nw_msg_size));
+		switch (le16_to_cpu(hdr->msg_type)) {
+		case MODS_UART_DL_GB:
+			mods_nw_switch(mud->dld, payload,
+				       le16_to_cpu(hdr->nw_msg_size));
+			break;
+		case MODS_UART_DL_APBA:
+			apba_handle_message(payload,
+					    le16_to_cpu(hdr->nw_msg_size));
+			break;
+		default:
+			dev_err(dev,
+				"%s: Unknown DL message type (%d) received\n",
+				__func__, le16_to_cpu(hdr->msg_type));
+		}
 	}
 	mud->rx_len = 0;
 	return count;

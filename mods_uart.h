@@ -11,14 +11,13 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __APBA_H__
-#define __APBA_H__
+#ifndef __MODS_UART_H__
+#define __MODS_UART_H__
 
-int apba_uart_register(void *mods_uart);
-void apba_handle_message(uint8_t *payload, size_t len);
+int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len);
 
 /* Driver Initializations */
-int apba_ctrl_init(void);
-void apba_ctrl_exit(void);
-#endif  /* __APBA_H__ */
+int mods_uart_init(void);
+void mods_uart_exit(void);
+#endif  /* __MODS_UART_H__ */
 
