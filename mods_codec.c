@@ -3,8 +3,10 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/init.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/mods_codec_dev.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -16,9 +18,11 @@
 
 #define MODS_VOL_STEP		50
 #define MODS_MIN_VOL		-12750
+#define MODS_CODEC_NAME "mods_codec"
 
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
+	struct mods_codec_device *m_dev;
 	atomic_t pcm_triggered;
 	int is_params_set;
 	struct workqueue_struct	*workqueue;
@@ -332,7 +336,8 @@ static int mods_codec_probe(struct snd_soc_codec *codec)
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 
 	priv->codec = codec;
-
+	snd_soc_dapm_new_controls(&codec->dapm, mods_dai_dapm_widgets,
+			ARRAY_SIZE(mods_dai_dapm_widgets));
 	snd_soc_dapm_add_routes(&codec->dapm, mods_codec_dapm_routes,
 			ARRAY_SIZE(mods_codec_dapm_routes));
 	snd_soc_add_codec_controls(codec, mods_codec_snd_controls,
@@ -349,12 +354,9 @@ static int mods_codec_remove(struct snd_soc_codec *codec)
 }
 
 static struct snd_soc_codec_driver soc_codec_dev_mods = {
-	.dapm_widgets = mods_dai_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(mods_dai_dapm_widgets),
 	.probe = mods_codec_probe,
 	.remove = mods_codec_remove,
 };
-
 
 static struct snd_soc_dai_driver mods_codec_codec_dai = {
 	.name			= "mods-codec-dai",
@@ -376,6 +378,12 @@ static struct snd_soc_dai_driver mods_codec_codec_dai = {
 
 };
 
+static const struct mods_codec_device_ops mods_dev_ops = {
+	.dai_ops = &mods_codec_dai_ops,
+	.probe = mods_codec_probe,
+	.remove = mods_codec_remove,
+};
+
 static int mods_codec_dai_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -386,6 +394,7 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 	if (priv == NULL)
 		return -ENOMEM;
 
+	dev_set_name(&pdev->dev, "%s", MODS_CODEC_NAME);
 	priv->snd_codec = (struct gb_snd_codec *)pdev->dev.platform_data;
 
 	priv->workqueue = alloc_workqueue("mods-codec", WQ_HIGHPRI, 0);
@@ -407,7 +416,17 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, priv);
 
+	priv->m_dev = mods_codec_register_device(&pdev->dev, &mods_dev_ops,
+					(void *)priv);
+	if (!priv->m_dev) {
+		pr_err("%s: failed to register mods codec bus dev", __func__);
+		ret = -ENOMEM;
+		goto codec_unreg;
+	}
+
 	return 0;
+codec_unreg:
+	snd_soc_unregister_codec(&pdev->dev);
 codec_reg_fail:
 	destroy_workqueue(priv->workqueue);
 wq_fail:
@@ -418,6 +437,7 @@ static int mods_codec_dai_remove(struct platform_device *pdev)
 {
 	struct mods_codec_dai *priv = dev_get_drvdata(&pdev->dev);
 
+	mods_codec_unregister_device(priv->m_dev);
 	snd_soc_unregister_codec(&pdev->dev);
 	destroy_workqueue(priv->workqueue);
 	return 0;
