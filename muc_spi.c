@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
+#include <linux/log2.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of_gpio.h>
@@ -28,12 +29,25 @@
 #include "mods_nw.h"
 #include "muc_svc.h"
 
-/* Size of payload of individual SPI packet (in bytes) */
-#define MUC_SPI_PAYLOAD_SZ_MAX  (32)
+/* Default payload size of a SPI packet (in bytes) */
+#define DEFAULT_PAYLOAD_SZ  (32)
 
+/* SPI packet header bit definitions */
 #define HDR_BIT_VALID  (0x01 << 7)  /* 1 = valid packet, 0 = dummy packet */
 #define HDR_BIT_RSVD   (0x03 << 5)  /* Reserved */
 #define HDR_BIT_PKTS   (0x1F << 0)  /* How many additional packets to expect */
+
+/* SPI packet CRC size (in bytes) */
+#define CRC_SIZE       (2)
+
+/* Macro to determine the payload size from the packet size */
+#define PL_SIZE(pkt_size)  (pkt_size - sizeof(struct spi_msg_hdr) - CRC_SIZE)
+
+/* Macro to determine the packet size from the payload size */
+#define PKT_SIZE(pl_size)  (pl_size + sizeof(struct spi_msg_hdr) + CRC_SIZE)
+
+/* Macro to determine the location of the CRC in the packet */
+#define CRC_NDX(pkt_size)  (pkt_size - CRC_SIZE)
 
 #define RDY_TIMEOUT_JIFFIES     (1 * HZ) /* 1 sec */
 
@@ -50,7 +64,9 @@ struct muc_spi_data {
 	int gpio_wake_n;
 	int gpio_rdy_n;
 
-	__u8 *rx_buf;
+	size_t pkt_size;                   /* Size of hdr + pl + CRC in bytes */
+	__u8 *tx_pkt;                      /* Buffer for transmit packets */
+	__u8 *rx_pkt;                      /* Buffer for received packets */
 
 	/*
 	 * Buffer to hold incoming payload (which could be spread across
@@ -61,20 +77,64 @@ struct muc_spi_data {
 };
 
 #pragma pack(push, 1)
-struct muc_spi_msg
+struct spi_msg_hdr
 {
-	__u8    hdr_bits;
-	__u8    data[MUC_SPI_PAYLOAD_SZ_MAX];
-	__le16  crc16;
+	__u8 bits;
 };
 #pragma pack(pop)
 
-
-static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *rx_buf);
+static void parse_rx_pkt(struct muc_spi_data *dd);
 
 static inline struct muc_spi_data *dld_to_dd(struct mods_dl_device *dld)
 {
 	return (struct muc_spi_data *)dld->dl_priv;
+}
+
+static int set_packet_size(struct muc_spi_data *dd, size_t pkt_size)
+{
+	size_t pl_size = PL_SIZE(pkt_size);
+	__u8 *tx_pkt_new;
+	__u8 *rx_pkt_new;
+
+	/* Immediately return if packet size is not changing */
+	if (pkt_size == dd->pkt_size)
+		return 0;
+
+	/*
+	 * Verify new packet size is valid. The payload must be no smaller than
+	 * the default packet size and must be a power of two.
+	 */
+	if (!is_power_of_2(pl_size) || (pl_size < DEFAULT_PAYLOAD_SZ))
+		return -EINVAL;
+
+	/* Allocate new TX packet buffer */
+	tx_pkt_new = devm_kzalloc(&dd->spi->dev, pkt_size, GFP_KERNEL);
+	if (!tx_pkt_new)
+		return -ENOMEM;
+
+	/* Allocate new RX packet buffer */
+	rx_pkt_new = devm_kzalloc(&dd->spi->dev, pkt_size, GFP_KERNEL);
+	if (!rx_pkt_new) {
+		devm_kfree(&dd->spi->dev, tx_pkt_new);
+		return -ENOMEM;
+	}
+
+	/* Save new packet size */
+	dd->pkt_size = pkt_size;
+
+	/* Free existing packet buffers (if any) */
+	if (dd->tx_pkt)
+		devm_kfree(&dd->spi->dev, dd->tx_pkt);
+	if (dd->rx_pkt)
+		devm_kfree(&dd->spi->dev, dd->rx_pkt);
+
+	/* Save pointers to new packet buffers */
+	dd->tx_pkt = tx_pkt_new;
+	dd->rx_pkt = rx_pkt_new;
+
+	dev_info(&dd->spi->dev, "Packet size is %zu bytes\n", pkt_size);
+
+	return 0;
 }
 
 static int muc_spi_transfer_locked(struct muc_spi_data *dd,
@@ -83,8 +143,8 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	struct spi_transfer t[] = {
 		{
 			.tx_buf = tx_buf,
-			.rx_buf = dd->rx_buf,
-			.len = sizeof(struct muc_spi_msg),
+			.rx_buf = dd->rx_pkt,
+			.len = dd->pkt_size,
 		},
 	};
 	int ret;
@@ -118,9 +178,8 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 
 	ret = spi_sync_transfer(dd->spi, t, 1);
 
-	if (!ret) {
-		parse_rx_dl(dd, dd->rx_buf);
-	}
+	if (!ret)
+		parse_rx_pkt(dd);
 
 	return ret;
 }
@@ -137,41 +196,54 @@ static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 	return ret;
 }
 
-static void parse_rx_dl(struct muc_spi_data *dd, uint8_t *buf)
+static void parse_rx_pkt(struct muc_spi_data *dd)
 {
-	struct muc_spi_msg *m = (struct muc_spi_msg *)buf;
+	struct spi_msg_hdr *hdr = (struct spi_msg_hdr *)dd->rx_pkt;
 	struct spi_device *spi = dd->spi;
-	uint16_t calcrc = 0;
+	uint16_t *rcvcrc_p;
+	uint16_t calcrc;
+	size_t pl_size = PL_SIZE(dd->pkt_size);
 
-	if (!(m->hdr_bits & HDR_BIT_VALID)) {
+	if (!(hdr->bits & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
 		return;
 	}
 
-	if (dd->rcvd_payload_idx >= MUC_MSG_SIZE_MAX) {
-		dev_err(&spi->dev, "%s: Too many packets received!\n", __func__);
+	rcvcrc_p = (uint16_t *)&dd->rx_pkt[CRC_NDX(dd->pkt_size)];
+	calcrc = gen_crc16(dd->rx_pkt, CRC_NDX(dd->pkt_size));
+	if (le16_to_cpu(*rcvcrc_p) != calcrc) {
+		dev_err(&spi->dev, "CRC mismatch, received: 0x%x,"
+			"calculated: 0x%x\n", le16_to_cpu(*rcvcrc_p), calcrc);
 		return;
 	}
 
-	calcrc = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
-	if (m->crc16 != calcrc) {
-		dev_err(&spi->dev, "%s: CRC mismatch, received: 0x%x,"
-			 "calculated: 0x%x\n", __func__, m->crc16, calcrc);
-		return;
+	/* Check if un-packetizing is required */
+	if (MUC_MSG_SIZE_MAX != pl_size) {
+		if (unlikely(dd->rcvd_payload_idx >= MUC_MSG_SIZE_MAX)) {
+			dev_err(&spi->dev, "Too many packets received!\n");
+			dd->rcvd_payload_idx = 0;
+			return;
+		}
+
+		memcpy(&dd->rcvd_payload[dd->rcvd_payload_idx],
+		       &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
+		       pl_size);
+		dd->rcvd_payload_idx += pl_size;
+
+		if (hdr->bits & HDR_BIT_PKTS) {
+			/* Need additional packets */
+			muc_spi_transfer_locked(dd, NULL,
+					((hdr->bits & HDR_BIT_PKTS) > 1));
+			return;
+		}
+
+		mods_nw_switch(dd->dld, dd->rcvd_payload, dd->rcvd_payload_idx);
+		dd->rcvd_payload_idx = 0;
+	} else {
+		/* Un-packetizing not required */
+		mods_nw_switch(dd->dld, &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
+			       pl_size);
 	}
-
-	memcpy(&dd->rcvd_payload[dd->rcvd_payload_idx], m->data,
-	       MUC_SPI_PAYLOAD_SZ_MAX);
-	dd->rcvd_payload_idx += MUC_SPI_PAYLOAD_SZ_MAX;
-
-	if (m->hdr_bits & HDR_BIT_PKTS) {
-		/* Need additional packets */
-		muc_spi_transfer_locked(dd, NULL, ((m->hdr_bits & HDR_BIT_PKTS) > 1));
-		return;
-	}
-
-	mods_nw_switch(dd->dld, dd->rcvd_payload, dd->rcvd_payload_idx);
-	dd->rcvd_payload_idx = 0;
 }
 
 static irqreturn_t muc_spi_isr(int irq, void *data)
@@ -257,39 +329,41 @@ set_missing:
 static int muc_spi_message_send(struct mods_dl_device *dld,
 				   uint8_t *buf, size_t len)
 {
-	struct muc_spi_msg *m;
+	struct spi_msg_hdr *hdr;
+	uint16_t *crc;
 	struct muc_spi_data *dd = dld_to_dd(dld);
 	int remaining = len;
-	uint8_t *dbuf = (uint8_t *)buf;
-	int pl_size;
+	size_t pl_size = PL_SIZE(dd->pkt_size);
 	int packets;
 
 	if (!dd->present)
 		return -ENODEV;
 
 	/* Calculate how many packets are required to send whole payload */
-	packets = (remaining + MUC_SPI_PAYLOAD_SZ_MAX - 1) / MUC_SPI_PAYLOAD_SZ_MAX;
+	packets = (remaining + pl_size - 1) / pl_size;
 
-	m = kmalloc(sizeof(struct muc_spi_msg), GFP_KERNEL);
-	if (!m)
-		return -ENOMEM;
+	hdr = (struct spi_msg_hdr *)dd->tx_pkt;
+	crc = (uint16_t *)&dd->tx_pkt[CRC_NDX(dd->pkt_size)];
 
 	while ((remaining > 0) && (packets > 0)) {
+		int this_pl;
+
 		/* Determine the payload size of this packet */
-		pl_size = MIN(remaining, MUC_SPI_PAYLOAD_SZ_MAX);
+		this_pl = MIN(remaining, pl_size);
 
 		/* Populate the SPI message */
-		m->hdr_bits = HDR_BIT_VALID;
-		m->hdr_bits |= (--packets & HDR_BIT_PKTS);
-		memcpy(m->data, dbuf, pl_size);
-		m->crc16 = gen_crc16((uint8_t *)m, sizeof(struct muc_spi_msg) - 2);
+		hdr->bits = HDR_BIT_VALID;
+		hdr->bits |= (--packets & HDR_BIT_PKTS);
+		memcpy((dd->tx_pkt + sizeof(*hdr)), buf, this_pl);
 
-		muc_spi_transfer(dd, (uint8_t *)m, (packets > 0));
+		*crc = gen_crc16(dd->tx_pkt, CRC_NDX(dd->pkt_size));
+		*crc = cpu_to_le16(*crc);
 
-		remaining -= pl_size;
-		dbuf += pl_size;
+		muc_spi_transfer(dd, dd->tx_pkt, (packets > 0));
+
+		remaining -= this_pl;
+		buf += this_pl;
 	}
-	kfree(m);
 
 	return 0;
 }
@@ -337,6 +411,7 @@ static int muc_spi_probe(struct spi_device *spi)
 {
 	struct muc_spi_data *dd;
 	u8 intf_id;
+	int ret;
 
 	dev_info(&spi->dev, "%s: enter\n", __func__);
 
@@ -354,11 +429,6 @@ static int muc_spi_probe(struct spi_device *spi)
 	if (!dd)
 		return -ENOMEM;
 
-	dd->rx_buf = devm_kzalloc(&spi->dev, sizeof(struct muc_spi_msg),
-					GFP_KERNEL);
-	if (!dd->rx_buf)
-		return -ENOMEM;
-
 	dd->dld = mods_create_dl_device(&muc_spi_dl_driver, &spi->dev, intf_id);
 	if (IS_ERR(dd->dld)) {
 		dev_err(&spi->dev, "%s: Unable to create greybus host driver.\n",
@@ -369,6 +439,11 @@ static int muc_spi_probe(struct spi_device *spi)
 	dd->dld->dl_priv = (void *)dd;
 	dd->spi = spi;
 	dd->attach_nb.notifier_call = muc_attach;
+
+	ret = set_packet_size(dd, PKT_SIZE(DEFAULT_PAYLOAD_SZ));
+	if (ret)
+		goto remove_dl_device;
+
 	muc_spi_gpio_init(dd);
 	mutex_init(&dd->mutex);
 	init_waitqueue_head(&dd->rdy_wq);
@@ -378,6 +453,11 @@ static int muc_spi_probe(struct spi_device *spi)
 	register_muc_attach_notifier(&dd->attach_nb);
 
 	return 0;
+
+remove_dl_device:
+	mods_remove_dl_device(dd->dld);
+
+	return ret;
 }
 
 static int muc_spi_remove(struct spi_device *spi)
