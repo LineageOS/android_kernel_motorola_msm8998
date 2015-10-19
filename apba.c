@@ -26,6 +26,9 @@
 #include <linux/clk.h>
 #include <linux/mtd/mtd.h>
 #include <linux/vmalloc.h>
+#include <linux/workqueue.h>
+
+#include "mods_uart.h"
 
 #define APBA_FIRMWARE_NAME ("apba.bin")
 #define APBA_NUM_GPIOS (8)
@@ -49,6 +52,36 @@ struct apba_ctrl {
 	struct apba_seq wake_seq;
 	void *mods_uart;
 } *g_ctrl;
+
+/* message from APBA Ctrl driver in kernel */
+#pragma pack(push, 1)
+struct apba_ctrl_msg_hdr {
+	__le16 type;
+	__le16 size; /* size of data followed by hdr */
+};
+
+struct apba_ctrl_int_reason_resp {
+	struct apba_ctrl_msg_hdr hdr;
+	__le16 reason;
+};
+#pragma pack(pop)
+
+enum {
+	APBA_CTRL_GET_INT_REASON,
+};
+
+enum {
+	APBA_INT_REASON_NONE,
+	APBA_INT_APBE_ON,
+	APBA_INT_APBE_OFF,
+	APBA_INT_APBE_CONNECTED,
+	APBA_INT_APBE_DISCONNECTED,
+};
+
+struct apbe_attach_work_struct {
+	struct work_struct work;
+	int present;
+};
 
 static inline struct apba_ctrl *apba_sysfs_to_ctrl(struct device *dev)
 {
@@ -343,9 +376,20 @@ static void apba_firmware_callback(const struct firmware *fw,
 static irqreturn_t apba_isr(int irq, void *data)
 {
 	struct apba_ctrl *ctrl = data;
+	struct apba_ctrl_msg_hdr msg;
 	int value = gpio_get_value(ctrl->gpios[ctrl->int_index]);
 
 	pr_debug("%s: ctrl=%p, value=%d\n", __func__, ctrl, value);
+
+	if (!ctrl->mods_uart)
+		return IRQ_HANDLED;
+
+	msg.type = cpu_to_le16(APBA_CTRL_GET_INT_REASON);
+	msg.size = 0;
+
+	if (mods_uart_apba_send(ctrl->mods_uart,
+				(uint8_t *)&msg, sizeof(msg)) != 0)
+		pr_err("%s: failed to send INT_REASON requeist\n", __func__);
 
 	return IRQ_HANDLED;
 }
@@ -355,8 +399,7 @@ static int apba_int_setup(struct apba_ctrl *ctrl,
 {
 	int ret;
 	int gpio;
-	unsigned int flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
-			     IRQF_ONESHOT;
+	unsigned int flags = IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
 
 	ret = of_property_read_u32(dev->of_node,
 		"mmi,int-index", &ctrl->int_index);
@@ -479,8 +522,77 @@ int apba_uart_register(void *mods_uart)
 	return 0;
 }
 
+static void apba_apbe_attach_work_func(struct work_struct *work)
+{
+	struct apbe_attach_work_struct *apbe;
+
+	apbe = container_of(work, struct apbe_attach_work_struct, work);
+
+	if (g_ctrl && g_ctrl->mods_uart)
+		mod_attach(g_ctrl->mods_uart, apbe->present);
+
+	kfree(apbe);
+}
+
+static void apba_notify_abpe_attach(int present)
+{
+	struct apbe_attach_work_struct *apbe;
+
+	if (!g_ctrl)
+		return;
+
+	apbe = kzalloc(sizeof(struct apbe_attach_work_struct), GFP_KERNEL);
+
+	if (!apbe)
+		return;
+
+	apbe->present = present;
+	INIT_WORK(&apbe->work, apba_apbe_attach_work_func);
+	schedule_work(&apbe->work);
+}
+
+static void apba_action_on_int_reason(uint16_t reason)
+{
+	switch (reason) {
+	case APBA_INT_APBE_ON:
+		/* TODO: will be filled in */
+		break;
+	case APBA_INT_APBE_OFF:
+		/* TODO: will be filled in */
+		break;
+	case APBA_INT_APBE_CONNECTED:
+		apba_notify_abpe_attach(1);
+		break;
+	case APBA_INT_APBE_DISCONNECTED:
+		apba_notify_abpe_attach(0);
+		break;
+	default:
+		pr_debug("%s: Unknown int reason (%d) received.\n",
+			 __func__, reason);
+		break;
+	}
+}
+
 void apba_handle_message(void *payload, size_t len)
 {
+	struct apba_ctrl_msg_hdr *msg;
+
+	if (len < sizeof(struct apba_ctrl_msg_hdr)) {
+		pr_err("%s: Invalid message received.\n", __func__);
+		return;
+	}
+
+	msg = (struct apba_ctrl_msg_hdr *)payload;
+
+	if (le16_to_cpu(msg->type) == APBA_CTRL_GET_INT_REASON &&
+	    len >= sizeof(struct apba_ctrl_int_reason_resp)) {
+		struct apba_ctrl_int_reason_resp *resp;
+
+		resp = (struct apba_ctrl_int_reason_resp *)payload;
+		apba_action_on_int_reason(le16_to_cpu(resp->reason));
+	} else {
+		pr_err("%s: Invalid message received.\n", __func__);
+	}
 }
 
 static int apba_ctrl_probe(struct platform_device *pdev)

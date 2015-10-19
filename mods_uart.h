@@ -15,6 +15,7 @@
 #define __MODS_UART_H__
 
 int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len);
+void mod_attach(void *uart_data, unsigned long now_present);
 
 /* Driver Initializations */
 int mods_uart_init(void);
