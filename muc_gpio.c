@@ -36,26 +36,20 @@ static int muc_attach_notifier_call_chain(unsigned long val)
 	return notifier_to_errno(ret);
 }
 
-unsigned long muc_attach_get_state(void)
-{
-	if (!muc_misc_data)
-		return 0;
-
-	return (unsigned long)muc_misc_data->muc_detected;
-}
-EXPORT_SYMBOL(muc_attach_get_state);
-
 int register_muc_attach_notifier(struct notifier_block *nb)
 {
 	int rv;
+	unsigned long state = 0;
 
 	pr_debug("%s <- %pS\n", __func__, __builtin_return_address(0));
+
+	if (muc_misc_data)
+		state = (unsigned long)muc_misc_data->muc_detected;
 
 	rv = blocking_notifier_chain_register(&muc_attach_chain_head, nb);
 
 	if (!rv)
-		(void)muc_attach_notifier_call_chain(
-				muc_attach_get_state());
+		(void)muc_attach_notifier_call_chain(state);
 
 	return rv;
 }
@@ -69,10 +63,10 @@ int unregister_muc_attach_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(unregister_muc_attach_notifier);
 
-static void muc_seq(struct muc_data *cdata, u32 seq[],
-	size_t seq_len)
+static void muc_seq(struct muc_data *cdata, u32 seq[], size_t seq_len)
 {
 	size_t i;
+
 	for (i = 0; i < seq_len; i += 3) {
 		u32 index = seq[i];
 		int value = (int)seq[i+1];
@@ -124,8 +118,6 @@ static void muc_handle_detection(struct muc_data *cdata)
 	/* Power off on removal */
 	if (!tmp_detected)
 		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
-
-	return;
 }
 
 static irqreturn_t muc_isr(int irq, void *data)
