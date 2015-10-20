@@ -28,6 +28,7 @@
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 
+#include "apba.h"
 #include "mods_uart.h"
 
 #define APBA_FIRMWARE_NAME ("apba.bin")
@@ -51,6 +52,7 @@ struct apba_ctrl {
 	struct apba_seq disable_seq;
 	struct apba_seq wake_seq;
 	void *mods_uart;
+	int desired_on;
 } *g_ctrl;
 
 /* message from APBA Ctrl driver in kernel */
@@ -192,9 +194,9 @@ static void apba_seq(struct apba_ctrl *ctrl, struct apba_seq *seq)
 	}
 }
 
-static void apba_enable(struct apba_ctrl *ctrl, bool enable)
+static void apba_on(struct apba_ctrl *ctrl, bool on)
 {
-	if (enable)
+	if (on)
 		apba_seq(ctrl, &ctrl->enable_seq);
 	else
 		apba_seq(ctrl, &ctrl->disable_seq);
@@ -207,7 +209,7 @@ static int apba_erase_firmware(struct apba_ctrl *ctrl)
 	if (!ctrl)
 		return -EINVAL;
 
-	apba_enable(ctrl, false);
+	apba_on(ctrl, false);
 	err = apba_init_mtd_module();
 	if (err < 0) {
 		pr_err("%s: mtd init module failed err=%d\n", __func__, err);
@@ -223,8 +225,11 @@ static int apba_erase_firmware(struct apba_ctrl *ctrl)
 
 cleanup:
 	put_mtd_device(mtd_info);
-	apba_enable(ctrl, true);
+
 no_mtd:
+	if (ctrl->desired_on)
+		apba_on(ctrl, true);
+
 	return err;
 }
 
@@ -267,7 +272,7 @@ static int apba_flash_firmware(const struct firmware *fw,
 	if (!fw || !ctrl)
 		return -EINVAL;
 
-	apba_enable(ctrl, false);
+	apba_on(ctrl, false);
 	err = apba_init_mtd_module();
 	if (err < 0) {
 		pr_err("%s: mtd init module failed err=%d\n", __func__, err);
@@ -297,8 +302,11 @@ static int apba_flash_firmware(const struct firmware *fw,
 	vfree(data);
 cleanup:
 	put_mtd_device(mtd_info);
-	apba_enable(ctrl, true);
+
 no_mtd:
+	if (ctrl->desired_on)
+		apba_on(ctrl, true);
+
 	return err;
 }
 
@@ -342,6 +350,37 @@ static ssize_t apba_firmware_store(struct device *dev,
 static DEVICE_ATTR(flash_firmware, S_IRUGO | S_IWUSR,
 	apba_firmware_show, apba_firmware_store);
 
+
+static ssize_t apba_enable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return 0;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", g_ctrl->desired_on);
+}
+
+static ssize_t apba_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+	else if (val != 0 && val != 1)
+		return -EINVAL;
+
+	if (val)
+		apba_enable();
+	else
+		apba_disable();
+
+	return count;
+}
+
+static DEVICE_ATTR(apba_enable, S_IRUGO | S_IWUSR,
+		   apba_enable_show, apba_enable_store);
+
 static void apba_firmware_callback(const struct firmware *fw,
 					 void *context)
 {
@@ -355,7 +394,8 @@ static void apba_firmware_callback(const struct firmware *fw,
 
 	if (!fw) {
 		pr_err("%s: no firmware available\n", __func__);
-		apba_enable(ctrl, true);
+		if (ctrl->desired_on)
+			apba_on(ctrl, true);
 		return;
 	}
 
@@ -573,7 +613,7 @@ static void apba_action_on_int_reason(uint16_t reason)
 	}
 }
 
-void apba_handle_message(void *payload, size_t len)
+void apba_handle_message(uint8_t *payload, size_t len)
 {
 	struct apba_ctrl_msg_hdr *msg;
 
@@ -593,6 +633,52 @@ void apba_handle_message(void *payload, size_t len)
 	} else {
 		pr_err("%s: Invalid message received.\n", __func__);
 	}
+}
+
+int apba_enable(void)
+{
+	int ret;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	ret = clk_prepare_enable(g_ctrl->mclk);
+	if (ret) {
+		dev_err(g_ctrl->dev, "%s:%d: failed to prepare clock.\n",
+			__func__, __LINE__);
+		return ret;
+	}
+
+	g_ctrl->desired_on = 1;
+
+	ret = request_firmware_nowait(THIS_MODULE, true, APBA_FIRMWARE_NAME,
+				      g_ctrl->dev, GFP_KERNEL, g_ctrl,
+				      apba_firmware_callback);
+	if (ret) {
+		dev_err(g_ctrl->dev, "failed to request firmware.\n");
+		goto disable_clk;
+	}
+
+	return 0;
+
+disable_clk:
+	clk_disable_unprepare(g_ctrl->mclk);
+	g_ctrl->desired_on = 0;
+
+	return ret;
+}
+
+void apba_disable(void)
+{
+	if (!g_ctrl)
+		return;
+
+	if (g_ctrl->mods_uart)
+		mod_attach(g_ctrl->mods_uart, 0);
+
+	clk_disable_unprepare(g_ctrl->mclk);
+	apba_on(g_ctrl, false);
+	g_ctrl->desired_on = 0;
 }
 
 static int apba_ctrl_probe(struct platform_device *pdev)
@@ -619,17 +705,10 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		return PTR_ERR(ctrl->mclk);
 	}
 
-	ret = clk_prepare_enable(ctrl->mclk);
-	if (ret) {
-		dev_err(&pdev->dev, "%s:%d: failed to prepare clock.\n",
-			__func__, __LINE__);
-		return ret;
-	}
-
 	ret = apba_gpio_setup(ctrl, &pdev->dev);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to read gpios.\n");
-		goto disable_clk;
+		return ret;
 	}
 
 	ret = apba_int_setup(ctrl, &pdev->dev);
@@ -654,13 +733,6 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	if (ret)
 		goto disable_irq;
 
-	ret = request_firmware_nowait(THIS_MODULE, true, APBA_FIRMWARE_NAME,
-	    &pdev->dev, GFP_KERNEL, ctrl, apba_firmware_callback);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to request firmware.\n");
-		goto disable_irq;
-	}
-
 	ret = device_create_file(ctrl->dev, &dev_attr_erase_firmware);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to create erase fw sysfs\n");
@@ -673,20 +745,29 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		goto free_erase_sysfs;
 	}
 
+	ret = device_create_file(ctrl->dev, &dev_attr_apba_enable);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to create enable_apba fw sysfs\n");
+		goto free_flash_sysfs;
+	}
+
+	/* start with APBA turned OFF */
+	apba_on(ctrl, false);
+
 	g_ctrl = ctrl;
 
 	platform_set_drvdata(pdev, ctrl);
 
 	return 0;
 
+free_flash_sysfs:
+	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
 free_erase_sysfs:
 	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
 disable_irq:
 	disable_irq_wake(ctrl->irq);
 free_gpios:
 	apba_gpio_free(ctrl, &pdev->dev);
-disable_clk:
-	clk_disable_unprepare(ctrl->mclk);
 
 	return ret;
 }
@@ -695,6 +776,7 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
 
+	device_remove_file(ctrl->dev, &dev_attr_apba_enable);
 	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
 	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
 

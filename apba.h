@@ -17,6 +17,9 @@
 int apba_uart_register(void *mods_uart);
 void apba_handle_message(uint8_t *payload, size_t len);
 
+int apba_enable(void);
+void apba_disable(void);
+
 /* Driver Initializations */
 int apba_ctrl_init(void);
 void apba_ctrl_exit(void);
