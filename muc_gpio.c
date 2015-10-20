@@ -182,6 +182,7 @@ static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 	int gpio_cnt = of_gpio_count(dev->of_node);
 	const char *label_prop = "mmi,muc-ctrl-gpio-labels";
 	int label_cnt = of_property_count_strings(dev->of_node, label_prop);
+	int ret;
 
 	if (gpio_cnt != ARRAY_SIZE(cdata->gpios)) {
 		dev_err(dev, "gpio count is %d expected %zu.\n",
@@ -192,13 +193,13 @@ static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 	for (i = 0; i < gpio_cnt; i++) {
 		enum of_gpio_flags flags = 0;
 		int gpio;
-		int ret;
 		const char *label = NULL;
 
 		gpio = of_get_gpio_flags(dev->of_node, i, &flags);
 		if (!gpio_is_valid(gpio)) {
 			dev_err(dev, "of_get_gpio failed: %d\n", gpio);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto free_gpios;
 		}
 
 		if (i < label_cnt)
@@ -208,7 +209,7 @@ static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 		ret = devm_gpio_request_one(dev, gpio, flags, label);
 		if (ret) {
 			dev_err(dev, "Failed to get gpio %d\n", gpio);
-			return ret;
+			goto free_gpios;
 		}
 		gpio_export(gpio, true);
 
@@ -219,6 +220,20 @@ static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 	}
 
 	return 0;
+
+free_gpios:
+	for (--i; i >= 0; --i)
+		gpio_unexport(cdata->gpios[i]);
+
+	return ret;
+}
+
+static void muc_gpio_cleanup(struct muc_data *cdata, struct device *dev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(cdata->gpios); i++)
+		gpio_unexport(cdata->gpios[i]);
 }
 
 static int muc_parse_seq(struct muc_data *cdata,
@@ -303,6 +318,7 @@ freewq:
 
 void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 {
+	muc_gpio_cleanup(cdata, dev);
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 	destroy_workqueue(cdata->wq);
