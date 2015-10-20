@@ -61,7 +61,6 @@ static int mods_ap_get_protocol(uint16_t cport_id, uint8_t *protocol)
 }
 
 static struct mods_dl_driver mods_ap_dl_driver = {
-	.dl_priv_size		= sizeof(struct mods_ap_data),
 	.message_send		= mods_ap_message_send,
 	.get_protocol		= mods_ap_get_protocol,
 };

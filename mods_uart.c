@@ -145,21 +145,8 @@ int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len)
 	return mods_uart_send_internal(mud, MODS_UART_DL_APBA, buf, len);
 }
 
-/*
- * The cookie value supplied is the value that message_send()
- * returned to its caller.  It identifies the buffer that should be
- * canceled.  This function must also handle (which is to say,
- * ignore) a null cookie value.
- */
-static void mods_uart_message_cancel(void *cookie)
-{
-	/* Should never happen */
-}
-
 static struct mods_dl_driver mods_uart_dl_driver = {
-	.dl_priv_size		= sizeof(struct mods_uart_data),
 	.message_send		= mods_uart_message_send,
-	.message_cancel		= mods_uart_message_cancel,
 };
 
 static int config_tty(struct mods_uart_data *mud)

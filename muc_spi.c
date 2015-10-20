@@ -368,21 +368,8 @@ static int muc_spi_message_send(struct mods_dl_device *dld,
 	return 0;
 }
 
-/*
- * The cookie value supplied is the value that message_send()
- * returned to its caller.  It identifies the buffer that should be
- * canceled.  This function must also handle (which is to say,
- * ignore) a null cookie value.
- */
-static void muc_spi_message_cancel(void *cookie)
-{
-	/* Should never happen */
-}
-
 static struct mods_dl_driver muc_spi_dl_driver = {
-	.dl_priv_size		= sizeof(struct muc_spi_data),
 	.message_send		= muc_spi_message_send,
-	.message_cancel		= muc_spi_message_cancel,
 };
 
 static int muc_spi_gpio_init(struct muc_spi_data *dd)

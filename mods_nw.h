@@ -31,11 +31,8 @@ struct muc_msg {
 #define PAYLOAD_MAX_SIZE        (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
 
 struct mods_dl_driver {
-	size_t dl_priv_size;
-
 	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
 			size_t size);
-	void (*message_cancel)(void *cookie);
 	int (*get_protocol)(uint16_t cport_id, uint8_t *protocol);
 };
 

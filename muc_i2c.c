@@ -198,15 +198,8 @@ muc_i2c_message_send(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 	return 0;
 }
 
-static void muc_i2c_message_cancel(void *cookie)
-{
-	pr_info("%s <- %pS\n", __func__, __builtin_return_address(0));
-}
-
 static struct mods_dl_driver muc_i2c_dl_driver = {
-	.dl_priv_size		= sizeof(struct muc_i2c_data),
 	.message_send		= muc_i2c_message_send,
-	.message_cancel		= muc_i2c_message_cancel,
 };
 
 static int muc_i2c_probe(struct i2c_client *client,

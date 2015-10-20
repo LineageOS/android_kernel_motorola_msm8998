@@ -1462,15 +1462,8 @@ muc_svc_msg_send(struct mods_dl_device *dld, uint8_t *buf, size_t len)
 				le16_to_cpu(m->hdr.cport));
 }
 
-static void muc_svc_msg_cancel(void *cookie)
-{
-	/* Should never happen */
-}
-
 static struct mods_dl_driver muc_svc_dl_driver = {
-	.dl_priv_size = sizeof(struct muc_svc_data),
 	.message_send = muc_svc_msg_send,
-	.message_cancel = muc_svc_msg_cancel,
 };
 
 static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
