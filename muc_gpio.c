@@ -76,11 +76,9 @@ static void muc_seq(struct muc_data *cdata, u32 seq[], size_t seq_len)
 		if (index < ARRAY_SIZE(cdata->gpios)) {
 			int gpio = cdata->gpios[index];
 
-			if (gpio_is_valid(gpio)) {
-				pr_debug("%s:%d: set gpio=%d, value=%u\n",
-					__func__, __LINE__, gpio, value);
-				gpio_set_value(gpio, value);
-			}
+			pr_debug("%s:%d: set gpio=%d, value=%u\n",
+				__func__, __LINE__, gpio, value);
+			gpio_set_value(gpio, value);
 		}
 
 		/* Delay (if valid). */
