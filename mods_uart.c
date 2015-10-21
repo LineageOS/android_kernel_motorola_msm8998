@@ -15,6 +15,7 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of_gpio.h>
@@ -47,12 +48,17 @@ struct mods_uart_data {
 	bool present;
 	char rx_data[MODS_UART_MAX_SIZE];
 	size_t rx_len;
+	unsigned long last_rx;
 };
 
 enum {
 	MODS_UART_DL_GB,
 	MODS_UART_DL_APBA
 };
+
+#define MODS_UART_SEGMENT_TIMEOUT 500 /* msec */
+
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 /* Found in tty_io.c */
 extern struct mutex tty_mutex;
@@ -423,37 +429,25 @@ static struct platform_driver mods_uart_driver = {
 	},
 };
 
-static int n_mods_uart_receive_buf2(struct tty_struct *tty,
-				    const unsigned char *cp,
-				    char *fp, int count)
+static int mods_uart_consume_segment(struct mods_uart_data *mud)
 {
-	struct mods_uart_data *mud = tty->disc_data;
 	struct device *dev = &mud->pdev->dev;
 	uint16_t calc_crc;
 	uint16_t *rcvd_crc;
 	struct uart_msg_hdr *hdr;
 	uint8_t *payload;
 	size_t content_size;
-
-	if (mud->rx_len + count > MODS_UART_MAX_SIZE) {
-		dev_err(dev, "%s: RX buffer overflow\n", __func__);
-		/* Should not happen as long as data in uart is read out
-		   constantly. */
-		mud->rx_len = 0;
-		return count;
-	}
-
-	memcpy(&mud->rx_data[mud->rx_len], cp, count);
-	mud->rx_len += count;
+	size_t segment_size;
 
 	if (mud->rx_len < sizeof(*hdr))
-		return count;
+		return 0;
 
 	hdr = (struct uart_msg_hdr *) mud->rx_data;
 	content_size = sizeof(*hdr) + le16_to_cpu(hdr->nw_msg_size);
+	segment_size = content_size + sizeof(calc_crc);
 
-	if (mud->rx_len < content_size + sizeof(calc_crc))
-		return count;
+	if (mud->rx_len < segment_size)
+		return 0;
 
 	rcvd_crc = (uint16_t *)&mud->rx_data[content_size];
 	calc_crc = gen_crc16((uint8_t *) mud->rx_data, content_size);
@@ -484,7 +478,64 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 				__func__, le16_to_cpu(hdr->msg_type));
 		}
 	}
-	mud->rx_len = 0;
+	mud->rx_len -= segment_size;
+
+	if (mud->rx_len) {
+		memmove(mud->rx_data, mud->rx_data + segment_size,
+			mud->rx_len);
+		/* more data to consume */
+		return 1;
+	}
+	return 0;
+}
+
+static int n_mods_uart_receive_buf2(struct tty_struct *tty,
+				    const unsigned char *cp,
+				    char *fp, int count)
+{
+	struct mods_uart_data *mud = tty->disc_data;
+	struct device *dev = &mud->pdev->dev;
+	int to_be_consumed = count;
+
+	/*
+	 * Try to clean up garbage/incomplete chars received
+	 * for some reason.
+	 */
+	if (mud->rx_len &&
+	    (jiffies_to_msecs(jiffies - mud->last_rx) >
+	     MODS_UART_SEGMENT_TIMEOUT)) {
+		dev_err(dev, "%s: RX Buffer cleaned up\n", __func__);
+		mud->rx_len = 0;
+	}
+	mud->last_rx = jiffies;
+
+	while (to_be_consumed > 0) {
+		int copy_size;
+
+		if (mud->rx_len == MODS_UART_MAX_SIZE) {
+			/*
+			 * buffer is already left full, not consumed.
+			 * Something is wrong. Need to reset the buffer
+			 * to proceed
+			 */
+			/*
+			 * TODO: Send a break signa to APBA to reset
+			 *       UART status.
+			 */
+			dev_err(dev, "%s: RX buffer overflow\n", __func__);
+			mud->rx_len = 0;
+		}
+
+		copy_size = MIN(to_be_consumed,
+				MODS_UART_MAX_SIZE - mud->rx_len);
+
+		memcpy(&mud->rx_data[mud->rx_len], cp, copy_size);
+		mud->rx_len += copy_size;
+
+		do {} while (mods_uart_consume_segment(mud));
+
+		to_be_consumed -= copy_size;
+	}
 	return count;
 }
 
