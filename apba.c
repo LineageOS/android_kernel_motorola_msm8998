@@ -670,7 +670,7 @@ disable_clk:
 
 void apba_disable(void)
 {
-	if (!g_ctrl)
+	if (!g_ctrl || !g_ctrl->desired_on)
 		return;
 
 	if (g_ctrl->mods_uart)
@@ -781,10 +781,8 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
 
 	disable_irq_wake(ctrl->irq);
-
+	apba_disable();
 	apba_gpio_free(ctrl, &pdev->dev);
-
-	clk_disable_unprepare(ctrl->mclk);
 
 	return 0;
 }
