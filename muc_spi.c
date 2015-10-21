@@ -23,6 +23,7 @@
 #include <linux/of_irq.h>
 #include <linux/spi/spi.h>
 #include <linux/wait.h>
+#include <linux/workqueue.h>
 
 #include "crc.h"
 #include "muc_attach.h"
@@ -34,8 +35,12 @@
 
 /* SPI packet header bit definitions */
 #define HDR_BIT_VALID  (0x01 << 7)  /* 1 = valid packet, 0 = dummy packet */
-#define HDR_BIT_RSVD   (0x03 << 5)  /* Reserved */
+#define HDR_BIT_TYPE   (0x01 << 6)  /* SPI message type */
+#define HDR_BIT_RSVD   (0x01 << 5)  /* Reserved */
 #define HDR_BIT_PKTS   (0x1F << 0)  /* How many additional packets to expect */
+
+#define MSG_TYPE_DL    (0 << 6)     /* Packet for/from data link layer */
+#define MSG_TYPE_NW    (1 << 6)     /* Packet for/from network layer */
 
 /* SPI packet CRC size (in bytes) */
 #define CRC_SIZE       (2)
@@ -53,13 +58,27 @@
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
+typedef int (*handler_t)(struct mods_dl_device *from, uint8_t *msg, size_t len);
+
+/*
+ * Possible data link layer messages. Responses IDs should be the request ID
+ * with the MSB set.
+ */
+enum dl_msg_id {
+	DL_MSG_ID_BUS_CFG_REQ         = 0x00,
+	DL_MSG_ID_BUS_CFG_RESP        = 0x80,
+};
+
 struct muc_spi_data {
 	struct spi_device *spi;
 	struct mods_dl_device *dld;
-	bool present;
+	bool present;                      /* MuC is physically present */
+	bool attached;                     /* MuC attach is reported to SVC */
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;
 	wait_queue_head_t rdy_wq;
+	struct work_struct attach_work;    /* Worker to send attach to SVC */
+	__u32 default_speed_hz;            /* Default SPI clock rate to use */
 
 	int gpio_wake_n;
 	int gpio_rdy_n;
@@ -76,18 +95,58 @@ struct muc_spi_data {
 	int rcvd_payload_idx;
 };
 
-#pragma pack(push, 1)
-struct spi_msg_hdr
-{
+struct spi_msg_hdr {
 	__u8 bits;
-};
-#pragma pack(pop)
+	__u8 rsvd;
+} __packed;
+
+struct spi_dl_msg_bus_config_req {
+	__le16 max_pl_size;                /* Max payload size base supports */
+} __packed;
+
+struct spi_dl_msg_bus_config_resp {
+	__le32 max_speed;                  /* Max bus speed mod supports */
+	__le16 pl_size;                    /* Payload size mod selected */
+} __packed;
+
+struct spi_dl_msg {
+	__u8 id;                           /* enum dl_msg_id */
+	union {
+		struct spi_dl_msg_bus_config_req     bus_req;
+		struct spi_dl_msg_bus_config_resp    bus_resp;
+	};
+} __packed;
 
 static void parse_rx_pkt(struct muc_spi_data *dd);
+static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
+				  uint8_t *buf, size_t len);
 
 static inline struct muc_spi_data *dld_to_dd(struct mods_dl_device *dld)
 {
 	return (struct muc_spi_data *)dld->dl_priv;
+}
+
+static void set_bus_speed(struct muc_spi_data *dd, __u32 max_speed_hz)
+{
+	struct spi_device *spi = dd->spi;
+	__u32 master_max_speed_hz = spi->master->max_speed_hz;
+
+	/*
+	 * Verify the requested speed is not higher than the maximum speed
+	 * supported by the master controller. Setting the SPI device to a
+	 * higher speed than the master controller will result in an error.
+	 *
+	 * If the master controller does not set its max_speed_hz field, then
+	 * we have to hope for the best.
+	 */
+	if ((master_max_speed_hz > 0) && (max_speed_hz > master_max_speed_hz)) {
+		dev_warn(&spi->dev, "Requested bus speed (%d) is higher than what "
+			"master supports (%d)\n", max_speed_hz, master_max_speed_hz);
+		max_speed_hz = master_max_speed_hz;
+	}
+
+	spi->max_speed_hz = max_speed_hz;
+	dev_info(&spi->dev, "Max bus speed set to %u HZ\n", max_speed_hz);
 }
 
 static int set_packet_size(struct muc_spi_data *dd, size_t pkt_size)
@@ -135,6 +194,65 @@ static int set_packet_size(struct muc_spi_data *dd, size_t pkt_size)
 	dev_info(&dd->spi->dev, "Packet size is %zu bytes\n", pkt_size);
 
 	return 0;
+}
+
+static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
+{
+	struct muc_spi_data *dd = dld_to_dd(dld);
+	struct device *dev = &dd->spi->dev;
+	struct spi_dl_msg *resp = (struct spi_dl_msg *)msg;
+	uint32_t max_speed;
+	uint16_t pl_size;
+	int ret;
+
+	if (sizeof(*resp) > len) {
+		dev_err(dev, "Dropping short message\n");
+		return -EINVAL;
+	}
+
+	/* Only BUS_CFG_RESP is supported */
+	if (resp->id != DL_MSG_ID_BUS_CFG_RESP) {
+		dev_err(dev, "Unknown ID (%d)!\n", resp->id);
+		return -EINVAL;
+	}
+
+	max_speed = le32_to_cpu(resp->bus_resp.max_speed);
+	pl_size = le16_to_cpu(resp->bus_resp.pl_size);
+
+	/* Ignore max_bus_speed if zero and continue to use default speed */
+	if (max_speed > 0)
+		set_bus_speed(dd, max_speed);
+
+	/* Ignore payload size if zero and continue to use default size */
+	if (pl_size > 0) {
+		ret = set_packet_size(dd, PKT_SIZE(pl_size));
+		if (ret) {
+			dev_err(dev, "Error (%d) setting new packet size\n", ret);
+			return ret;
+		}
+	}
+
+	/* Schedule work to send attach to SVC */
+	schedule_work(&dd->attach_work);
+
+	return 0;
+}
+
+static void attach_worker(struct work_struct *work)
+{
+	struct muc_spi_data *dd = container_of(work, struct muc_spi_data,
+					       attach_work);
+	int ret;
+
+	/* Verify mod is still present before reporting attach */
+	if (!dd->present)
+		return;
+
+	ret = mods_dl_dev_attached(dd->dld);
+	if (ret)
+		dev_err(&dd->spi->dev, "Error (%d) attaching to SVC\n", ret);
+
+	dd->attached = !ret;
 }
 
 static int muc_spi_transfer_locked(struct muc_spi_data *dd,
@@ -203,6 +321,7 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 	uint16_t *rcvcrc_p;
 	uint16_t calcrc;
 	size_t pl_size = PL_SIZE(dd->pkt_size);
+	handler_t handler = mods_nw_switch;
 
 	if (!(hdr->bits & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
@@ -216,6 +335,9 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 			"calculated: 0x%x\n", le16_to_cpu(*rcvcrc_p), calcrc);
 		return;
 	}
+
+	if (unlikely((hdr->bits & HDR_BIT_TYPE) == MSG_TYPE_DL))
+		handler = dl_recv;
 
 	/* Check if un-packetizing is required */
 	if (MUC_MSG_SIZE_MAX != pl_size) {
@@ -237,12 +359,12 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 			return;
 		}
 
-		mods_nw_switch(dd->dld, dd->rcvd_payload, dd->rcvd_payload_idx);
+		handler(dd->dld, dd->rcvd_payload, dd->rcvd_payload_idx);
 		dd->rcvd_payload_idx = 0;
 	} else {
 		/* Un-packetizing not required */
-		mods_nw_switch(dd->dld, &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
-			       pl_size);
+		handler(dd->dld, &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
+			pl_size);
 	}
 }
 
@@ -250,7 +372,7 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 {
 	struct muc_spi_data *dd = data;
 
-	/* Any interrupt while the MuC is not attached would be spurious */
+	/* Any interrupt while the MuC is not present would be spurious */
 	if (!dd->present)
 		return IRQ_HANDLED;
 
@@ -274,6 +396,7 @@ static int muc_attach(struct notifier_block *nb,
 	struct muc_spi_data *dd = container_of(nb, struct muc_spi_data, attach_nb);
 	struct spi_device *spi = dd->spi;
 	int err;
+	struct spi_dl_msg msg;
 
 	if (now_present != dd->present) {
 		dev_info(&spi->dev, "%s: state = %lu\n", __func__, now_present);
@@ -302,15 +425,28 @@ static int muc_attach(struct notifier_block *nb,
 				goto free_irq;
 			}
 
-			err = mods_dl_dev_attached(dd->dld);
+			/* First step after attach is to negotiate bus config */
+			msg.id = DL_MSG_ID_BUS_CFG_REQ;
+			msg.bus_req.max_pl_size = cpu_to_le16(MUC_MSG_SIZE_MAX);
+			err = __muc_spi_message_send(dd, MSG_TYPE_DL,
+						     (uint8_t *)&msg, sizeof(msg));
 			if (err) {
-				dev_err(&spi->dev, "Error attaching to SVC\n");
+				dev_err(&spi->dev, "Error requesting bus cfg\n");
 				goto free_rdy;
 			}
 		} else {
 			devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
 			devm_free_irq(&spi->dev, spi->irq, dd);
-			mods_dl_dev_detached(dd->dld);
+
+			flush_work(&dd->attach_work);
+			if (dd->attached) {
+				mods_dl_dev_detached(dd->dld);
+				dd->attached = false;
+			}
+
+			/* Reset bus settings to default values */
+			set_bus_speed(dd, dd->default_speed_hz);
+			set_packet_size(dd, PKT_SIZE(DEFAULT_PAYLOAD_SZ));
 		}
 	}
 	return NOTIFY_OK;
@@ -325,13 +461,11 @@ set_missing:
 	return NOTIFY_OK;
 }
 
-/* send message from switch to muc */
-static int muc_spi_message_send(struct mods_dl_device *dld,
-				   uint8_t *buf, size_t len)
+static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
+				  uint8_t *buf, size_t len)
 {
 	struct spi_msg_hdr *hdr;
 	uint16_t *crc;
-	struct muc_spi_data *dd = dld_to_dd(dld);
 	int remaining = len;
 	size_t pl_size = PL_SIZE(dd->pkt_size);
 	int packets;
@@ -353,6 +487,7 @@ static int muc_spi_message_send(struct mods_dl_device *dld,
 
 		/* Populate the SPI message */
 		hdr->bits = HDR_BIT_VALID;
+		hdr->bits |= (msg_type & HDR_BIT_TYPE);
 		hdr->bits |= (--packets & HDR_BIT_PKTS);
 		memcpy((dd->tx_pkt + sizeof(*hdr)), buf, this_pl);
 
@@ -366,6 +501,15 @@ static int muc_spi_message_send(struct mods_dl_device *dld,
 	}
 
 	return 0;
+}
+
+/* send message from switch to muc */
+static int muc_spi_message_send(struct mods_dl_device *dld,
+				uint8_t *buf, size_t len)
+{
+	struct muc_spi_data *dd = dld_to_dd(dld);
+
+	return __muc_spi_message_send(dd, MSG_TYPE_NW, buf, len);
 }
 
 static struct mods_dl_driver muc_spi_dl_driver = {
@@ -400,7 +544,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	u8 intf_id;
 	int ret;
 
-	dev_info(&spi->dev, "%s: enter\n", __func__);
+	dev_dbg(&spi->dev, "default_speed_hz=%d\n", spi->max_speed_hz);
 
 	if (spi->irq < 0) {
 		dev_err(&spi->dev, "%s: IRQ not defined\n", __func__);
@@ -425,7 +569,9 @@ static int muc_spi_probe(struct spi_device *spi)
 
 	dd->dld->dl_priv = (void *)dd;
 	dd->spi = spi;
+	dd->default_speed_hz = spi->max_speed_hz;
 	dd->attach_nb.notifier_call = muc_attach;
+	INIT_WORK(&dd->attach_work, attach_worker);
 
 	ret = set_packet_size(dd, PKT_SIZE(DEFAULT_PAYLOAD_SZ));
 	if (ret)
@@ -453,8 +599,17 @@ static int muc_spi_remove(struct spi_device *spi)
 
 	dev_info(&spi->dev, "%s: enter\n", __func__);
 
-	if (dd->present)
+	flush_work(&dd->attach_work);
+	if (dd->attached) {
 		mods_dl_dev_detached(dd->dld);
+		dd->attached = false;
+	}
+
+	/*
+	 * The SPI bus speed must be set back to default so the correct value
+	 * is passed to the probe on the next module insertion.
+	 */
+	set_bus_speed(dd, dd->default_speed_hz);
 
 	gpio_free(dd->gpio_wake_n);
 	gpio_free(dd->gpio_rdy_n);
