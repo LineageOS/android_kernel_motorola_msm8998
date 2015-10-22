@@ -18,7 +18,9 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <linux/kfifo.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/of.h>
@@ -29,6 +31,7 @@
 #include <linux/workqueue.h>
 
 #include "apba.h"
+#include "mods_nw.h"
 #include "mods_uart.h"
 
 #define APBA_FIRMWARE_NAME ("apba.bin")
@@ -53,6 +56,8 @@ struct apba_ctrl {
 	struct apba_seq wake_seq;
 	void *mods_uart;
 	int desired_on;
+	struct mutex log_mutex;
+	struct completion comp;
 } *g_ctrl;
 
 /* message from APBA Ctrl driver in kernel */
@@ -70,6 +75,8 @@ struct apba_ctrl_int_reason_resp {
 
 enum {
 	APBA_CTRL_GET_INT_REASON,
+	APBA_CTRL_LOG_IND,
+	APBA_CTRL_LOG_REQUEST,
 };
 
 enum {
@@ -79,6 +86,16 @@ enum {
 	APBA_INT_APBE_CONNECTED,
 	APBA_INT_APBE_DISCONNECTED,
 };
+
+#define APBA_LOG_SIZE	SZ_16K
+static DEFINE_KFIFO(apba_log_fifo, char, APBA_LOG_SIZE);
+
+/* used as temporary buffer to pop out content from FIFO */
+static char fifo_overflow[MUC_MSG_SIZE_MAX];
+
+#define APBA_LOG_REQ_TIMEOUT	1000 /* ms */
+
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 struct apbe_attach_work_struct {
 	struct work_struct work;
@@ -381,6 +398,39 @@ static ssize_t apba_enable_store(struct device *dev,
 static DEVICE_ATTR(apba_enable, S_IRUGO | S_IWUSR,
 		   apba_enable_show, apba_enable_store);
 
+static ssize_t apba_log_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct apba_ctrl_msg_hdr msg;
+	int count;
+
+	if (!g_ctrl)
+		return 0;
+
+	msg.type = cpu_to_le16(APBA_CTRL_LOG_REQUEST);
+	msg.size = 0;
+
+	if (mods_uart_apba_send(g_ctrl->mods_uart,
+				(uint8_t *)&msg, sizeof(msg)) != 0) {
+		pr_err("%s: failed to send LOG REQUEST\n", __func__);
+		return 0;
+	}
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->comp,
+		    msecs_to_jiffies(APBA_LOG_REQ_TIMEOUT))) {
+		return 0;
+	}
+
+	mutex_lock(&g_ctrl->log_mutex);
+	count = kfifo_out(&apba_log_fifo, buf, PAGE_SIZE - 1);
+	mutex_unlock(&g_ctrl->log_mutex);
+
+	return count;
+}
+
+static DEVICE_ATTR(apba_log, S_IRUGO, apba_log_show, NULL);
+
 static void apba_firmware_callback(const struct firmware *fw,
 					 void *context)
 {
@@ -615,6 +665,8 @@ static void apba_action_on_int_reason(uint16_t reason)
 
 void apba_handle_message(uint8_t *payload, size_t len)
 {
+	int of;
+
 	struct apba_ctrl_msg_hdr *msg;
 
 	if (len < sizeof(struct apba_ctrl_msg_hdr)) {
@@ -624,14 +676,33 @@ void apba_handle_message(uint8_t *payload, size_t len)
 
 	msg = (struct apba_ctrl_msg_hdr *)payload;
 
-	if (le16_to_cpu(msg->type) == APBA_CTRL_GET_INT_REASON &&
-	    len >= sizeof(struct apba_ctrl_int_reason_resp)) {
-		struct apba_ctrl_int_reason_resp *resp;
+	switch (le16_to_cpu(msg->type)) {
+	case APBA_CTRL_GET_INT_REASON:
+		if (len >= sizeof(struct apba_ctrl_int_reason_resp)) {
+			struct apba_ctrl_int_reason_resp *resp;
 
-		resp = (struct apba_ctrl_int_reason_resp *)payload;
-		apba_action_on_int_reason(le16_to_cpu(resp->reason));
-	} else {
-		pr_err("%s: Invalid message received.\n", __func__);
+			resp = (struct apba_ctrl_int_reason_resp *)payload;
+			apba_action_on_int_reason(le16_to_cpu(resp->reason));
+		}
+		break;
+	case APBA_CTRL_LOG_IND:
+		mutex_lock(&g_ctrl->log_mutex);
+		of = kfifo_len(&apba_log_fifo) + msg->size - APBA_LOG_SIZE;
+		if (of > 0) {
+			/* pop out from older content if buffer is full */
+			of = kfifo_out(&apba_log_fifo, fifo_overflow,
+				       MIN(of, MUC_MSG_SIZE_MAX));
+		}
+		kfifo_in(&apba_log_fifo,
+			 payload + sizeof(*msg), msg->size);
+		mutex_unlock(&g_ctrl->log_mutex);
+		break;
+	case APBA_CTRL_LOG_REQUEST:
+		complete(&g_ctrl->comp);
+		break;
+	default:
+		pr_err("%s: Unknown message received.\n", __func__);
+		break;
 	}
 }
 
@@ -733,6 +804,9 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	if (ret)
 		goto disable_irq;
 
+	mutex_init(&ctrl->log_mutex);
+	init_completion(&ctrl->comp);
+
 	ret = device_create_file(ctrl->dev, &dev_attr_erase_firmware);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to create erase fw sysfs\n");
@@ -747,8 +821,14 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	ret = device_create_file(ctrl->dev, &dev_attr_apba_enable);
 	if (ret) {
-		dev_err(&pdev->dev, "failed to create enable_apba fw sysfs\n");
+		dev_err(&pdev->dev, "failed to create enable_apba sysfs\n");
 		goto free_flash_sysfs;
+	}
+
+	ret = device_create_file(ctrl->dev, &dev_attr_apba_log);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to create apba_log sysfs\n");
+		goto free_enable_sysfs;
 	}
 
 	/* start with APBA turned OFF */
@@ -760,6 +840,8 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	return 0;
 
+free_enable_sysfs:
+	device_remove_file(ctrl->dev, &dev_attr_apba_enable);
 free_flash_sysfs:
 	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
 free_erase_sysfs:
@@ -776,6 +858,7 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
 
+	device_remove_file(ctrl->dev, &dev_attr_apba_log);
 	device_remove_file(ctrl->dev, &dev_attr_apba_enable);
 	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
 	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
