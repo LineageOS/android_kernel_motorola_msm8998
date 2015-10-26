@@ -41,6 +41,13 @@ struct uart_msg_hdr {
 
 #define MODS_UART_MAX_SIZE (MUC_MSG_SIZE_MAX + sizeof(struct uart_msg_hdr))
 
+struct mods_uart_err_stats {
+	uint32_t tx_failure;
+	uint32_t rx_crc;
+	uint32_t rx_timeout;
+	uint32_t rx_abort;
+};
+
 struct mods_uart_data {
 	struct platform_device *pdev;
 	struct tty_struct *tty;
@@ -49,6 +56,7 @@ struct mods_uart_data {
 	char rx_data[MODS_UART_MAX_SIZE];
 	size_t rx_len;
 	unsigned long last_rx;
+	struct mods_uart_err_stats stats;
 };
 
 enum {
@@ -82,6 +90,29 @@ static ssize_t ldisc_rel_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(ldisc_rel);
 
+static ssize_t uart_stats_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct mods_uart_data *mud = platform_get_drvdata(pdev);
+
+	return scnprintf(buf, PAGE_SIZE,
+			 "tx err:%d, rx crc:%d, rx timeout:%d, rx abort:%d\n",
+			 mud->stats.tx_failure, mud->stats.rx_crc,
+			 mud->stats.rx_timeout, mud->stats.rx_abort);
+}
+
+static DEVICE_ATTR_RO(uart_stats);
+
+static struct attribute *uart_attrs[] = {
+	&dev_attr_ldisc_rel.attr,
+	&dev_attr_uart_stats.attr,
+	NULL,
+};
+
+ATTRIBUTE_GROUPS(uart);
+
+
 static int mods_uart_send_internal(struct mods_uart_data *mud,
 				  __le16 type, uint8_t *buf, size_t len)
 {
@@ -94,8 +125,10 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 
 	pkt_size = sizeof(struct uart_msg_hdr) + len;
 	pkt = kmalloc(pkt_size, GFP_KERNEL);
-	if (!pkt)
+	if (!pkt) {
+		mud->stats.tx_failure++;
 		return -ENOMEM;
+	}
 
 	/* Populate the packet */
 	hdr = (struct uart_msg_hdr *) pkt;
@@ -125,6 +158,7 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	return 0;
 
 send_err:
+	mud->stats.tx_failure++;
 	mutex_unlock(&tty_mutex);
 	kfree(pkt);
 	return -EIO;
@@ -341,14 +375,20 @@ static int mods_uart_probe(struct platform_device *pdev)
 		goto close_tty_unlocked;
 	}
 
+
+	ret = sysfs_create_groups(&pdev->dev.kobj, uart_groups);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to create sysfs attributes\n");
+		goto set_ldisc_tty;
+	}
+
 	mud->tty->disc_data = mud;
 	platform_set_drvdata(pdev, mud);
 
-	ret = device_create_file(&pdev->dev, &dev_attr_ldisc_rel);
-	if (ret)
-		dev_warn(&pdev->dev, "%s: Failed to create sysfs\n", __func__);
-
 	return 0;
+
+set_ldisc_tty:
+	tty_set_ldisc(mud->tty, N_TTY);
 
 close_tty_unlocked:
 	/* TTY must be locked to close the connection */
@@ -381,7 +421,7 @@ static int mods_uart_remove(struct platform_device *pdev)
 	if (mud->present)
 		mods_dl_dev_detached(mud->dld);
 
-	device_remove_file(&pdev->dev, &dev_attr_ldisc_rel);
+	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
 
 	apba_uart_register(NULL);
 
@@ -439,6 +479,7 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 	rcvd_crc = (uint16_t *)&mud->rx_data[content_size];
 	calc_crc = gen_crc16((uint8_t *) mud->rx_data, content_size);
 	if (le16_to_cpu(*rcvd_crc) != calc_crc) {
+		mud->stats.rx_crc++;
 		dev_err(dev, "%s: CRC mismatch, received: 0x%x, "
 			"calculated: 0x%x\n", __func__,
 			le16_to_cpu(*rcvd_crc), calc_crc);
@@ -491,6 +532,7 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 	if (mud->rx_len &&
 	    (jiffies_to_msecs(jiffies - mud->last_rx) >
 	     MODS_UART_SEGMENT_TIMEOUT)) {
+		mud->stats.rx_timeout++;
 		dev_err(dev, "%s: RX Buffer cleaned up\n", __func__);
 		mud->rx_len = 0;
 	}
@@ -509,6 +551,7 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 			 * TODO: Send a break signa to APBA to reset
 			 *       UART status.
 			 */
+			mud->stats.rx_abort++;
 			dev_err(dev, "%s: RX buffer overflow\n", __func__);
 			mud->rx_len = 0;
 		}
