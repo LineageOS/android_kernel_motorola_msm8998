@@ -23,13 +23,12 @@
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
+#include <linux/radix-tree.h>
 
 #include "greybus.h"
 #include "muc_svc.h"
 #include "muc_attach.h"
 #include "mods_nw.h"
-
-#define CONFIG_MODS_DEV_MAX     (6) /* TODO: move to Kconfig */
 
 struct dest_entry {
 	struct mods_dl_device *dev;
@@ -44,9 +43,9 @@ struct cport_set {
 	struct dest_entry	dest[CONFIG_CPORT_ID_MAX];
 };
 
-static struct cport_set routes[CONFIG_MODS_DEV_MAX];
-
 static LIST_HEAD(mods_nw_filters);
+static RADIX_TREE(nw_interfaces, GFP_KERNEL);
+static DEFINE_MUTEX(list_lock);
 
 /* TODO: reference counting  */
 /* TODO: clear all routes */
@@ -90,28 +89,56 @@ _mods_nw_apply_filter(struct dest_entry *dest, struct mods_dl_device *to,
 
 struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id)
 {
-	if (intf_id >= CONFIG_MODS_DEV_MAX)
+	struct cport_set *route;
+
+	route = radix_tree_lookup(&nw_interfaces, intf_id);
+	if (!route)
 		return NULL;
 
-	return routes[intf_id].dev;
+	return route->dev;
 }
 
 /* add the dl device to the table */
 /* called by the svc while creating the dl device */
 void mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
 {
-	BUG_ON(mods_dev == NULL);
-	BUG_ON(mods_dev->intf_id >= CONFIG_MODS_DEV_MAX);
+	struct cport_set *new;
 
-	routes[mods_dev->intf_id].dev = mods_dev;
+	if (!mods_dev)
+		return;
+
+	mutex_lock(&list_lock);
+	if (radix_tree_lookup(&nw_interfaces, mods_dev->intf_id))
+		goto unlock;
+
+	new = kzalloc(sizeof(*new), GFP_KERNEL);
+	if (!new)
+		goto unlock;
+
+	new->dev = mods_dev;
+	radix_tree_insert(&nw_interfaces, mods_dev->intf_id, new);
+
+unlock:
+	mutex_unlock(&list_lock);
 }
 
 void mods_nw_del_dl_device(struct mods_dl_device *mods_dev)
 {
-	BUG_ON(mods_dev == NULL);
-	BUG_ON(mods_dev->intf_id >= CONFIG_MODS_DEV_MAX);
+	struct cport_set *set;
 
-	memset(&routes[mods_dev->intf_id], 0, sizeof(struct cport_set));
+	if (!mods_dev)
+		return;
+
+	mutex_lock(&list_lock);
+	set = radix_tree_lookup(&nw_interfaces, mods_dev->intf_id);
+	if (!set)
+		goto unlock;
+
+	radix_tree_delete(&nw_interfaces, mods_dev->intf_id);
+	kfree(set);
+
+unlock:
+	mutex_unlock(&list_lock);
 }
 
 int mods_nw_add_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
@@ -122,15 +149,13 @@ int mods_nw_add_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 	uint8_t protocol;
 	bool filter = false;
 
-	BUG_ON(from_intf >= CONFIG_MODS_DEV_MAX);
-	BUG_ON(to_intf >= CONFIG_MODS_DEV_MAX);
 	BUG_ON(from_cport >= CONFIG_CPORT_ID_MAX);
 	BUG_ON(to_cport >= CONFIG_CPORT_ID_MAX);
 
-	from_cset = &routes[from_intf];
-	to_cset = &routes[to_intf];
+	from_cset = radix_tree_lookup(&nw_interfaces, from_intf);
+	to_cset = radix_tree_lookup(&nw_interfaces, to_intf);
 
-	if (!from_cset->dev || !to_cset->dev) {
+	if (!from_cset || !to_cset) {
 		pr_err("Unable to add route %u:%u -> %u:%u\n",
 			from_intf, from_cport, to_intf, to_cport);
 		return -ENODEV;
@@ -169,15 +194,13 @@ int mods_nw_add_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 
 void mods_nw_del_route(u8 from_intf, u16 from_cport, u8 to_intf, u16 to_cport)
 {
-	struct cport_set *from_cset = &routes[from_intf];
+	struct cport_set *from_cset;
 
-	BUG_ON(from_intf >= CONFIG_MODS_DEV_MAX);
-	BUG_ON(to_intf >= CONFIG_MODS_DEV_MAX);
 	BUG_ON(from_cport >= CONFIG_CPORT_ID_MAX);
 	BUG_ON(to_cport >= CONFIG_CPORT_ID_MAX);
 
-	from_cset = &routes[from_intf];
-	if (from_cset->dev)
+	from_cset = radix_tree_lookup(&nw_interfaces, from_intf);
+	if (from_cset)
 		memset(&from_cset->dest[from_cport], 0,
 			sizeof(struct dest_entry));
 }
@@ -187,6 +210,7 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 	struct muc_msg *mm;
 	struct dest_entry dest;
 	int err = -ENODEV;
+	struct cport_set *route;
 
 	if (!msg || !from) {
 		pr_err("bad arguments\n");
@@ -195,7 +219,8 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 
 	mm = (struct muc_msg *)msg;
 
-	if (from->intf_id >= CONFIG_MODS_DEV_MAX) {
+	route = radix_tree_lookup(&nw_interfaces, from->intf_id);
+	if (!route) {
 		dev_err(from->dev, "Attempt to send with invalid IID\n");
 		err = -EINVAL;
 		goto out;
@@ -206,13 +231,7 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 		goto out;
 	}
 
-	if (!routes[from->intf_id].dev) {
-		dev_err(from->dev, "No device defined for %u:%u\n",
-			from->intf_id, le16_to_cpu(mm->hdr.cport));
-		goto out;
-	}
-
-	dest = routes[from->intf_id].dest[le16_to_cpu(mm->hdr.cport)];
+	dest = route->dest[le16_to_cpu(mm->hdr.cport)];
 	if (!dest.dev) {
 		dev_err(from->dev, "No route for %u:%u\n",
 				from->intf_id, le16_to_cpu(mm->hdr.cport));
@@ -235,18 +254,19 @@ out:
 }
 static void _set_filter(uint8_t protocol, bool value)
 {
-	int intf;
+	struct radix_tree_iter rt_iter;
+	void **rt_slot;
+	struct cport_set *route;
 	int cport;
 
-	for (intf = 0; intf < ARRAY_SIZE(routes); intf++) {
-		if (!routes[intf].dev)
-			continue;
+	radix_tree_for_each_slot(rt_slot, &nw_interfaces, &rt_iter, 0) {
+		route = radix_tree_deref_slot(rt_slot);
 
 		for (cport = 0; cport < CONFIG_CPORT_ID_MAX; cport++) {
-			if (!routes[intf].dest[cport].protocol_valid)
+			if (!route->dest[cport].protocol_valid)
 				continue;
-			if (routes[intf].dest[cport].protocol_id == protocol)
-				routes[intf].dest[cport].filter = value;
+			if (route->dest[cport].protocol_id == protocol)
+				route->dest[cport].filter = value;
 		}
 	}
 }
