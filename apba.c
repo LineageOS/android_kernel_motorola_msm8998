@@ -31,6 +31,7 @@
 #include <linux/workqueue.h>
 
 #include "apba.h"
+#include "kernel_ver.h"
 #include "mods_nw.h"
 #include "mods_uart.h"
 
@@ -250,13 +251,13 @@ no_mtd:
 	return err;
 }
 
-static ssize_t apba_erase_firmware_show(struct device *dev,
+static ssize_t erase_firmware_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	return 0;
 }
 
-static ssize_t apba_erase_firmware_store(struct device *dev,
+static ssize_t erase_firmware_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -276,8 +277,7 @@ static ssize_t apba_erase_firmware_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(erase_firmware, S_IRUGO | S_IWUSR,
-	apba_erase_firmware_show, apba_erase_firmware_store);
+static DEVICE_ATTR_RW(erase_firmware);
 
 static int apba_flash_firmware(const struct firmware *fw,
 		 struct apba_ctrl *ctrl)
@@ -327,13 +327,13 @@ no_mtd:
 	return err;
 }
 
-static ssize_t apba_firmware_show(struct device *dev,
+static ssize_t flash_firmware_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	return 0;
 }
 
-static ssize_t apba_firmware_store(struct device *dev,
+static ssize_t flash_firmware_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -364,9 +364,7 @@ static ssize_t apba_firmware_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(flash_firmware, S_IRUGO | S_IWUSR,
-	apba_firmware_show, apba_firmware_store);
-
+static DEVICE_ATTR_RW(flash_firmware);
 
 static ssize_t apba_enable_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -395,8 +393,7 @@ static ssize_t apba_enable_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(apba_enable, S_IRUGO | S_IWUSR,
-		   apba_enable_show, apba_enable_store);
+static DEVICE_ATTR_RW(apba_enable);
 
 static ssize_t apba_log_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -429,7 +426,17 @@ static ssize_t apba_log_show(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(apba_log, S_IRUGO, apba_log_show, NULL);
+static DEVICE_ATTR_RO(apba_log);
+
+static struct attribute *apba_attrs[] = {
+	&dev_attr_erase_firmware.attr,
+	&dev_attr_flash_firmware.attr,
+	&dev_attr_apba_enable.attr,
+	&dev_attr_apba_log.attr,
+	NULL,
+};
+
+ATTRIBUTE_GROUPS(apba);
 
 static void apba_firmware_callback(const struct firmware *fw,
 					 void *context)
@@ -807,28 +814,10 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	mutex_init(&ctrl->log_mutex);
 	init_completion(&ctrl->comp);
 
-	ret = device_create_file(ctrl->dev, &dev_attr_erase_firmware);
+	ret = sysfs_create_groups(&pdev->dev.kobj, apba_groups);
 	if (ret) {
-		dev_err(&pdev->dev, "failed to create erase fw sysfs\n");
+		dev_err(&pdev->dev, "Failed to create sysfs attr\n");
 		goto disable_irq;
-	}
-
-	ret = device_create_file(ctrl->dev, &dev_attr_flash_firmware);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to create flash fw sysfs\n");
-		goto free_erase_sysfs;
-	}
-
-	ret = device_create_file(ctrl->dev, &dev_attr_apba_enable);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to create enable_apba sysfs\n");
-		goto free_flash_sysfs;
-	}
-
-	ret = device_create_file(ctrl->dev, &dev_attr_apba_log);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to create apba_log sysfs\n");
-		goto free_enable_sysfs;
 	}
 
 	/* start with APBA turned OFF */
@@ -840,12 +829,6 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	return 0;
 
-free_enable_sysfs:
-	device_remove_file(ctrl->dev, &dev_attr_apba_enable);
-free_flash_sysfs:
-	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
-free_erase_sysfs:
-	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
 disable_irq:
 	disable_irq_wake(ctrl->irq);
 free_gpios:
@@ -858,10 +841,7 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
 
-	device_remove_file(ctrl->dev, &dev_attr_apba_log);
-	device_remove_file(ctrl->dev, &dev_attr_apba_enable);
-	device_remove_file(ctrl->dev, &dev_attr_flash_firmware);
-	device_remove_file(ctrl->dev, &dev_attr_erase_firmware);
+	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 
 	disable_irq_wake(ctrl->irq);
 	apba_disable();
