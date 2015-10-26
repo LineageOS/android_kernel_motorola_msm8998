@@ -26,6 +26,7 @@ struct gb_raw {
 	dev_t dev;
 	struct cdev cdev;
 	struct device *device;
+	wait_queue_head_t read_wq;
 };
 
 struct raw_data {
@@ -83,6 +84,7 @@ static int receive_data(struct gb_raw *raw, u32 len, u8 *data)
 	memcpy(&raw_data->data[0], data, len);
 
 	list_add_tail(&raw_data->entry, &raw->list);
+	wake_up(&raw->read_wq);
 exit:
 	mutex_unlock(&raw->list_lock);
 	return retval;
@@ -170,6 +172,7 @@ static int gb_raw_connection_init(struct gb_connection *connection)
 		goto error_free;
 	}
 
+	init_waitqueue_head(&raw->read_wq);
 	raw->dev = MKDEV(raw_major, minor);
 	cdev_init(&raw->cdev, &raw_fops);
 	retval = cdev_add(&raw->cdev, raw->dev, 1);
@@ -271,8 +274,19 @@ static ssize_t raw_read(struct file *file, char __user *buf, size_t count,
 	struct raw_data *raw_data;
 
 	mutex_lock(&raw->list_lock);
-	if (list_empty(&raw->list))
-		goto exit;
+	if (list_empty(&raw->list)) {
+		if (!(file->f_flags & O_NONBLOCK)) {
+			do {
+				mutex_unlock(&raw->list_lock);
+				retval = wait_event_interruptible(raw->read_wq,
+				    !list_empty(&raw->list));
+				if (retval < 0)
+					return retval;
+				mutex_lock(&raw->list_lock);
+			} while (list_empty(&raw->list));
+		} else
+			goto exit;
+	}
 
 	raw_data = list_first_entry(&raw->list, struct raw_data, entry);
 	if (raw_data->len > count) {
