@@ -22,6 +22,7 @@
 
 #include "greybus.h"
 
+#include "mods_protocols.h"
 #include "muc.h"
 #include "muc_svc.h"
 #include "mods_nw.h"
@@ -41,27 +42,12 @@ struct muc_svc_data {
 };
 struct muc_svc_data *svc_dd;
 
-/* Special Control Message to reboot an interface */
-#define GB_CONTROL_TYPE_REBOOT 0x7e
 
-#define GB_CONTROL_REBOOT_MODE_RESET 0x01
-#define GB_CONTROL_REBOOT_MODE_BOOTLOADER 0x02
-
-struct gb_control_reboot_request {
-	__u8      mode;
-} __packed;
-
-/* Special Control Message to get IDs */
-#define GB_CONTROL_TYPE_GET_IDS 0x7f
-struct gb_control_get_ids_response {
-	__le32    unipro_mfg_id;
-	__le32    unipro_prod_id;
-	__le32    ara_vend_id;
-	__le32    ara_prod_id;
-	__le64    uid_low;
-	__le64    uid_high;
-	__le32    fw_version;
-} __packed;
+/* Define the SVCs reserved area of CPORTS to create the vendor
+ * connections to each interface
+ */
+#define SVC_VENDOR_CTRL_CPORT_BASE (0x8000)
+#define SVC_VENDOR_CTRL_CPORT(intfid) (SVC_VENDOR_CTRL_CPORT_BASE + intfid)
 
 struct muc_svc_hotplug_work {
 	struct work_struct work;
@@ -997,14 +983,14 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 			struct gb_svc_intf_hotplug_request *hotplug,
 			struct mods_dl_device *mods_dev)
 {
-	struct gb_control_get_ids_response *ids;
+	struct mb_control_get_ids_response *ids;
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_message *msg;
 	int ret;
 
 	/* GET_IDs has no payload */
-	msg = svc_gb_msg_send_sync(dld, NULL, GB_CONTROL_TYPE_GET_IDS, 0,
-				   mods_dev->intf_id);
+	msg = svc_gb_msg_send_sync(dld, NULL, MB_CONTROL_TYPE_GET_IDS,
+				0, SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
 	if (IS_ERR(msg)) {
 		dev_err(&dd->pdev->dev, "Failed to get GET_IDS\n");
 		return PTR_ERR(msg);
@@ -1045,33 +1031,33 @@ free_gb_msg:
 	return ret;
 }
 
-static int muc_svc_create_control_route(u8 intf_id)
+static int muc_svc_create_control_route(u8 intf_id, u16 src, u16 dest)
 {
 	int ret;
 
-	/* Temporary route to interface's Control Port, we assign the CPort
+	/* Create a route to interface's Control Port, we assign the CPort
 	 * on SVC same as interface since its unique.
 	 */
-	ret = mods_nw_add_route(MODS_INTF_SVC, intf_id, intf_id, 0);
+	ret = mods_nw_add_route(MODS_INTF_SVC, src, intf_id, dest);
 	if (ret)
 		return ret;
 
-	ret = mods_nw_add_route(intf_id, 0, MODS_INTF_SVC, intf_id);
+	ret = mods_nw_add_route(intf_id, dest, MODS_INTF_SVC, src);
 	if (ret)
 		goto clean_route1;
 
 	return 0;
 
 clean_route1:
-	mods_nw_del_route(MODS_INTF_SVC, intf_id, intf_id, 0);
+	mods_nw_del_route(MODS_INTF_SVC, src, intf_id, dest);
 
 	return ret;
 }
 
-static void muc_svc_destroy_control_route(u8 intf_id)
+static void muc_svc_destroy_control_route(u8 intf_id, u16 src, u16 dest)
 {
-	mods_nw_del_route(MODS_INTF_SVC, intf_id, intf_id, 0);
-	mods_nw_del_route(intf_id, 0, MODS_INTF_SVC, intf_id);
+	mods_nw_del_route(MODS_INTF_SVC, src, intf_id, dest);
+	mods_nw_del_route(intf_id, dest, MODS_INTF_SVC, src);
 }
 
 static void muc_svc_attach_work(struct work_struct *work)
@@ -1167,9 +1153,13 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 	hpw->dld = mods_dev;
 	INIT_WORK(&hpw->work, muc_svc_attach_work);
 
-	ret = muc_svc_create_control_route(mods_dev->intf_id);
+	/* Create route SVC:INTFID<-->INTFID:0 to hook into the reserved
+	 * control protocol to obtain the manifest.
+	 */
+	ret = muc_svc_create_control_route(mods_dev->intf_id,
+				mods_dev->intf_id, GB_CONTROL_CPORT_ID);
 	if (ret) {
-		dev_err(&svc_dd->pdev->dev, "Failed to setup CONTROL route\n");
+		dev_err(&svc_dd->pdev->dev, "Failed setup GB CONTROL route\n");
 		goto free_hpw;
 	}
 
@@ -1184,12 +1174,14 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 	if (ret)
 		goto free_route;
 
-	muc_svc_destroy_control_route(mods_dev->intf_id);
+	muc_svc_destroy_control_route(mods_dev->intf_id,
+				mods_dev->intf_id, GB_CONTROL_CPORT_ID);
 
 	return hpw;
 
 free_route:
-	muc_svc_destroy_control_route(mods_dev->intf_id);
+	muc_svc_destroy_control_route(mods_dev->intf_id,
+				mods_dev->intf_id, GB_CONTROL_CPORT_ID);
 free_hpw:
 	kfree(hpw);
 
@@ -1237,6 +1229,12 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	muc_svc_destroy_dl_dev_sysfs(mods_dev);
 	list_del(&mods_dev->list);
 
+	/* Destroy custom vendor control route */
+	if (mods_dev->intf_id != MODS_INTF_AP)
+		muc_svc_destroy_control_route(mods_dev->intf_id,
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+				VENDOR_CTRL_DEST_CPORT);
+
 	/* XXX need to track if unplug already sent... */
 	if (muc_svc_generate_unplug(mods_dev))
 		return;
@@ -1261,7 +1259,7 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		if (err)
 			return err;
 
-		err = mods_nw_add_route(MODS_INTF_AP,  0, MODS_INTF_SVC, 0);
+		err = mods_nw_add_route(MODS_INTF_AP, 0, MODS_INTF_SVC, 0);
 		if (err)
 			goto free_svc_to_ap;
 
@@ -1272,10 +1270,25 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		return 0;
 	}
 
-	err = muc_svc_generate_hotplug(mods_dev);
-	if (!err)
-		list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
+	/* Create route for vendor control protocol on reserved CPORT */
+	err = muc_svc_create_control_route(mods_dev->intf_id,
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+				VENDOR_CTRL_DEST_CPORT);
+	if (err) {
+		dev_err(&svc_dd->pdev->dev, "VENDOR CONTROL setup failed\n");
+		return err;
+	}
 
+	err = muc_svc_generate_hotplug(mods_dev);
+	if (err) {
+		muc_svc_destroy_control_route(mods_dev->intf_id,
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+				VENDOR_CTRL_DEST_CPORT);
+		goto done;
+	}
+
+	list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
+done:
 	return err;
 
 free_ap_to_svc:
@@ -1490,19 +1503,13 @@ static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode)
 {
 	int ret;
-	struct gb_control_reboot_request req;
+	struct mb_control_reboot_request req;
 
 	req.mode = mode;
 
-	ret = muc_svc_create_control_route(mods_dev->intf_id);
-	if (ret)
-		return ret;
-
 	ret = svc_gb_msg_send_no_resp(svc_dd->dld, (uint8_t *)&req,
-				GB_CONTROL_TYPE_REBOOT, sizeof(req),
-				mods_dev->intf_id);
-
-	muc_svc_destroy_control_route(mods_dev->intf_id);
+				MB_CONTROL_TYPE_REBOOT, sizeof(req),
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
 
 	return ret;
 }
@@ -1512,7 +1519,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 	struct mods_dl_device *mods_dev;
-	uint8_t mode = GB_CONTROL_REBOOT_MODE_BOOTLOADER;
+	uint8_t mode = MB_CONTROL_REBOOT_MODE_BOOTLOADER;
 
 	/* Need to generate a hot unplug for each interface and then
 	 * issue the reboot command */
