@@ -55,11 +55,29 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(state);
 
+static ssize_t
+connections_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct gb_bundle *bundle = to_gb_bundle(dev);
+	struct gb_connection *connection;
+	ssize_t count = 0;
+
+	list_for_each_entry(connection, &bundle->connections, bundle_links)
+		count += scnprintf(buf + count, PAGE_SIZE - count,
+				"CONN=%d,PROT=%d,STATE=%d;",
+				connection->hd_cport_id,
+				connection->protocol_id,
+				connection->state);
+
+	return count;
+}
+static DEVICE_ATTR_RO(connections);
 
 static struct attribute *bundle_attrs[] = {
 	&dev_attr_bundle_class.attr,
 	&dev_attr_bundle_id.attr,
 	&dev_attr_state.attr,
+	&dev_attr_connections.attr,
 	NULL,
 };
 
