@@ -233,14 +233,29 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 out:
 	return err;
 }
+static void _set_filter(uint8_t protocol, bool value)
+{
+	int intf;
+	int cport;
+
+	for (intf = 0; intf < ARRAY_SIZE(routes); intf++) {
+		if (!routes[intf].dev)
+			continue;
+
+		for (cport = 0; cport < CONFIG_CPORT_ID_MAX; cport++) {
+			if (!routes[intf].dest[cport].protocol_valid)
+				continue;
+			if (routes[intf].dest[cport].protocol_id == protocol)
+				routes[intf].dest[cport].filter = value;
+		}
+	}
+}
 
 int mods_nw_register_filter(struct mods_nw_msg_filter *filter)
 {
 	struct mods_nw_msg_filter *tmp, *e;
 	uint8_t type;
 	uint8_t protocol;
-	int intf;
-	int cport;
 	bool protocol_match = false;
 
 	if (!filter)
@@ -271,25 +286,13 @@ int mods_nw_register_filter(struct mods_nw_msg_filter *filter)
 		return 0;
 
 	/* Mark existing connections with filter availabile */
-	for (intf = 0; intf < ARRAY_SIZE(routes); intf++) {
-		if (!routes[intf].dev)
-			continue;
-
-		for (cport = 0; cport < CONFIG_CPORT_ID_MAX; cport++) {
-			if (!routes[intf].dest[cport].protocol_valid)
-				continue;
-			if (routes[intf].dest[cport].protocol_id == protocol)
-				routes[intf].dest[cport].filter = true;
-		}
-	}
+	_set_filter(protocol, true);
 
 	return 0;
 }
 
 void mods_nw_unregister_filter(struct mods_nw_msg_filter *filter)
 {
-	int intf;
-	int cport;
 	uint8_t protocol;
 
 	if (!filter || !filter->initialized)
@@ -304,15 +307,5 @@ void mods_nw_unregister_filter(struct mods_nw_msg_filter *filter)
 		return;
 
 	/* This was last filter for the protocol, clear its availability */
-	for (intf = 0; intf < ARRAY_SIZE(routes); intf++) {
-		if (!routes[intf].dev)
-			continue;
-
-		for (cport = 0; cport < CONFIG_CPORT_ID_MAX; cport++) {
-			if (!routes[intf].dest[cport].protocol_valid)
-				continue;
-			if (routes[intf].dest[cport].protocol_id == protocol)
-				routes[intf].dest[cport].filter = false;
-		}
-	}
+	_set_filter(protocol, false);
 }
