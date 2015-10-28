@@ -124,12 +124,8 @@ static int mods_ap_probe(struct platform_device *pdev)
 	struct mods_ap_data *ap_data;
 
 	/* setup host device */
-	/* The use of ID_MAX is internally used as both a count and
-	 * a max.  Here it is a count.  CONFIG_CPORT_ID_MAX will
-	 * go away soon and this should be fixed then.
-	 */
 	g_hd = greybus_create_hd(&mods_ap_host_driver, &pdev->dev,
-			PAYLOAD_MAX_SIZE, CONFIG_CPORT_ID_MAX);
+			PAYLOAD_MAX_SIZE, CPORT_ID_MAX);
 	if (IS_ERR(g_hd)) {
 		dev_err(&pdev->dev, "Unable to create greybus host driver.\n");
 		return PTR_ERR(g_hd);
