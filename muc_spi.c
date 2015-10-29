@@ -93,6 +93,9 @@ struct muc_spi_data {
 	 */
 	__u8 rcvd_payload[MUC_MSG_SIZE_MAX];
 	int rcvd_payload_idx;
+
+	/* Quirks below */
+	bool wake_delay;                   /* Delay after wake assert is req'd */
 };
 
 struct spi_msg_hdr {
@@ -272,8 +275,9 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 		/* Assert WAKE */
 		gpio_set_value(dd->gpio_wake_n, 0);
 
-		/* Wait for ADC enable */
-		udelay(300);
+		/* Wait for ADC enable (if neccessary) */
+		if (dd->wake_delay)
+			udelay(300);
 	}
 
 	/* Wait for RDY to be asserted */
@@ -538,6 +542,15 @@ static int muc_spi_gpio_init(struct muc_spi_data *dd)
 	return 0;
 }
 
+static void muc_spi_quirks_init(struct muc_spi_data *dd)
+{
+	struct device_node *np = dd->spi->dev.of_node;
+
+	dd->wake_delay = of_property_read_bool(np, "mmi,delay-after-wake");
+	if (dd->wake_delay)
+		dev_info(&dd->spi->dev, "Delay after wake is set\n");
+}
+
 static int muc_spi_probe(struct spi_device *spi)
 {
 	struct muc_spi_data *dd;
@@ -578,6 +591,7 @@ static int muc_spi_probe(struct spi_device *spi)
 		goto remove_dl_device;
 
 	muc_spi_gpio_init(dd);
+	muc_spi_quirks_init(dd);
 	mutex_init(&dd->mutex);
 	init_waitqueue_head(&dd->rdy_wq);
 
