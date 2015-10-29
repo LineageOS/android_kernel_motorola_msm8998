@@ -53,11 +53,8 @@ struct gb_snd {
 	struct gb_connection		*mgmt_connection;
 	struct gb_connection		*i2s_tx_connection;
 	struct gb_connection		*i2s_rx_connection;
-	struct gb_connection		*mods_aud_connection;
 	struct gb_i2s_mgmt_get_supported_configurations_response
 					*i2s_configs;
-	struct gb_audio_get_volume_db_range_response *vol_range;
-	struct gb_audio_get_supported_usecases_response *use_cases;
 	char				*send_data_req_buf;
 	long				send_data_sample_count;
 	int				gb_bundle_id;
@@ -80,9 +77,14 @@ struct gb_snd {
  * instead of pcm tunneling.
  */
 struct gb_snd_codec {
-
 	struct platform_device		codec_dev;
 	struct list_head		*gb_snd_devs;
+	struct gb_audio_get_volume_db_range_response *vol_range;
+	struct gb_audio_get_supported_usecases_response *use_cases;
+	struct gb_audio_get_devices_response *aud_devices;
+	struct gb_connection *mods_aud_connection;
+	struct mutex lock;
+	int (*report_devices)(struct gb_snd_codec *);
 };
 
 /*
@@ -121,6 +123,11 @@ int gb_mods_aud_set_sys_vol(struct gb_connection *connection,
 			int vol_db);
 int gb_mods_aud_set_supported_usecase(struct gb_connection *connection,
 			uint8_t usecase);
+int gb_mods_aud_enable_devices(struct gb_connection *connection,
+			uint32_t in_devices, uint32_t out_devices);
+int gb_mods_aud_get_devices(
+		struct gb_audio_get_devices_response *get_devices,
+		struct gb_connection *connection);
 /*
  * GB PCM hooks
  */

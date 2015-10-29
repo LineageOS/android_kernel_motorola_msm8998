@@ -258,3 +258,33 @@ int gb_mods_aud_set_supported_usecase(struct gb_connection *connection,
 	return gb_operation_sync(connection, GB_AUDIO_SET_USE_CASE,
 				 &request, sizeof(request), NULL, 0);
 }
+
+int gb_mods_aud_get_devices(
+		struct gb_audio_get_devices_response *get_devices,
+		struct gb_connection *connection)
+{
+	int ret;
+	size_t size = sizeof(*get_devices);
+
+	ret = gb_operation_sync(connection,
+				GB_AUDIO_GET_SUPPORTED_DEVICES,
+				NULL, 0, get_devices, size);
+	if (ret) {
+		pr_err("get supported devices failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int gb_mods_aud_enable_devices(struct gb_connection *connection,
+			uint32_t in_devices, uint32_t out_devices)
+{
+	struct gb_audio_enable_devices_request request;
+
+	request.devices.in_devices = cpu_to_le32(in_devices);
+	request.devices.out_devices = cpu_to_le32(out_devices);
+
+	return gb_operation_sync(connection, GB_AUDIO_ENABLE_DEVICES,
+				 &request, sizeof(request), NULL, 0);
+}

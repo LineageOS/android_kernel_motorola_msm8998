@@ -325,32 +325,27 @@ err_free_snd_dev:
 
 static int gb_mods_audio_connection_init(struct gb_connection *connection)
 {
-	struct gb_snd *snd_dev;
-	unsigned long flags;
 	struct gb_audio_get_volume_db_range_response *get_vol;
 	struct gb_audio_get_supported_usecases_response *get_use_cases;
+	struct gb_audio_get_devices_response *get_devices;
 	int ret;
 
-	snd_dev = gb_get_snd(connection->bundle->id);
-	if (!snd_dev)
-		return -ENOMEM;
-
-	spin_lock_irqsave(&snd_dev->lock, flags);
-	snd_dev->mods_aud_connection = connection;
-	connection->private = snd_dev;
-	spin_unlock_irqrestore(&snd_dev->lock, flags);
+	mutex_lock(&snd_codec.lock);
+	snd_codec.mods_aud_connection = connection;
+	connection->private = &snd_codec;
 
 	get_vol = kmalloc(sizeof(*get_vol), GFP_KERNEL);
 	if (!get_vol) {
 		ret = -ENOMEM;
-		goto free_snd_dev;
+		goto out;
 	}
 	ret = gb_mods_aud_get_vol_range(get_vol, connection);
 	if (ret) {
-		dev_err(&connection->dev, "failed to get aud dev vol range: %d\n", ret);
+		dev_err(&connection->dev, "failed to get aud dev vol range: %d\n",
+				ret);
 		goto free_get_vol;
 	}
-	snd_dev->vol_range = get_vol;
+	snd_codec.vol_range = get_vol;
 
 	get_use_cases = kmalloc(sizeof(*get_use_cases), GFP_KERNEL);
 	if (!get_use_cases) {
@@ -360,34 +355,58 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	ret = gb_mods_aud_get_supported_usecase(get_use_cases,
 						  connection);
 	if (ret) {
-		dev_err(&connection->dev, "failed to get aud dev supp usecases %d\n", ret);
+		dev_err(&connection->dev, "failed to get aud dev supp usecases %d\n",
+				ret);
 		goto free_use_case;
 	}
-	snd_dev->use_cases = get_use_cases;
+	snd_codec.use_cases = get_use_cases;
+
+	get_devices = kmalloc(sizeof(*get_devices), GFP_KERNEL);
+	if (!get_devices) {
+		ret = -ENOMEM;
+		goto get_dev_null;
+	}
+	ret = gb_mods_aud_get_devices(get_devices,
+						  connection);
+	if (ret) {
+		dev_err(&connection->dev, "failed to get aud devices %d\n",
+			ret);
+		goto free_aud_dev;
+	}
+	snd_codec.aud_devices = get_devices;
+	if (snd_codec.report_devices)
+		snd_codec.report_devices(&snd_codec);
+	mutex_unlock(&snd_codec.lock);
+
 	return 0;
 
+free_aud_dev:
+	kfree(get_devices);
+get_dev_null:
+	snd_codec.use_cases = NULL;
 free_use_case:
 	kfree(get_use_cases);
 set_vol_null:
-	snd_dev->vol_range = NULL;
+	snd_codec.vol_range = NULL;
 free_get_vol:
 	kfree(get_vol);
-free_snd_dev:
-	gb_free_snd(snd_dev);
+out:
+	mutex_unlock(&snd_codec.lock);
 	return ret;
 }
 
 static void gb_mods_audio_connection_exit(struct gb_connection *connection)
 {
-	struct gb_snd *snd_dev;
+	struct gb_snd_codec	*codec =
+			(struct gb_snd_codec *)connection->private;
 
-	snd_dev = (struct gb_snd *)connection->private;
-	kfree(snd_dev->vol_range);
-	snd_dev->vol_range = NULL;
-	kfree(snd_dev->use_cases);
-	snd_dev->use_cases = NULL;
-	snd_dev->mods_aud_connection = NULL;
-	gb_free_snd(snd_dev);
+	kfree(codec->vol_range);
+	codec->vol_range = NULL;
+	kfree(codec->use_cases);
+	codec->use_cases = NULL;
+	kfree(codec->aud_devices);
+	codec->aud_devices = NULL;
+	codec->mods_aud_connection = NULL;
 }
 
 static void gb_i2s_mgmt_connection_exit(struct gb_connection *connection)
@@ -466,6 +485,36 @@ static int gb_i2s_mgmt_report_event_recv(u8 type, struct gb_operation *op)
 	return 0;
 }
 
+static int gb_mods_audio_event_recv(u8 type, struct gb_operation *op)
+{
+	struct gb_connection *connection = op->connection;
+	struct gb_audio_report_devices_request *req = op->request->payload;
+	struct gb_snd_codec	*codec =
+			(struct gb_snd_codec *)connection->private;
+
+	if (type != GB_AUDIO_DEVICES_REPORT_EVENT) {
+		dev_err(&connection->dev, "Invalid request type: %d\n",
+			type);
+		return -EINVAL;
+	}
+
+	if (op->request->payload_size < sizeof(*req)) {
+		dev_err(&connection->dev, "Short request received (%zu < %zu)\n",
+			op->request->payload_size, sizeof(*req));
+		return -EINVAL;
+	}
+	codec->aud_devices->devices.in_devices =
+						cpu_to_le32(req->devices.in_devices);
+	codec->aud_devices->devices.out_devices =
+						cpu_to_le32(req->devices.out_devices);
+	if (codec->report_devices)
+		codec->report_devices(codec);
+
+	dev_dbg(&connection->dev, "available audio devices changed\n");
+
+	return 0;
+}
+
 static int gb_audio_register_mods_codec(struct platform_driver *plat)
 {
 	int err;
@@ -518,7 +567,7 @@ static struct gb_protocol gb_mods_audio_protocol = {
 	.minor			= 1,
 	.connection_init	= gb_mods_audio_connection_init,
 	.connection_exit	= gb_mods_audio_connection_exit,
-	.request_recv		= NULL,
+	.request_recv		= gb_mods_audio_event_recv,
 };
 
 /*

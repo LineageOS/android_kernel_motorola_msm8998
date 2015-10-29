@@ -31,6 +31,7 @@ struct mods_codec_dai {
 	uint32_t vol_step;
 	uint8_t use_case;
 	int sys_vol_step;
+	struct gb_aud_devices enabled_devices;
 };
 
 /* declare 0 to -127.5 vol range with step 0.5 db */
@@ -50,6 +51,14 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 static int mods_codec_get_sys_vol(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol);
 static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_get_out_enabled_devices(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_set_out_enabled_devices(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_get_in_enabled_devices(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol);
+static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol);
 
 static const char *const mods_use_case[] = {
@@ -72,6 +81,12 @@ static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
 	SOC_ENUM_EXT("Mods Set Use Case", mods_codec_enum[0],
 				mods_codec_get_usecase,
 				mods_codec_set_usecase),
+	SOC_SINGLE_EXT("Mods Enable Output Devices", SND_SOC_NOPM,
+				0, 0x80000000, 0, mods_codec_get_out_enabled_devices,
+				mods_codec_set_out_enabled_devices),
+	SOC_SINGLE_EXT("Mods Enable Input Devices", SND_SOC_NOPM,
+				0, 0x80000000, 0, mods_codec_get_in_enabled_devices,
+				mods_codec_set_in_enabled_devices),
 };
 
 static void mods_codec_work(struct work_struct *work)
@@ -143,26 +158,22 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	struct gb_snd *snd_dev;
 	uint8_t use_case = ucontrol->value.integer.value[0];
 	int ret;
 
-	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
-
-		if (!snd_dev || !snd_dev->mods_aud_connection || !use_case)
-			continue;
-		if (snd_dev->use_cases->use_cases & BIT(use_case)) {
-			ret = gb_mods_aud_set_supported_usecase(
-						snd_dev->mods_aud_connection,
-						BIT(use_case));
-			if (ret) {
-				pr_err("%s: failed to set mods codec use case\n", __func__);
-				return -EIO;
-			}
-			priv->use_case = use_case;
+	mutex_lock(&gb_codec->lock);
+	if (gb_codec->use_cases->use_cases & BIT(use_case)) {
+		ret = gb_mods_aud_set_supported_usecase(
+					gb_codec->mods_aud_connection,
+					BIT(use_case));
+		if (ret) {
+			pr_err("%s: failed to set mods codec use case\n", __func__);
+			mutex_unlock(&gb_codec->lock);
+			return -EIO;
 		}
+		priv->use_case = use_case;
 	}
-
+	mutex_unlock(&gb_codec->lock);
 	return 0;
 }
 
@@ -184,24 +195,22 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	struct gb_snd *snd_dev;
 	uint32_t mods_vol_step;
 	int ret;
 	uint32_t vol_step = ucontrol->value.integer.value[0];
 
-	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
-
-		if (!snd_dev || !snd_dev->mods_aud_connection || !snd_dev->vol_range)
-			continue;
-		/* calculate remote codec vol step */
-		mods_vol_step = (vol_step*MODS_VOL_STEP)/(snd_dev->vol_range->vol_range.step);
-		ret = gb_mods_aud_set_vol(snd_dev->mods_aud_connection, mods_vol_step);
-		if (ret) {
-			pr_err("%s: failed to set mods codec volume\n", __func__);
-			return -EIO;
-		}
-		priv->vol_step = mods_vol_step;
+	mutex_lock(&gb_codec->lock);
+	/* calculate remote codec vol step */
+	mods_vol_step = (vol_step*MODS_VOL_STEP)/(gb_codec->vol_range->vol_range.step);
+	ret = gb_mods_aud_set_vol(gb_codec->mods_aud_connection, mods_vol_step);
+	if (ret) {
+		pr_err("%s: failed to set mods codec volume\n", __func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EIO;
 	}
+	priv->vol_step = mods_vol_step;
+	mutex_unlock(&gb_codec->lock);
+
 	return 0;
 }
 
@@ -223,28 +232,105 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	struct gb_snd *snd_dev;
 	int mods_vol_db;
 	int ret;
 	uint32_t vol_step = ucontrol->value.integer.value[0];
 
-	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
-
-		if (!snd_dev || !snd_dev->mods_aud_connection)
-			continue;
-		/* calculate remote codec vol db */
-		mods_vol_db = (vol_step*MODS_VOL_STEP);
-		ret = gb_mods_aud_set_sys_vol(snd_dev->mods_aud_connection,
-				mods_vol_db);
-		if (ret) {
-			pr_err("%s: failed to set mods codec sys volume\n", __func__);
-			return -EIO;
-		}
-		priv->sys_vol_step = vol_step;
+	mutex_lock(&gb_codec->lock);
+	/* calculate remote codec vol db */
+	mods_vol_db = (vol_step*MODS_VOL_STEP);
+	ret = gb_mods_aud_set_sys_vol(gb_codec->mods_aud_connection,
+			mods_vol_db);
+	if (ret) {
+		pr_err("%s: failed to set mods codec sys volume\n", __func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EIO;
 	}
+	priv->sys_vol_step = vol_step;
+	mutex_unlock(&gb_codec->lock);
+
 	return 0;
 }
 
+static int mods_codec_get_out_enabled_devices(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = priv->enabled_devices.out_devices;
+
+	return 0;
+}
+
+static int mods_codec_set_out_enabled_devices(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+	int ret;
+	uint32_t out_mods_devices = ucontrol->value.integer.value[0];
+
+	mutex_lock(&gb_codec->lock);
+	if ((gb_codec->aud_devices->devices.out_devices & out_mods_devices) !=
+			out_mods_devices) {
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
+
+	ret = gb_mods_aud_enable_devices(gb_codec->mods_aud_connection,
+			priv->enabled_devices.in_devices, out_mods_devices);
+	if (ret) {
+		pr_err("%s: failed to enable mods aud devices out\n", __func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EIO;
+	}
+	priv->enabled_devices.out_devices = out_mods_devices;
+	mutex_unlock(&gb_codec->lock);
+
+	return 0;
+}
+
+static int mods_codec_get_in_enabled_devices(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+
+	ucontrol->value.integer.value[0] = priv->enabled_devices.in_devices;
+
+	return 0;
+}
+
+static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+	int ret;
+	uint32_t in_mods_devices = ucontrol->value.integer.value[0];
+
+	mutex_lock(&gb_codec->lock);
+	if ((gb_codec->aud_devices->devices.in_devices & in_mods_devices) !=
+			in_mods_devices) {
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
+
+	ret = gb_mods_aud_enable_devices(gb_codec->mods_aud_connection,
+			in_mods_devices, priv->enabled_devices.out_devices);
+	if (ret) {
+		pr_err("%s: failed to enable mods aud devices in\n", __func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EIO;
+	}
+	priv->enabled_devices.in_devices = in_mods_devices;
+	mutex_unlock(&gb_codec->lock);
+
+	return 0;
+}
 static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params,
 				 struct snd_soc_dai *dai)
@@ -352,6 +438,46 @@ static int mods_codec_remove(struct snd_soc_codec *codec)
 	return 0;
 }
 
+static ssize_t mods_codec_devices_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t count;
+	struct gb_snd_codec *codec;
+	struct mods_codec_dai *priv = dev_get_drvdata(dev);
+
+	codec = priv->snd_codec;
+	mutex_lock(&codec->lock);
+	pr_info("%s report change in mods audio devices 0x%x\n",
+			__func__, codec->aud_devices->devices.out_devices);
+	count = scnprintf(buf, PAGE_SIZE,
+				"mods_codec_in_devices=%d;mods_codec_out_devices=%d\n",
+				codec->aud_devices->devices.in_devices,
+				codec->aud_devices->devices.out_devices);
+	mutex_unlock(&codec->lock);
+
+	return count;
+}
+
+static DEVICE_ATTR_RO(mods_codec_devices);
+
+static struct attribute *mods_codec_attrs[] = {
+	&dev_attr_mods_codec_devices.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(mods_codec);
+
+int mods_codec_report_devices(struct gb_snd_codec *codec)
+{
+
+	pr_info("%s report change in mods audio devices 0x%x\n",
+			__func__, codec->aud_devices->devices.out_devices);
+
+	kobject_uevent(&codec->codec_dev.dev.kobj, KOBJ_CHANGE);
+
+	return 0;
+}
+
 static struct snd_soc_codec_driver soc_codec_dev_mods = {
 	.probe = mods_codec_probe,
 	.remove = mods_codec_remove,
@@ -394,6 +520,8 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	priv->snd_codec = (struct gb_snd_codec *)pdev->dev.platform_data;
+	if (!priv->snd_codec)
+		return -EINVAL;
 
 	priv->workqueue = alloc_workqueue("mods-codec", WQ_HIGHPRI, 0);
 	if (!priv->workqueue) {
@@ -421,8 +549,20 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto codec_unreg;
 	}
+	mutex_init(&priv->snd_codec->lock);
+
+	ret = sysfs_create_groups(&pdev->dev.kobj, mods_codec_groups);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to create sysfs attr\n");
+		goto mdev_unreg;
+	}
+
+	priv->snd_codec->report_devices = mods_codec_report_devices;
 
 	return 0;
+
+mdev_unreg:
+	mods_codec_unregister_device(priv->m_dev);
 codec_unreg:
 	snd_soc_unregister_codec(&pdev->dev);
 codec_reg_fail:
@@ -435,6 +575,7 @@ static int mods_codec_dai_remove(struct platform_device *pdev)
 {
 	struct mods_codec_dai *priv = dev_get_drvdata(&pdev->dev);
 
+	sysfs_remove_groups(&pdev->dev.kobj, mods_codec_groups);
 	mods_codec_unregister_device(priv->m_dev);
 	snd_soc_unregister_codec(&pdev->dev);
 	destroy_workqueue(priv->workqueue);
