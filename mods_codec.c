@@ -18,7 +18,6 @@
 
 #define MODS_VOL_STEP		50
 #define MODS_MIN_VOL		-12750
-#define MODS_CODEC_NAME "mods_codec"
 
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
@@ -394,7 +393,6 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 	if (priv == NULL)
 		return -ENOMEM;
 
-	dev_set_name(&pdev->dev, "%s", MODS_CODEC_NAME);
 	priv->snd_codec = (struct gb_snd_codec *)pdev->dev.platform_data;
 
 	priv->workqueue = alloc_workqueue("mods-codec", WQ_HIGHPRI, 0);
