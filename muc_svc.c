@@ -36,12 +36,14 @@ struct muc_svc_data {
 	struct kset *intf_kset;
 
 	struct list_head ext_intf;
+	struct list_head slave_drv;
 
 	bool authenticate;
 	u16 endo_mask;
 };
 struct muc_svc_data *svc_dd;
 
+static DEFINE_MUTEX(slave_lock);
 
 /* Define the SVCs reserved area of CPORTS to create the vendor
  * connections to each interface
@@ -1002,6 +1004,37 @@ muc_svc_probe_ap(struct mods_dl_device *dld, uint8_t ap_intf_id)
 	return 0;
 }
 
+/* Loop through existing devices to see if there was already a
+ * slave mask indicated before the current driver registration.
+ *
+ * The slave_lock must be held to ensure 'atomic' sequence.
+ */
+static void muc_svc_check_slave_present(struct mods_slave_ctrl_driver *drv)
+{
+	struct mods_dl_device *mods_dev;
+
+	if (!drv->slave_present)
+		return;
+
+	list_for_each_entry(mods_dev, &svc_dd->ext_intf, list)
+		if (mods_dev->slave_mask)
+			drv->slave_present(mods_dev->intf_id,
+						mods_dev->slave_mask);
+}
+
+/* Notify all Slave Control Drivers of the new slave mask */
+static void muc_svc_broadcast_slave_present(struct mods_dl_device *master)
+{
+	struct mods_slave_ctrl_driver *drv;
+
+	mutex_lock(&slave_lock);
+	list_for_each_entry(drv, &svc_dd->slave_drv, list)
+		if (drv->slave_present)
+			drv->slave_present(master->intf_id,
+						master->slave_mask);
+	mutex_unlock(&slave_lock);
+}
+
 static int
 muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 			struct gb_svc_intf_hotplug_request *hotplug,
@@ -1045,6 +1078,9 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 		hotplug->data.ara_prod_id);
 	dev_info(&dd->pdev->dev, "[%d] MOD SERIAL: %016llX%016llX\n",
 		mods_dev->intf_id, mods_dev->uid_high, mods_dev->uid_low);
+
+	mods_dev->slave_mask = le32_to_cpu(ids->slave_mask);
+	muc_svc_broadcast_slave_present(mods_dev);
 
 	svc_gb_msg_free(msg);
 	kfree(ids);
@@ -1431,6 +1467,31 @@ void mods_remove_dl_device(struct mods_dl_device *dev)
 	kfree(dev);
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);
+
+int mods_register_slave_ctrl_driver(struct mods_slave_ctrl_driver *drv)
+{
+	if (!svc_dd)
+		return -ENODEV;
+
+	mutex_lock(&slave_lock);
+	list_add_tail(&drv->list, &svc_dd->slave_drv);
+	muc_svc_check_slave_present(drv);
+	mutex_unlock(&slave_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mods_register_slave_ctrl_driver);
+
+void mods_unregister_slave_ctrl_driver(struct mods_slave_ctrl_driver *drv)
+{
+	if (!svc_dd)
+		return;
+
+	mutex_lock(&slave_lock);
+	list_del(&drv->list);
+	mutex_unlock(&slave_lock);
+}
+EXPORT_SYMBOL_GPL(mods_unregister_slave_ctrl_driver);
 
 static inline uint16_t
 svc_get_unsigned_manifest_size(struct mods_dl_device *mods_dev)
@@ -1834,6 +1895,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 	atomic_set(&dd->msg_num, 1);
 	INIT_LIST_HEAD(&dd->operations);
 	INIT_LIST_HEAD(&dd->ext_intf);
+	INIT_LIST_HEAD(&dd->slave_drv);
 
 	/* Create the core sysfs structure */
 	ret = muc_svc_base_sysfs_init(dd);

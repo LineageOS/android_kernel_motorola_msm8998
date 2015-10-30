@@ -76,6 +76,9 @@
 #define MB_CONTROL_REBOOT_MODE_BOOTLOADER     0x02
 #define MB_CONTROL_REBOOT_BLANK_FLASH         0x03
 
+/* Valid masks for the slave mask */
+#define MB_CONTROL_SLAVE_MASK_APBE            (1 << 0)
+
 /* Control protocol reboot request */
 struct mb_control_reboot_request {
 	__u8      mode;
@@ -91,6 +94,7 @@ struct mb_control_get_ids_response {
 	__le64    uid_low;
 	__le64    uid_high;
 	__le32    fw_version;
+	__le32    slave_mask;
 } __packed;
 
 /* Control protocol [dis]connected request */

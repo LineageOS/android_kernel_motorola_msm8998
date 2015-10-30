@@ -36,6 +36,11 @@ struct mods_dl_driver {
 	int (*get_protocol)(uint16_t cport_id, uint8_t *protocol);
 };
 
+struct mods_slave_ctrl_driver {
+	void (*slave_present)(uint8_t master_intf, uint32_t slave_mask);
+	struct list_head list;
+};
+
 struct mods_dl_device {
 	struct list_head	list;
 	struct device		*dev;
@@ -56,6 +61,7 @@ struct mods_dl_device {
 	__le64 uid_low;
 	__le64 uid_high;
 	__le32 fw_version;
+	__le32 slave_mask;
 };
 
 struct mods_nw_msg_filter {
@@ -82,4 +88,8 @@ extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 /* register a message filter callback */
 extern int mods_nw_register_filter(struct mods_nw_msg_filter *filter);
 extern void mods_nw_unregister_filter(struct mods_nw_msg_filter *filter);
+
+/* register slave control driver */
+extern int mods_register_slave_ctrl_driver(struct mods_slave_ctrl_driver *);
+extern void mods_unregister_slave_ctrl_driver(struct mods_slave_ctrl_driver *);
 #endif
