@@ -1226,6 +1226,14 @@ static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 
 void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 {
+	/* AP is special case */
+	if (mods_dev->intf_id == MODS_INTF_AP) {
+		mods_nw_del_route(MODS_INTF_SVC, 0, MODS_INTF_AP, 0);
+		mods_nw_del_route(MODS_INTF_AP,  0, MODS_INTF_SVC, 0);
+
+		return;
+	}
+
 	muc_svc_destroy_dl_dev_sysfs(mods_dev);
 	list_del(&mods_dev->list);
 
