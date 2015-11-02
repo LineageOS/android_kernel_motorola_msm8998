@@ -171,6 +171,7 @@ static int mods_ap_remove(struct platform_device *pdev)
 {
 	struct mods_ap_data *ap_data = platform_get_drvdata(pdev);
 
+	mods_dl_dev_detached(ap_data->dld);
 	mods_remove_dl_device(ap_data->dld);
 	greybus_remove_hd(ap_data->hd);
 
