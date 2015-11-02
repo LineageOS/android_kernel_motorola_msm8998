@@ -190,6 +190,7 @@ static __exit void protocol_exit(void)
 {
 	gb_protocol_deregister(&vendor_moto_protocol);
 	class_unregister(&vendor_class);
+	ida_destroy(&minors);
 }
 module_exit(protocol_exit);
 
