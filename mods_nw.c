@@ -29,6 +29,7 @@
 #include "muc_svc.h"
 #include "muc_attach.h"
 #include "mods_nw.h"
+#include "mods_trace.h"
 
 struct dest_entry {
 	struct mods_dl_device *dev;
@@ -284,6 +285,10 @@ int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len)
 				from->intf_id, le16_to_cpu(mm->hdr.cport));
 		goto out;
 	}
+
+	trace_mods_switch((struct gb_operation_msg_hdr *)mm->gb_msg,
+		from->intf_id, le16_to_cpu(mm->hdr.cport),
+		dest->dev->intf_id, dest->cport);
 
 	mm->hdr.cport = cpu_to_le16(dest->cport);
 

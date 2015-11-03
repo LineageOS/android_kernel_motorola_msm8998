@@ -13,6 +13,10 @@
  */
 #define pr_fmt(fmt) "INI: " fmt
 
+#define CREATE_TRACE_POINTS
+#include "greybus.h"
+#include "mods_trace.h"
+
 #include <linux/module.h>
 
 #include "apba.h"
