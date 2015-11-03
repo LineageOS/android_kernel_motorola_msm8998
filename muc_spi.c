@@ -76,6 +76,7 @@ struct muc_spi_data {
 	bool attached;                     /* MuC attach is reported to SVC */
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;
+	struct mutex tx_mutex;
 	wait_queue_head_t rdy_wq;
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
@@ -480,6 +481,7 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 	/* Calculate how many packets are required to send whole payload */
 	packets = (remaining + pl_size - 1) / pl_size;
 
+	mutex_lock(&dd->tx_mutex);
 	hdr = (struct spi_msg_hdr *)dd->tx_pkt;
 	crc = (uint16_t *)&dd->tx_pkt[CRC_NDX(dd->pkt_size)];
 
@@ -503,6 +505,7 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		remaining -= this_pl;
 		buf += this_pl;
 	}
+	mutex_unlock(&dd->tx_mutex);
 
 	return 0;
 }
@@ -593,6 +596,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	muc_spi_gpio_init(dd);
 	muc_spi_quirks_init(dd);
 	mutex_init(&dd->mutex);
+	mutex_init(&dd->tx_mutex);
 	init_waitqueue_head(&dd->rdy_wq);
 
 	spi_set_drvdata(spi, dd);
