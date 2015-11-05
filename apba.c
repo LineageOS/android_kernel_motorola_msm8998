@@ -83,7 +83,7 @@ enum {
 enum {
 	APBA_INT_REASON_NONE,
 	APBA_INT_APBE_ON,
-	APBA_INT_APBE_OFF,
+	APBA_INT_APBE_RESET,
 	APBA_INT_APBE_CONNECTED,
 	APBA_INT_APBE_DISCONNECTED,
 };
@@ -214,6 +214,8 @@ static void apba_seq(struct apba_ctrl *ctrl, struct apba_seq *seq)
 
 static void apba_on(struct apba_ctrl *ctrl, bool on)
 {
+	pr_info("%s: %s\n", __func__, on ? "on" : "off");
+
 	if (on)
 		apba_seq(ctrl, &ctrl->enable_seq);
 	else
@@ -650,11 +652,13 @@ static void apba_notify_abpe_attach(int present)
 
 static void apba_action_on_int_reason(uint16_t reason)
 {
+	pr_info("%s: %d\n", __func__, reason);
+
 	switch (reason) {
 	case APBA_INT_APBE_ON:
 		/* TODO: will be filled in */
 		break;
-	case APBA_INT_APBE_OFF:
+	case APBA_INT_APBE_RESET:
 		/* TODO: will be filled in */
 		break;
 	case APBA_INT_APBE_CONNECTED:
