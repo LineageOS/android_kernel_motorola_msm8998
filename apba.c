@@ -27,7 +27,6 @@
 #include <linux/of_gpio.h>
 #include <linux/clk.h>
 #include <linux/mtd/mtd.h>
-#include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 
 #include "apba.h"
@@ -35,7 +34,14 @@
 #include "mods_nw.h"
 #include "mods_uart.h"
 
-#define APBA_FIRMWARE_NAME ("apba.bin")
+#define MAX_PARTITION_NAME (sizeof(((struct mtd_info *)NULL)->name))
+
+#define FFFF_EXT (".ffff")
+#define BIN_EXT  (".bin")
+
+#define APBA_FIRMWARE_PARTITION ("apba")
+#define APBA_FIRMWARE_NAME ("apba.ffff")
+
 #define APBA_NUM_GPIOS (8)
 #define APBA_MAX_SEQ   (APBA_NUM_GPIOS*3*2)
 
@@ -108,8 +114,6 @@ static inline struct apba_ctrl *apba_sysfs_to_ctrl(struct device *dev)
 	return g_ctrl;
 }
 
-static struct mtd_info *mtd_info;
-
 static int apba_mtd_erase(struct mtd_info *mtd_info,
 	 unsigned int start, unsigned int len)
 {
@@ -123,8 +127,9 @@ static int apba_mtd_erase(struct mtd_info *mtd_info,
 	return err;
 }
 
-static int apba_init_mtd_module(void)
+static struct mtd_info * apba_init_mtd_module(const char *partition_name)
 {
+	struct mtd_info *mtd_info;
 	int num;
 
 	for (num = 0; num < 16; num++) {
@@ -139,7 +144,7 @@ static int apba_init_mtd_module(void)
 			continue;
 		}
 
-		if (strcmp(mtd_info->name, "apba")) {
+		if (strcmp(mtd_info->name, partition_name)) {
 			put_mtd_device(mtd_info);
 			continue;
 		}
@@ -150,11 +155,11 @@ static int apba_init_mtd_module(void)
 			 (long)mtd_info->size);
 		pr_debug("%s: MTD erase size : %ld bytes\n", __func__,
 			 (long)mtd_info->erasesize);
-		return 0;
+
+		return mtd_info;
 	}
 
-	mtd_info = NULL;
-	return -ENXIO;
+	return NULL;
 }
 
 static int apba_parse_seq(struct device *dev, const char *name,
@@ -166,15 +171,15 @@ static int apba_parse_seq(struct device *dev, const char *name,
 
 	cnt /= sizeof(u32);
 	if (!pp || cnt == 0 || cnt > seq->len || cnt % 3) {
-		pr_err("%s:%d, error reading property %s, cnt = %d\n",
-			__func__, __LINE__, name, cnt);
+		pr_err("%s: error reading property %s, cnt = %d\n",
+			__func__, name, cnt);
 		ret = -EINVAL;
 	} else {
 		ret = of_property_read_u32_array(dev->of_node, name,
 			seq->val, cnt);
 		if (ret) {
-			pr_err("%s:%d, unable to read %s, ret = %d\n",
-				__func__, __LINE__, name, ret);
+			pr_err("%s: unable to read %s, ret = %d\n",
+				__func__, name, ret);
 		} else {
 			seq->len = cnt;
 		}
@@ -222,26 +227,33 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 		apba_seq(ctrl, &ctrl->disable_seq);
 }
 
-static int apba_erase_firmware(struct apba_ctrl *ctrl)
+static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
 {
-	int err = 0;
+	struct mtd_info *mtd_info;
+	int err;
 
 	if (!ctrl)
 		return -EINVAL;
 
+	/* Disable the APBA so that it does not access the flash. */
 	apba_on(ctrl, false);
-	err = apba_init_mtd_module();
-	if (err < 0) {
-		pr_err("%s: mtd init module failed err=%d\n", __func__, err);
+
+	mtd_info = apba_init_mtd_module(partition);
+	if (!mtd_info) {
+		pr_err("%s: mtd init module failed for %s, err=%d\n",
+			__func__, partition, err);
 		goto no_mtd;
 	}
 
 	/* Erase the flash */
 	err = apba_mtd_erase(mtd_info, 0, mtd_info->size);
 	if (err < 0) {
-		pr_err("%s: mtd erase failed err=%d\n", __func__, err);
+		pr_err("%s: mtd erase failed for %s, err=%d\n",
+			__func__, partition, err);
 		goto cleanup;
 	}
+
+	pr_debug("%s: %s complete\n", __func__, partition);
 
 cleanup:
 	put_mtd_device(mtd_info);
@@ -253,72 +265,65 @@ no_mtd:
 	return err;
 }
 
-static ssize_t erase_firmware_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return 0;
-}
-
-static ssize_t erase_firmware_store(struct device *dev,
+static ssize_t erase_partition_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
+	char partition[MAX_PARTITION_NAME];
 	int err;
-	unsigned long val;
 
-	if (kstrtoul(buf, 10, &val) < 0)
-		return -EINVAL;
-	else if (val != 1)
+	if (count && buf[count - 1] == '\n')
+		count--;
+
+	if (!count || (count >= sizeof(partition)))
 		return -EINVAL;
 
-	err = apba_erase_firmware(ctrl);
+	memcpy(partition, buf, count);
+	partition[count] = 0;
+	pr_debug("%s: partition=%s\n", __func__, partition);
+
+	err = apba_erase_partition(ctrl, partition);
 	if (err < 0)
 		pr_err("%s: flashing erase err=%d\n", __func__, err);
 
-	return count;
+	return err ? err : count;
 }
 
-static DEVICE_ATTR_RW(erase_firmware);
+static DEVICE_ATTR_WO(erase_partition);
 
-static int apba_flash_firmware(const struct firmware *fw,
-		 struct apba_ctrl *ctrl)
+static int apba_flash_partition(struct apba_ctrl *ctrl,
+	const char *partition, const struct firmware *fw)
 {
-	int err = 0;
-	unsigned char *data = NULL;
+	struct mtd_info *mtd_info;
+	int err;
 	size_t retlen = 0;
 
 	if (!fw || !ctrl)
 		return -EINVAL;
 
+	/* Disable the APBA so that it does not access the flash. */
 	apba_on(ctrl, false);
-	err = apba_init_mtd_module();
-	if (err < 0) {
-		pr_err("%s: mtd init module failed err=%d\n", __func__, err);
+
+	mtd_info = apba_init_mtd_module(partition);
+	if (!mtd_info) {
+		pr_err("%s: mtd init module failed for %s, err=%d\n",
+			__func__, partition, err);
 		goto no_mtd;
 	}
 
 	/* Erase the flash */
 	err = apba_mtd_erase(mtd_info, 0, mtd_info->size);
 	if (err < 0) {
-		pr_err("%s: mtd erase failed err=%d\n", __func__, err);
+		pr_err("%s: mtd flash failed for %s, err=%d\n",
+			__func__, partition, err);
 		goto cleanup;
 	}
 
-	data = vmalloc(fw->size);
-	if (!data) {
-		err = -ENOMEM;
-		goto cleanup;
-	}
+	err = mtd_info->_write(mtd_info, 0, fw->size, &retlen, fw->data);
 
-	memcpy((char *)data, (char *)fw->data, fw->size);
-	err = mtd_info->_write(mtd_info, 0, fw->size, &retlen, data);
+	pr_debug("%s: %s complete\n", __func__, partition);
 
-	/* FIXME: temp delay for regulator enable from rpm */
-	if (!err)
-		msleep(25000);
-
-	vfree(data);
 cleanup:
 	put_mtd_device(mtd_info);
 
@@ -329,44 +334,64 @@ no_mtd:
 	return err;
 }
 
-static ssize_t flash_firmware_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return 0;
-}
-
-static ssize_t flash_firmware_store(struct device *dev,
+static ssize_t flash_partition_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
-	int err;
+	char partition[MAX_PARTITION_NAME];
+	/* Null-termination accounted for in *_EXT macros. */
+	char fw_name[MAX_PARTITION_NAME + max(sizeof(FFFF_EXT), sizeof(BIN_EXT))];
 	const struct firmware *fw = NULL;
-	unsigned long val;
+	int err;
 
-	if (kstrtoul(buf, 10, &val) < 0)
-		return -EINVAL;
-	else if (val != 1)
+	if (count && buf[count - 1] == '\n')
+		count--;
+
+	if (!count || (count >= sizeof(partition)))
 		return -EINVAL;
 
-	err = request_firmware(&fw, APBA_FIRMWARE_NAME, ctrl->dev);
-	if (err < 0)
+	/* Try .ffff extension first. */
+        memcpy(fw_name, buf, count);
+	memcpy(fw_name + count, FFFF_EXT, sizeof(FFFF_EXT));
+
+	err = request_firmware(&fw, fw_name, ctrl->dev);
+	if (err < 0) {
+		pr_debug("%s: request firmware failed for %s, err=%d\n",
+			__func__, partition, err);
+
+		/* Fallback and try .bin extension. */
+		memcpy(fw_name + count, BIN_EXT, sizeof(BIN_EXT));
+		err = request_firmware(&fw, fw_name, ctrl->dev);
+	}
+
+	if (err < 0) {
+		pr_err("%s: request firmware failed for %s, err=%d\n",
+			__func__, partition, err);
 		return err;
+	}
 
-	if (!fw || !fw->size)
+	if (!fw || !fw->size) {
+		pr_err("%s: firmware invalid for %s\n",
+			__func__, partition);
 		return -EINVAL;
+	}
 
-	pr_debug("%s: size=%zu data=%p\n", __func__, fw->size, fw->data);
+	memcpy(partition, buf, count);
+	partition[count] = 0;
+	pr_debug("%s: partition=%s, fw=%s, size=%zu\n",
+		__func__, partition, fw_name, fw->size);
 
-	err = apba_flash_firmware(fw, ctrl);
+	err = apba_flash_partition(ctrl, partition, fw);
 	if (err < 0)
-		pr_err("%s: flashing failed err=%d\n", __func__, err);
+		pr_err("%s: flashing failed for %s, err=%d\n",
+			__func__, partition, err);
 
 	release_firmware(fw);
-	return count;
+	return err ? err : count;
 }
 
-static DEVICE_ATTR_RW(flash_firmware);
+static DEVICE_ATTR_WO(flash_partition);
 
 static ssize_t apba_enable_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -431,8 +456,8 @@ static ssize_t apba_log_show(struct device *dev,
 static DEVICE_ATTR_RO(apba_log);
 
 static struct attribute *apba_attrs[] = {
-	&dev_attr_erase_firmware.attr,
-	&dev_attr_flash_firmware.attr,
+	&dev_attr_erase_partition.attr,
+	&dev_attr_flash_partition.attr,
 	&dev_attr_apba_enable.attr,
 	&dev_attr_apba_log.attr,
 	NULL,
@@ -463,7 +488,7 @@ static void apba_firmware_callback(const struct firmware *fw,
 	/* TODO: extract the version from the binary, check the version,
 		  apply the firmware. */
 
-	err = apba_flash_firmware(fw, ctrl);
+	err = apba_flash_partition(ctrl, APBA_FIRMWARE_PARTITION, fw);
 	if (err < 0)
 		pr_err("%s: flashing failed err=%d\n", __func__, err);
 
@@ -552,14 +577,14 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 	}
 
 	if (gpio_cnt > ARRAY_SIZE(ctrl->gpios)) {
-		dev_err(dev, "%s:%d gpio count is greater than %zu.\n",
-			__func__, __LINE__, ARRAY_SIZE(ctrl->gpios));
+		dev_err(dev, "%s: gpio count is greater than %zu.\n",
+			__func__, ARRAY_SIZE(ctrl->gpios));
 		return -EINVAL;
 	}
 
 	if (label_cnt != gpio_cnt) {
-		dev_err(dev, "%s:%d label count does not match gpio count.\n",
-			__func__, __LINE__);
+		dev_err(dev, "%s: label count does not match gpio count.\n",
+			__func__);
 		return -EINVAL;
 	}
 
@@ -726,8 +751,8 @@ int apba_enable(void)
 
 	ret = clk_prepare_enable(g_ctrl->mclk);
 	if (ret) {
-		dev_err(g_ctrl->dev, "%s:%d: failed to prepare clock.\n",
-			__func__, __LINE__);
+		dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
+			__func__);
 		return ret;
 	}
 
