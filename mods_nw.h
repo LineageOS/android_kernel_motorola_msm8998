@@ -27,7 +27,7 @@ struct muc_msg {
 };
 #pragma pack(pop)
 
-#define MUC_MSG_SIZE_MAX        (1024)
+#define MUC_MSG_SIZE_MAX        (0x800)
 #define PAYLOAD_MAX_SIZE        (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
 
 struct mods_dl_driver {
