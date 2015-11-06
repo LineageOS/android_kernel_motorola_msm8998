@@ -171,7 +171,7 @@ struct gb_control_disconnected_request {
 #define GB_FIRMWARE_BOOT_STATUS_SECURE		0x02 /* Firmware blob is valid and secure */
 
 /* Max firmware data fetch size in bytes */
-#define GB_FIRMWARE_FETCH_MAX			2000
+#define GB_FIRMWARE_FETCH_MAX			0x7F0
 
 /* Firmware protocol firmware size request/response */
 struct gb_firmware_size_request {
