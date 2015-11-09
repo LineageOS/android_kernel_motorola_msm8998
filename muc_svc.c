@@ -992,7 +992,8 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	msg = svc_gb_msg_send_sync(dld, NULL, MB_CONTROL_TYPE_GET_IDS,
 				0, SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
 	if (IS_ERR(msg)) {
-		dev_err(&dd->pdev->dev, "Failed to get GET_IDS\n");
+		dev_err(&dd->pdev->dev, "[%d] Failed to get GET_IDS\n",
+			mods_dev->intf_id);
 		return PTR_ERR(msg);
 	}
 
@@ -1014,11 +1015,12 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	mods_dev->uid_high = le64_to_cpu(ids->uid_high);
 	mods_dev->fw_version = le32_to_cpu(ids->fw_version);
 
-	dev_info(&dd->pdev->dev, "UNIPRO_IDS: %x:%x ARA_IDS: %x:%x\n",
-		hotplug->data.unipro_mfg_id, hotplug->data.unipro_prod_id,
-		hotplug->data.ara_vend_id, hotplug->data.ara_prod_id);
-	dev_info(&dd->pdev->dev, "MOD SERIAL: %016llX%016llX\n",
-		mods_dev->uid_high, mods_dev->uid_low);
+	dev_info(&dd->pdev->dev, "[%d] UNIPRO_IDS: %x:%x ARA_IDS: %x:%x\n",
+		mods_dev->intf_id, hotplug->data.unipro_mfg_id,
+		hotplug->data.unipro_prod_id, hotplug->data.ara_vend_id,
+		hotplug->data.ara_prod_id);
+	dev_info(&dd->pdev->dev, "[%d] MOD SERIAL: %016llX%016llX\n",
+		mods_dev->intf_id, mods_dev->uid_high, mods_dev->uid_low);
 
 	svc_gb_msg_free(msg);
 	kfree(ids);
@@ -1071,11 +1073,12 @@ static void muc_svc_attach_work(struct work_struct *work)
 					GB_SVC_TYPE_INTF_HOTPLUG,
 					sizeof(hpw->hotplug), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
-		dev_err(&svc_dd->pdev->dev, "Failed to send HOTPLUG to AP\n");
+		dev_err(&svc_dd->pdev->dev, "[%d] Failed to send HOTPLUG\n",
+			hpw->hotplug.intf_id);
 		return;
 	}
 
-	dev_info(&svc_dd->pdev->dev, "Successfully sent hotplug for IID: %d\n",
+	dev_info(&svc_dd->pdev->dev, "[%d] Successfully sent HOTPLUG\n",
 			hpw->hotplug.intf_id);
 
 	svc_gb_msg_free(msg);
@@ -1085,6 +1088,7 @@ static int
 muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 {
 	struct gb_control_get_manifest_size_response *size_resp;
+	struct device *dev = &svc_dd->pdev->dev;
 	struct gb_message *msg;
 	int err;
 
@@ -1093,7 +1097,8 @@ muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 					GB_CONTROL_TYPE_GET_MANIFEST_SIZE,
 					0, out_cport);
 	if (IS_ERR(msg)) {
-		dev_err(mods_dev->dev, "Failed to get MANIFEST_SIZE\n");
+		dev_err(dev, "[%d] Failed to get MANIFEST_SIZE\n",
+			mods_dev->intf_id);
 		return PTR_ERR(msg);
 	}
 
@@ -1113,7 +1118,8 @@ muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 					GB_CONTROL_TYPE_GET_MANIFEST,
 					0, out_cport);
 	if (IS_ERR(msg)) {
-		dev_err(mods_dev->dev, "Failed to get MANIFEST\n");
+		dev_err(dev, "[%d] Failed to get MANIFEST\n",
+			mods_dev->intf_id);
 		err = PTR_ERR(msg);
 		goto free_manifest;
 	}
@@ -1159,7 +1165,9 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 	ret = muc_svc_create_control_route(mods_dev->intf_id,
 				mods_dev->intf_id, GB_CONTROL_CPORT_ID);
 	if (ret) {
-		dev_err(&svc_dd->pdev->dev, "Failed setup GB CONTROL route\n");
+		dev_err(&svc_dd->pdev->dev,
+			"[%d] Failed setup GB CONTROL route\n",
+			mods_dev->intf_id);
 		goto free_hpw;
 	}
 
@@ -1215,7 +1223,8 @@ static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 					GB_SVC_TYPE_INTF_HOT_UNPLUG,
 					sizeof(unplug), GB_SVC_CPORT_ID);
 	if (IS_ERR(msg)) {
-		dev_err(&svc_dd->pdev->dev, "Failed to send UNPLUG to AP\n");
+		dev_err(&svc_dd->pdev->dev, "[%d] Failed to send UNPLUG\n",
+			mods_dev->intf_id);
 		return PTR_ERR(msg);
 	}
 
@@ -1249,7 +1258,7 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 
 	kfree(mods_dev->manifest);
 
-	dev_info(&svc_dd->pdev->dev, "Successfully sent unplug for IID: %d\n",
+	dev_info(&svc_dd->pdev->dev, "[%d] Successfully sent UNPLUG\n",
 			mods_dev->intf_id);
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
@@ -1283,7 +1292,9 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
 				VENDOR_CTRL_DEST_CPORT);
 	if (err) {
-		dev_err(&svc_dd->pdev->dev, "VENDOR CONTROL setup failed\n");
+		dev_err(&svc_dd->pdev->dev,
+			"[%d] VENDOR CONTROL setup failed\n",
+			mods_dev->intf_id);
 		return err;
 	}
 
@@ -1379,7 +1390,8 @@ svc_filter_ap_manifest_size(struct mods_dl_device *orig_dev,
 	ret = svc_gb_send_response(orig_dev, le16_to_cpu(mm->hdr.cport), &msg,
 					sizeof(resp), &resp, GB_OP_SUCCESS);
 	if (ret)
-		dev_err(dev, "Failed to route manifest size\n");
+		dev_err(dev, "[%d] Failed to route manifest size\n",
+			orig_dev->intf_id);
 
 	return ret;
 }
@@ -1406,7 +1418,8 @@ svc_filter_ap_manifest(struct mods_dl_device *orig_dev,
 					mnf_size, orig_dev->manifest,
 					GB_OP_SUCCESS);
 	if (ret)
-		dev_err(dev, "Failed to route manifest\n");
+		dev_err(dev, "[%d] Failed to route manifest\n",
+			orig_dev->intf_id);
 
 	return ret;
 }
@@ -1417,7 +1430,7 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 {
 	struct device *dev = &svc_dd->pdev->dev;
 
-	dev_info(dev, "Firmware flashing complete; resetting: %d\n",
+	dev_info(dev, "[%d] Firmware flashing complete; resetting\n",
 		orig_dev->intf_id);
 
 	muc_reset();
