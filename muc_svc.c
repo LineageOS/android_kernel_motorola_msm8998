@@ -63,6 +63,8 @@ struct muc_svc_hotplug_work {
 #define kobj_to_device(k) \
 	container_of(k, struct mods_dl_device, intf_kobj)
 
+static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
+
 static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 				struct bin_attribute *attr, char *buf,
 				loff_t pos, size_t size)
@@ -155,6 +157,24 @@ hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 }
 
 static ssize_t
+blank_store(struct mods_dl_device *mods_dev, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0 || val != 1)
+		return -EINVAL;
+
+	if (muc_svc_send_reboot(mods_dev, MB_CONTROL_REBOOT_BLANK_FLASH)) {
+		dev_err(&svc_dd->pdev->dev,
+				"INTF: %d, failed to send blankflash\n",
+				mods_dev->intf_id);
+		return -ENODEV;
+	}
+
+	return count;
+}
+
+static ssize_t
 uevent_store(struct mods_dl_device *dev, const char *buf, size_t count)
 {
 	if (strncmp(buf, "add", 3))
@@ -187,6 +207,7 @@ static MUC_SVC_ATTR(unipro_pid, 0444, unipro_pid_show, NULL);
 static MUC_SVC_ATTR(serial, 0444, serial_show, NULL);
 static MUC_SVC_ATTR(uevent, 0200, NULL, uevent_store);
 static MUC_SVC_ATTR(fw_version, 0444, fw_version_show, NULL);
+static MUC_SVC_ATTR(blank, 0200, NULL, blank_store);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -230,6 +251,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_serial.attr,
 	&muc_svc_attr_uevent.attr,
 	&muc_svc_attr_fw_version.attr,
+	&muc_svc_attr_blank.attr,
 	NULL,
 };
 

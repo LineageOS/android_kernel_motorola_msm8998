@@ -72,6 +72,7 @@
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
 #define MB_CONTROL_REBOOT_MODE_BOOTLOADER     0x02
+#define MB_CONTROL_REBOOT_BLANK_FLASH         0x03
 
 /* Control protocol reboot request */
 struct mb_control_reboot_request {
