@@ -1085,12 +1085,55 @@ static void muc_svc_attach_work(struct work_struct *work)
 }
 
 static int
+muc_svc_control_version(struct mods_dl_device *mods_dev, uint16_t cport)
+{
+	struct gb_protocol_version_response *ver;
+	struct gb_message *msg;
+
+	ver = kmalloc(sizeof(*ver), GFP_KERNEL);
+	if (!ver)
+		return -ENOMEM;
+
+	ver->major = GB_CONTROL_VERSION_MAJOR;
+	ver->minor = GB_CONTROL_VERSION_MINOR;
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)ver,
+				GB_REQUEST_TYPE_PROTOCOL_VERSION,
+				sizeof(*ver), cport);
+	if (IS_ERR(msg)) {
+		kfree(ver);
+		return PTR_ERR(msg);
+	}
+
+	kfree(ver);
+	ver = msg->payload;
+
+	/* XXX Check Control protocol when differences */
+	dev_dbg(&svc_dd->pdev->dev, "[%d] CONTROL VERSION: %hhu.%hhu\n",
+		cport, ver->major, ver->minor);
+
+	mods_dev->ctrl_major = ver->major;
+	mods_dev->ctrl_minor = ver->minor;
+
+	svc_gb_msg_free(msg);
+
+	return 0;
+}
+
+static int
 muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 {
 	struct gb_control_get_manifest_size_response *size_resp;
 	struct device *dev = &svc_dd->pdev->dev;
 	struct gb_message *msg;
 	int err;
+
+	err = muc_svc_control_version(mods_dev, out_cport);
+	if (err) {
+		dev_err(dev, "[%d] Failed VERSION on CONTROL\n",
+			mods_dev->intf_id);
+		return PTR_ERR(msg);
+	}
 
 	/* GET_SIZE has no payload */
 	msg = svc_gb_msg_send_sync(svc_dd->dld, NULL,
@@ -1371,6 +1414,30 @@ svc_get_unsigned_manifest_size(struct mods_dl_device *mods_dev)
 }
 
 static int
+svc_filter_ap_control_ver(struct mods_dl_device *orig_dev,
+			uint8_t *payload, size_t size)
+{
+	struct muc_msg *mm = (struct muc_msg *)payload;
+	struct gb_message msg;
+	struct device *dev = &svc_dd->pdev->dev;
+	struct gb_protocol_version_response resp;
+	int ret;
+
+	msg.header = (struct gb_operation_msg_hdr *)mm->gb_msg;
+
+	resp.major = orig_dev->ctrl_major;
+	resp.minor = orig_dev->ctrl_minor;
+
+	ret = svc_gb_send_response(orig_dev, le16_to_cpu(mm->hdr.cport), &msg,
+					sizeof(resp), &resp, GB_OP_SUCCESS);
+	if (ret)
+		dev_err(dev, "[%d] Failed to route CONTROL version\n",
+			orig_dev->intf_id);
+
+	return ret;
+}
+
+static int
 svc_filter_ap_manifest_size(struct mods_dl_device *orig_dev,
 			uint8_t *payload, size_t size)
 {
@@ -1439,6 +1506,11 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 }
 
 struct mods_nw_msg_filter svc_ap_filters[] = {
+	{
+		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
+		.type = GB_REQUEST_TYPE_PROTOCOL_VERSION,
+		.filter_handler = svc_filter_ap_control_ver,
+	},
 	{
 		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
 		.type = GB_CONTROL_TYPE_GET_MANIFEST_SIZE,
