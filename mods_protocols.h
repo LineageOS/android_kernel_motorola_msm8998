@@ -68,6 +68,8 @@
 #define MB_CONTROL_TYPE_PROTOCOL_VERSION      0x01
 #define MB_CONTROL_TYPE_GET_IDS               0x02
 #define MB_CONTROL_TYPE_REBOOT                0x03
+#define MB_CONTROL_TYPE_PORT_CONNECTED        0x04
+#define MB_CONTROL_TYPE_PORT_DISCONNECTED     0x05
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -90,6 +92,16 @@ struct mb_control_get_ids_response {
 	__le64    uid_high;
 	__le32    fw_version;
 } __packed;
+
+/* Control protocol [dis]connected request */
+struct mb_control_connected_request {
+	__le16 cport_id;
+} __packed;
+
+struct mb_control_disconnected_request {
+	__le16 cport_id;
+} __packed;
+/* Control protocol [dis]connected response has no payload */
 
 #endif /* __MODS_PROTOCOLS_H */
 

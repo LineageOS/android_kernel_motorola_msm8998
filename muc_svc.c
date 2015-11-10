@@ -1536,6 +1536,70 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 	return 0;
 }
 
+static int
+svc_filter_ap_connected(struct mods_dl_device *orig_dev,
+			uint8_t *payload, size_t size)
+{
+	struct mb_control_connected_request conn;
+	struct gb_control_connected_request *req;
+	struct gb_message *msg;
+	struct muc_msg *mm = (struct muc_msg *)payload;
+	struct gb_operation_msg_hdr *hdr;
+
+	/* Pull out the cport ID from the connected request */
+	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
+	req = (struct gb_control_connected_request *)(hdr + 1);
+	conn.cport_id = req->cport_id;
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&conn,
+				MB_CONTROL_TYPE_PORT_CONNECTED,
+				sizeof(conn),
+				SVC_VENDOR_CTRL_CPORT(orig_dev->intf_id));
+
+	if (IS_ERR(msg)) {
+		dev_err(&svc_dd->pdev->dev, "[%d] Failed send CONNECTED\n",
+			orig_dev->intf_id);
+		return PTR_ERR(msg);
+	}
+
+	svc_gb_msg_free(msg);
+
+	/* Return -ENOENT so the message still routed to the interface */
+	return -ENOENT;
+}
+
+static int
+svc_filter_ap_disconnected(struct mods_dl_device *orig_dev,
+			uint8_t *payload, size_t size)
+{
+	struct mb_control_disconnected_request conn;
+	struct gb_control_disconnected_request *req;
+	struct gb_message *msg;
+	struct muc_msg *mm = (struct muc_msg *)payload;
+	struct gb_operation_msg_hdr *hdr;
+
+	/* Pull out the cport ID from the disconnected request */
+	hdr = (struct gb_operation_msg_hdr *)mm->gb_msg;
+	req = (struct gb_control_disconnected_request *)(hdr + 1);
+	conn.cport_id = req->cport_id;
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&conn,
+				MB_CONTROL_TYPE_PORT_DISCONNECTED,
+				sizeof(conn),
+				SVC_VENDOR_CTRL_CPORT(orig_dev->intf_id));
+
+	if (IS_ERR(msg)) {
+		dev_err(&svc_dd->pdev->dev, "[%d] Failed send DISCONNECTED\n",
+			orig_dev->intf_id);
+		return PTR_ERR(msg);
+	}
+
+	svc_gb_msg_free(msg);
+
+	/* Return -ENOENT so the message still routed to the interface */
+	return -ENOENT;
+}
+
 struct mods_nw_msg_filter svc_ap_filters[] = {
 	{
 		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
@@ -1551,6 +1615,16 @@ struct mods_nw_msg_filter svc_ap_filters[] = {
 		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
 		.type = GB_CONTROL_TYPE_GET_MANIFEST,
 		.filter_handler = svc_filter_ap_manifest,
+	},
+	{
+		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
+		.type = GB_CONTROL_TYPE_CONNECTED,
+		.filter_handler = svc_filter_ap_connected,
+	},
+	{
+		.protocol_id = GREYBUS_PROTOCOL_CONTROL,
+		.type = GB_CONTROL_TYPE_DISCONNECTED,
+		.filter_handler = svc_filter_ap_disconnected,
 	},
 	{
 		.protocol_id = GREYBUS_PROTOCOL_FIRMWARE,
