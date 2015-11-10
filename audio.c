@@ -578,6 +578,8 @@ int gb_audio_protocol_init(void)
 {
 	int err;
 
+	mutex_init(&snd_codec.lock);
+
 	err = gb_protocol_register(&gb_i2s_mgmt_protocol);
 	if (err) {
 		pr_err("Can't register i2s mgmt protocol driver: %d\n", -err);

@@ -549,7 +549,6 @@ static int mods_codec_dai_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto codec_unreg;
 	}
-	mutex_init(&priv->snd_codec->lock);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, mods_codec_groups);
 	if (ret) {
