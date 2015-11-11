@@ -34,6 +34,7 @@
 #include "mods_nw.h"
 #include "mods_protocols.h"
 #include "mods_uart.h"
+#include "mods_uart_pm.h"
 
 #define MAX_PARTITION_NAME (sizeof(((struct mtd_info *)NULL)->name))
 
@@ -74,22 +75,11 @@ struct apba_ctrl {
 
 /* message from APBA Ctrl driver in kernel */
 #pragma pack(push, 1)
-struct apba_ctrl_msg_hdr {
-	__le16 type;
-	__le16 size; /* size of data followed by hdr */
-};
-
 struct apba_ctrl_int_reason_resp {
 	struct apba_ctrl_msg_hdr hdr;
 	__le16 reason;
 };
 #pragma pack(pop)
-
-enum {
-	APBA_CTRL_GET_INT_REASON,
-	APBA_CTRL_LOG_IND,
-	APBA_CTRL_LOG_REQUEST,
-};
 
 enum {
 	APBA_INT_REASON_NONE,
@@ -225,6 +215,9 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 		apba_seq(ctrl, &ctrl->enable_seq);
 	else
 		apba_seq(ctrl, &ctrl->disable_seq);
+
+	if (ctrl->mods_uart)
+		mods_uart_pm_on(ctrl->mods_uart, on);
 }
 
 static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
@@ -478,7 +471,7 @@ static ssize_t apba_log_show(struct device *dev,
 	msg.size = 0;
 
 	if (mods_uart_apba_send(g_ctrl->mods_uart,
-				(uint8_t *)&msg, sizeof(msg)) != 0) {
+				(uint8_t *)&msg, sizeof(msg), 0) != 0) {
 		pr_err("%s: failed to send LOG REQUEST\n", __func__);
 		return 0;
 	}
@@ -540,23 +533,18 @@ static void apba_firmware_callback(const struct firmware *fw,
 
 static irqreturn_t apba_isr(int irq, void *data)
 {
-	struct apba_ctrl *ctrl = data;
-	struct apba_ctrl_msg_hdr msg;
+	struct apba_ctrl *ctrl = (struct apba_ctrl *)data;
 	int value = gpio_get_value(ctrl->gpios[ctrl->int_index]);
 
 	pr_debug("%s: ctrl=%p, value=%d\n", __func__, ctrl, value);
 
-	if (!ctrl->mods_uart) {
+
+	if (!ctrl->desired_on || !ctrl->mods_uart) {
 		pr_err("%s: int ignored\n", __func__);
 		return IRQ_HANDLED;
 	}
 
-	msg.type = cpu_to_le16(APBA_CTRL_GET_INT_REASON);
-	msg.size = 0;
-
-	if (mods_uart_apba_send(ctrl->mods_uart,
-				(uint8_t *)&msg, sizeof(msg)) != 0)
-		pr_err("%s: failed to send INT_REASON request\n", __func__);
+	mods_uart_pm_handle_wake_interrupt(ctrl->mods_uart);
 
 	return IRQ_HANDLED;
 }
@@ -780,13 +768,19 @@ void apba_handle_message(uint8_t *payload, size_t len)
 	msg = (struct apba_ctrl_msg_hdr *)payload;
 
 	switch (le16_to_cpu(msg->type)) {
-	case APBA_CTRL_GET_INT_REASON:
+	case APBA_CTRL_INT_REASON:
 		if (len >= sizeof(struct apba_ctrl_int_reason_resp)) {
 			struct apba_ctrl_int_reason_resp *resp;
 
 			resp = (struct apba_ctrl_int_reason_resp *)payload;
 			apba_action_on_int_reason(le16_to_cpu(resp->reason));
 		}
+		break;
+	case APBA_CTRL_PM_WAKE_ACK:
+	case APBA_CTRL_PM_SLEEP_ACK:
+	case APBA_CTRL_PM_SLEEP_IND:
+		mods_uart_pm_handle_events(g_ctrl->mods_uart,
+					   le16_to_cpu(msg->type));
 		break;
 	case APBA_CTRL_LOG_IND:
 		mutex_lock(&g_ctrl->log_mutex);
@@ -871,13 +865,13 @@ void apba_disable(void)
 
 	mods_slave_ctrl_power(g_ctrl->master_intf,
 		MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
+	g_ctrl->desired_on = 0;
 
 	if (g_ctrl->mods_uart)
 		mod_attach(g_ctrl->mods_uart, 0);
 
 	clk_disable_unprepare(g_ctrl->mclk);
 	apba_on(g_ctrl, false);
-	g_ctrl->desired_on = 0;
 }
 
 static int apba_ctrl_probe(struct platform_device *pdev)

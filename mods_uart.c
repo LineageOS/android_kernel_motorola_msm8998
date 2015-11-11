@@ -27,6 +27,8 @@
 #include "apba.h"
 #include "crc.h"
 #include "mods_nw.h"
+#include "mods_uart.h"
+#include "mods_uart_pm.h"
 #include "muc_svc.h"
 
 #define DRIVERNAME	"mods_uart"
@@ -57,6 +59,8 @@ struct mods_uart_data {
 	size_t rx_len;
 	unsigned long last_rx;
 	struct mods_uart_err_stats stats;
+	struct mutex tx_mutex;
+	void *mods_uart_pm_data;
 };
 
 enum {
@@ -112,9 +116,9 @@ static struct attribute *uart_attrs[] = {
 
 ATTRIBUTE_GROUPS(uart);
 
-
 static int mods_uart_send_internal(struct mods_uart_data *mud,
-				  __le16 type, uint8_t *buf, size_t len)
+				   __le16 type, uint8_t *buf, size_t len,
+				   int flag)
 {
 	struct device *dev = &mud->pdev->dev;
 	int ret;
@@ -138,7 +142,14 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 
 	crc16 = crc16_calc(0, pkt, pkt_size);
 
-	mutex_lock(&tty_mutex);
+	mutex_lock(&mud->tx_mutex);
+
+	/*
+	 * This call may block if APBA is in sleep.
+	 * Try to fail through even if wake up was unsuccessful.
+	 */
+	mods_uart_pm_pre_tx(mud->mods_uart_pm_data, flag);
+
 	/* First send the message */
 	ret = mud->tty->ops->write(mud->tty, pkt, pkt_size);
 	if (ret != pkt_size) {
@@ -153,13 +164,14 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 		goto send_err;
 	}
 
-	mutex_unlock(&tty_mutex);
+	mods_uart_pm_post_tx(mud->mods_uart_pm_data, flag);
+	mutex_unlock(&mud->tx_mutex);
 	kfree(pkt);
 	return 0;
 
 send_err:
 	mud->stats.tx_failure++;
-	mutex_unlock(&tty_mutex);
+	mutex_unlock(&mud->tx_mutex);
 	kfree(pkt);
 	return -EIO;
 }
@@ -169,14 +181,14 @@ static int mods_uart_message_send(struct mods_dl_device *dld,
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)dld->dl_priv;
 
-	return mods_uart_send_internal(mud, MODS_UART_DL_GB, buf, len);
+	return mods_uart_send_internal(mud, MODS_UART_DL_GB, buf, len, 0);
 }
 
-int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len)
+int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len, int flag)
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
 
-	return mods_uart_send_internal(mud, MODS_UART_DL_APBA, buf, len);
+	return mods_uart_send_internal(mud, MODS_UART_DL_APBA, buf, len, flag);
 }
 
 static struct mods_dl_driver mods_uart_dl_driver = {
@@ -282,6 +294,35 @@ void mod_attach(void *uart_data, unsigned long now_present)
 		mods_dl_dev_detached(mud->dld);
 }
 
+void mods_uart_lock_tx(void *uart_data, bool lock)
+{
+	struct mods_uart_data *mud;
+
+	mud = (struct mods_uart_data *)uart_data;
+
+	if (lock)
+		mutex_lock(&mud->tx_mutex);
+	else
+		mutex_unlock(&mud->tx_mutex);
+}
+
+int mods_uart_do_pm(void *uart_data, bool on)
+{
+	struct mods_uart_data *mud;
+
+	mud = (struct mods_uart_data *)uart_data;
+	return mud->tty->ops->ioctl(mud->tty, on ? TIOCPMGET : TIOCPMPUT, 0);
+}
+
+void *mods_uart_get_pm_data(void *uart_data)
+{
+	struct mods_uart_data *mud;
+
+	mud = (struct mods_uart_data *)uart_data;
+
+	return mud->mods_uart_pm_data;
+}
+
 static int mods_uart_probe(struct platform_device *pdev)
 {
 	struct mods_uart_data *mud;
@@ -375,17 +416,27 @@ static int mods_uart_probe(struct platform_device *pdev)
 		goto close_tty_unlocked;
 	}
 
-
 	ret = sysfs_create_groups(&pdev->dev.kobj, uart_groups);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to create sysfs attributes\n");
 		goto set_ldisc_tty;
 	}
 
+	mud->mods_uart_pm_data = mods_uart_pm_initialize(mud);
+	if (!mud->mods_uart_pm_data) {
+		dev_err(&pdev->dev, "Failed to initialize uart pm\n");
+		goto remove_sysfs;
+	}
+
+	mutex_init(&mud->tx_mutex);
+
 	mud->tty->disc_data = mud;
 	platform_set_drvdata(pdev, mud);
 
 	return 0;
+
+remove_sysfs:
+	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
 
 set_ldisc_tty:
 	tty_set_ldisc(mud->tty, N_TTY);
@@ -420,6 +471,8 @@ static int mods_uart_remove(struct platform_device *pdev)
 
 	if (mud->present)
 		mods_dl_dev_detached(mud->dld);
+
+	mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
 
 	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
 
@@ -566,6 +619,8 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 
 		to_be_consumed -= copy_size;
 	}
+	mods_uart_pm_update_idle_timer(mud->mods_uart_pm_data);
+
 	return count;
 }
 
