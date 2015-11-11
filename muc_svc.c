@@ -1277,15 +1277,14 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	muc_svc_destroy_dl_dev_sysfs(mods_dev);
 	list_del(&mods_dev->list);
 
-	/* Destroy custom vendor control route */
-	if (mods_dev->intf_id != MODS_INTF_AP)
-		muc_svc_destroy_control_route(mods_dev->intf_id,
-				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
-				VENDOR_CTRL_DEST_CPORT);
-
 	/* XXX need to track if unplug already sent... */
 	if (muc_svc_generate_unplug(mods_dev))
 		return;
+
+	/* Destroy custom vendor control route */
+	muc_svc_destroy_control_route(mods_dev->intf_id,
+			SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+			VENDOR_CTRL_DEST_CPORT);
 
 	kfree(mods_dev->manifest);
 
