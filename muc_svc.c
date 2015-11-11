@@ -673,76 +673,62 @@ muc_svc_handle_ap_request(struct mods_dl_device *dld, uint8_t *data,
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	size_t payload_size = get_gb_payload_size(msg_size);
-	struct gb_operation_msg_hdr hdr;
-	struct svc_op *op;
+	struct gb_message *req;
 	int ret = 0;
-
-	op = kzalloc(sizeof(*op), GFP_KERNEL);
-	if (!op)
-		return -ENOMEM;
+	struct gb_operation_msg_hdr hdr;
 
 	memcpy(&hdr, data, sizeof(hdr));
 
-	op->request = svc_gb_msg_alloc(hdr.type, payload_size);
-	if (!op->request) {
-		ret = -ENOMEM;
-		goto gb_msg_alloc;
-	}
-
-	if (payload_size)
-		memcpy(op->request->header, data, msg_size);
+	req = svc_gb_msg_alloc(hdr.type, payload_size);
+	if (!req)
+		return -ENOMEM;
+	memcpy(req->header, data, msg_size);
 
 	switch (hdr.type) {
 	case GB_SVC_TYPE_INTF_DEVICE_ID:
-		ret = svc_set_intf_id(dld, op->request);
+		ret = svc_set_intf_id(dld, req);
 		break;
 	case GB_SVC_TYPE_INTF_RESET:
 		/* XXX Handle interface reset request */
 		break;
 	case GB_SVC_TYPE_CONN_CREATE:
-		ret = svc_gb_conn_create(dld, op->request, cport);
+		ret = svc_gb_conn_create(dld, req, cport);
 		break;
 	case GB_SVC_TYPE_CONN_DESTROY:
-		ret = svc_gb_conn_destroy(dld, op->request, cport);
+		ret = svc_gb_conn_destroy(dld, req, cport);
 		break;
 	case GB_SVC_TYPE_ROUTE_CREATE:
 	case GB_SVC_TYPE_ROUTE_DESTROY:
 		/* Just send an ACK, we do not have use for device id */
 		break;
 	case GB_SVC_TYPE_DME_PEER_GET:
-		ret = svc_gb_dme_get(dld, op->request, cport);
-		goto skip_generic_response;
+		ret = svc_gb_dme_get(dld, req, cport);
+		goto free_request;
 	case GB_SVC_TYPE_DME_PEER_SET:
-		ret = svc_gb_dme_set(dld, op->request, cport);
-		goto skip_generic_response;
+		ret = svc_gb_dme_set(dld, req, cport);
+		goto free_request;
 	default:
-		dev_err(&dd->pdev->dev, "Unsupported type: %d\n", hdr.type);
+		dev_err(&dd->pdev->dev, "Unsupported AP Request type: %d\n",
+					hdr.type);
+		ret = -EINVAL;
 		goto free_request;
 	}
 
 	/* If hdr operation id is non-zero, it expects a response */
 	if (hdr.operation_id) {
-		ret = svc_gb_send_response(dld, cport, op->request, 0,
-					NULL, gb_operation_errno_map(ret));
+		ret = svc_gb_send_response(dld, cport, req, 0, NULL,
+					gb_operation_errno_map(ret));
 		if (ret) {
 			dev_err(&dd->pdev->dev,
-				"Failed to send response for type: %d\n",
+				"Failed to send AP response for type: %d\n",
 				hdr.type);
 			goto free_request;
 		}
 	}
 
-skip_generic_response:
-	/* Done with the request and op */
-	svc_gb_msg_free(op->request);
-	kfree(op);
-
-	return 0;
-
 free_request:
-	svc_gb_msg_free(op->request);
-gb_msg_alloc:
-	kfree(op);
+	/* Done with the request and op */
+	svc_gb_msg_free(req);
 
 	return ret;
 }
