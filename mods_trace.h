@@ -26,7 +26,7 @@ struct gb_operation_msg_hdr;
 TRACE_EVENT(mods_switch,
 
 	TP_PROTO(struct gb_operation_msg_hdr *hdr, u8 from_intf,
-		u8 from_cport, u8 to_intf, u8 to_cport),
+		u16 from_cport, u8 to_intf, u16 to_cport),
 
 	TP_ARGS(hdr, from_intf, from_cport, to_intf, to_cport),
 
