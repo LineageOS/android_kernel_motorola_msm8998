@@ -423,6 +423,7 @@ svc_route_msg(struct mods_dl_device *dld, uint16_t cport,
 	struct muc_msg *m;
 	size_t muc_payload = get_gb_msg_size(msg);
 	size_t msg_size = muc_payload + sizeof(m->hdr);
+	int ret;
 
 	m = kmalloc(msg_size, GFP_KERNEL);
 	if (!m)
@@ -431,10 +432,11 @@ svc_route_msg(struct mods_dl_device *dld, uint16_t cport,
 	memcpy(m->gb_msg, msg->buffer, muc_payload);
 	m->hdr.cport = cpu_to_le16(cport);
 
-	mods_nw_switch(dld, (uint8_t *)m, msg_size);
+	ret = mods_nw_switch(dld, (uint8_t *)m, msg_size);
+
 	kfree(m);
 
-	return 0;
+	return ret;
 }
 
 static inline size_t get_gb_payload_size(size_t message_size)
