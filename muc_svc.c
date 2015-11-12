@@ -57,7 +57,8 @@ struct muc_svc_hotplug_work {
 
 #define MUC_SVC_RESPONSE_TYPE 0
 
-#define SVC_MSG_TIMEOUT 5000
+#define SVC_MSG_DEFAULT_TIMEOUT 500
+#define SVC_AP_HOTPLUG_UNPLUG_TIMEOUT 5000
 
 #define kobj_to_device(k) \
 	container_of(k, struct mods_dl_device, intf_kobj)
@@ -778,7 +779,8 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 /* Send a message out the specified CPORT and wait for a response */
 static struct gb_message *
 _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
-		size_t payload_size, uint16_t cport, bool response)
+		size_t payload_size, uint16_t cport, bool response,
+		uint16_t timeout)
 {
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct svc_op *op;
@@ -826,7 +828,7 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	}
 
 	ret = wait_for_completion_interruptible_timeout(&op->completion,
-					msecs_to_jiffies(SVC_MSG_TIMEOUT));
+					msecs_to_jiffies(timeout));
 	if (ret <= 0) {
 		dev_err(&dd->pdev->dev, "svc msg response timeout\n");
 		if (!ret)
@@ -864,8 +866,18 @@ static inline struct gb_message *
 svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 		size_t size, uint16_t cport)
 {
-	return _svc_gb_msg_send_sync(dld, data, type, size, cport, true);
+	return _svc_gb_msg_send_sync(dld, data, type, size, cport,
+					true, SVC_MSG_DEFAULT_TIMEOUT);
 }
+
+static inline struct gb_message *
+svc_gb_msg_send_sync_timeout(struct mods_dl_device *dld, uint8_t *data,
+		uint8_t type, size_t size, uint16_t cport, uint16_t timeout)
+{
+	return _svc_gb_msg_send_sync(dld, data, type, size, cport,
+					true, timeout);
+}
+
 
 static inline int
 svc_gb_msg_send_no_resp(struct mods_dl_device *dld, uint8_t *data,
@@ -873,7 +885,8 @@ svc_gb_msg_send_no_resp(struct mods_dl_device *dld, uint8_t *data,
 {
 	struct gb_message *msg;
 
-	msg = _svc_gb_msg_send_sync(dld, data, type, size, cport, false);
+	msg = _svc_gb_msg_send_sync(dld, data, type, size, cport,
+					false, SVC_MSG_DEFAULT_TIMEOUT);
 	if (IS_ERR(msg))
 		return PTR_ERR(msg);
 
@@ -1057,9 +1070,11 @@ static void muc_svc_attach_work(struct work_struct *work)
 
 	hpw = container_of(work, struct muc_svc_hotplug_work, work);
 
-	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&hpw->hotplug,
+	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld,
+					(uint8_t *)&hpw->hotplug,
 					GB_SVC_TYPE_INTF_HOTPLUG,
-					sizeof(hpw->hotplug), GB_SVC_CPORT_ID);
+					sizeof(hpw->hotplug), GB_SVC_CPORT_ID,
+					SVC_AP_HOTPLUG_UNPLUG_TIMEOUT);
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "[%d] Failed to send HOTPLUG\n",
 			hpw->hotplug.intf_id);
@@ -1250,9 +1265,10 @@ static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 
 	unplug.intf_id = mods_dev->intf_id;
 
-	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&unplug,
+	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&unplug,
 					GB_SVC_TYPE_INTF_HOT_UNPLUG,
-					sizeof(unplug), GB_SVC_CPORT_ID);
+					sizeof(unplug), GB_SVC_CPORT_ID,
+					SVC_AP_HOTPLUG_UNPLUG_TIMEOUT);
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "[%d] Failed to send UNPLUG\n",
 			mods_dev->intf_id);
