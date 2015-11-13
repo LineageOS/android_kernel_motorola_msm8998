@@ -89,6 +89,14 @@ static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
 				mods_codec_set_in_enabled_devices),
 };
 
+static inline int mods_codec_check_connection(struct gb_snd_codec *gb_codec)
+{
+	if (!gb_codec->mods_aud_connection)
+		return 0;
+
+	return 1;
+}
+
 static void mods_codec_work(struct work_struct *work)
 {
 	struct mods_codec_dai *priv =
@@ -162,6 +170,12 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 	int ret;
 
 	mutex_lock(&gb_codec->lock);
+	if (!mods_codec_check_connection(gb_codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
 	if (gb_codec->use_cases->use_cases & BIT(use_case)) {
 		ret = gb_mods_aud_set_supported_usecase(
 					gb_codec->mods_aud_connection,
@@ -200,6 +214,12 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 	uint32_t vol_step = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
+	if (!mods_codec_check_connection(gb_codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+			__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
 	/* calculate remote codec vol step */
 	mods_vol_step = (vol_step*MODS_VOL_STEP)/(gb_codec->vol_range->vol_range.step);
 	ret = gb_mods_aud_set_vol(gb_codec->mods_aud_connection, mods_vol_step);
@@ -237,6 +257,12 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 	uint32_t vol_step = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
+	if (!mods_codec_check_connection(gb_codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+			__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
 	/* calculate remote codec vol db */
 	mods_vol_db = (vol_step*MODS_VOL_STEP);
 	ret = gb_mods_aud_set_sys_vol(gb_codec->mods_aud_connection,
@@ -273,6 +299,12 @@ static int mods_codec_set_out_enabled_devices(struct snd_kcontrol *kcontrol,
 	uint32_t out_mods_devices = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
+	if (!mods_codec_check_connection(gb_codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+			__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
 	if ((gb_codec->aud_devices->devices.out_devices & out_mods_devices) !=
 			out_mods_devices) {
 		mutex_unlock(&gb_codec->lock);
@@ -313,6 +345,14 @@ static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
 	uint32_t in_mods_devices = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
+
+	if (!mods_codec_check_connection(gb_codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+			__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
+
 	if ((gb_codec->aud_devices->devices.in_devices & in_mods_devices) !=
 			in_mods_devices) {
 		mutex_unlock(&gb_codec->lock);
@@ -409,6 +449,7 @@ static const struct snd_soc_dapm_widget mods_dai_dapm_widgets[] = {
 	SND_SOC_DAPM_AIF_IN("MODS_DAI_RX", "Mods Dai Playback", 0, 0, 0, 0),
 	SND_SOC_DAPM_AIF_OUT("MODS_DAI_TX", "Mods Dai Capture", 0, 0, 0, 0),
 	SND_SOC_DAPM_OUTPUT("MODS_DAI_RX Playback"),
+	SND_SOC_DAPM_INPUT("MODS_DAI_TX Capture"),
 };
 
 static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
@@ -419,18 +460,38 @@ static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
 static int mods_codec_probe(struct snd_soc_codec *codec)
 {
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct snd_kcontrol *kcontrol;
+	int i;
+	int ret;
 
 	priv->codec = codec;
-	snd_soc_dapm_new_controls(&codec->dapm, mods_dai_dapm_widgets,
-			ARRAY_SIZE(mods_dai_dapm_widgets));
-	snd_soc_dapm_add_routes(&codec->dapm, mods_codec_dapm_routes,
-			ARRAY_SIZE(mods_codec_dapm_routes));
-	snd_soc_add_codec_controls(codec, mods_codec_snd_controls,
-				 ARRAY_SIZE(mods_codec_snd_controls));
+	for (i = 0; i < ARRAY_SIZE(mods_codec_snd_controls); i++) {
+		ret = snd_ctl_add(codec->component.card->snd_card,
+			snd_ctl_new1(&mods_codec_snd_controls[i],
+					&codec->component));
+		if (ret) {
+			pr_err("%s: failed to add codec control %s",
+			__func__, mods_codec_snd_controls[i].name);
+			goto cleanup;
+		}
+	}
 	snd_soc_dapm_sync(&codec->dapm);
 
 	pr_info("mods codec probed\n");
+
 	return 0;
+cleanup:
+	for (--i; i >= 0; i--) {
+		kcontrol = snd_soc_card_get_kcontrol(
+					priv->codec->component.card,
+					mods_codec_snd_controls[i].name);
+		if (kcontrol)
+			snd_ctl_remove(
+				priv->codec->component.card->snd_card,
+				kcontrol);
+	}
+
+	return ret;
 }
 
 static int mods_codec_remove(struct snd_soc_codec *codec)
@@ -448,6 +509,12 @@ static ssize_t mods_codec_devices_show(struct device *dev,
 
 	codec = priv->snd_codec;
 	mutex_lock(&codec->lock);
+	if (!mods_codec_check_connection(codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&codec->lock);
+		return 0;
+	}
 	pr_info("%s report change in mods audio devices 0x%x\n",
 			__func__, codec->aud_devices->devices.out_devices);
 	count = scnprintf(buf, PAGE_SIZE,
@@ -481,6 +548,10 @@ int mods_codec_report_devices(struct gb_snd_codec *codec)
 static struct snd_soc_codec_driver soc_codec_dev_mods = {
 	.probe = mods_codec_probe,
 	.remove = mods_codec_remove,
+	.dapm_widgets = mods_dai_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(mods_dai_dapm_widgets),
+	.dapm_routes = mods_codec_dapm_routes,
+	.num_dapm_routes = ARRAY_SIZE(mods_codec_dapm_routes),
 };
 
 static struct snd_soc_dai_driver mods_codec_codec_dai = {
@@ -500,7 +571,6 @@ static struct snd_soc_dai_driver mods_codec_codec_dai = {
 		.channels_max	= 2,
 	},
 	.ops = &mods_codec_dai_ops,
-
 };
 
 static const struct mods_codec_device_ops mods_dev_ops = {
@@ -572,8 +642,24 @@ wq_fail:
 
 static int mods_codec_dai_remove(struct platform_device *pdev)
 {
+	int i;
+	int ret;
+	struct snd_kcontrol *kcontrol;
 	struct mods_codec_dai *priv = dev_get_drvdata(&pdev->dev);
 
+	for (i = 0; i < ARRAY_SIZE(mods_codec_snd_controls); i++) {
+		kcontrol = snd_soc_card_get_kcontrol(
+					priv->codec->component.card,
+					mods_codec_snd_controls[i].name);
+		if (kcontrol) {
+			ret = snd_ctl_remove(
+					priv->codec->component.card->snd_card,
+					kcontrol);
+			if (ret)
+				pr_warn("%s: failed to remove codec control %s",
+				__func__, mods_codec_snd_controls[i].name);
+		}
+	}
 	sysfs_remove_groups(&pdev->dev.kobj, mods_codec_groups);
 	mods_codec_unregister_device(priv->m_dev);
 	snd_soc_unregister_codec(&pdev->dev);

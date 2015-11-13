@@ -391,6 +391,7 @@ set_vol_null:
 free_get_vol:
 	kfree(get_vol);
 out:
+	snd_codec.mods_aud_connection = NULL;
 	mutex_unlock(&snd_codec.lock);
 	return ret;
 }
