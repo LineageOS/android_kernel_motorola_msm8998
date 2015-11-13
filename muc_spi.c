@@ -53,7 +53,7 @@
 /* Macro to determine the location of the CRC in the packet */
 #define CRC_NDX(pkt_size)  (pkt_size - CRC_SIZE)
 
-#define RDY_TIMEOUT_JIFFIES     (1 * HZ) /* 1 sec */
+#define RDY_TIMEOUT_JIFFIES     (HZ / 4) /* 250 milliseconds */
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
@@ -76,7 +76,6 @@ struct muc_spi_data {
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;
 	struct mutex tx_mutex;
-	wait_queue_head_t rdy_wq;
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
 
@@ -268,6 +267,7 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 			.len = dd->pkt_size,
 		},
 	};
+	unsigned long rdy_timeout;
 	int ret;
 
 	/* Check if WAKE is not asserted */
@@ -281,8 +281,9 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	}
 
 	/* Wait for RDY to be asserted */
-	ret = wait_event_timeout(dd->rdy_wq, !gpio_get_value(dd->gpio_rdy_n),
-				 RDY_TIMEOUT_JIFFIES);
+	rdy_timeout = jiffies + RDY_TIMEOUT_JIFFIES;
+	while ((ret = gpio_get_value(dd->gpio_rdy_n)) &&
+	       (jiffies <= rdy_timeout));
 
 	if (!keep_wake) {
 		/* Deassert WAKE */
@@ -293,9 +294,9 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	 * Check that RDY successfully was asserted after wake deassert to ensure
 	 * wake line is deasserted if requested.
 	 */
-	if (ret <= 0) {
+	if (unlikely(ret != 0)) {
 		dev_err(&dd->spi->dev, "Timeout waiting for rdy to assert\n");
-		return ret;
+		return -ETIMEDOUT;
 	}
 
 	ret = spi_sync_transfer(dd->spi, t, 1);
@@ -380,16 +381,22 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	muc_spi_transfer(dd, NULL, false);
-	return IRQ_HANDLED;
+	/*
+	 * Assert WAKE early so the MuC is ready (or close to ready) by the time
+	 * the ISR thread runs. Do not assert early if a wake delay is required
+	 * so the delay can be accurately timed in the ISR thread.
+	 */
+	if (!dd->wake_delay)
+		gpio_set_value(dd->gpio_wake_n, 0);
+
+	return IRQ_WAKE_THREAD;
 }
 
-static irqreturn_t muc_spi_rdy_isr(int irq, void *data)
+static irqreturn_t muc_spi_isr_thread(int irq, void *data)
 {
 	struct muc_spi_data *dd = data;
 
-	/* Wake up SPI transfer */
-	wake_up(&dd->rdy_wq);
+	muc_spi_transfer(dd, NULL, false);
 
 	return IRQ_HANDLED;
 }
@@ -409,24 +416,13 @@ static int muc_attach(struct notifier_block *nb,
 
 		if (now_present) {
 			err = devm_request_threaded_irq(&spi->dev, spi->irq,
-							NULL, muc_spi_isr,
+							muc_spi_isr, muc_spi_isr_thread,
 							IRQF_TRIGGER_LOW |
 							IRQF_ONESHOT,
 							"muc_spi", dd);
 			if (err) {
 				dev_err(&spi->dev, "Unable to request irq.\n");
 				goto set_missing;
-			}
-
-			err = devm_request_irq(&spi->dev,
-					       gpio_to_irq(dd->gpio_rdy_n),
-					       muc_spi_rdy_isr,
-					       IRQF_TRIGGER_RISING |
-					       IRQF_TRIGGER_FALLING,
-					       "muc_spi_rdy", dd);
-			if (err) {
-				dev_err(&spi->dev, "Unable to request rdy.\n");
-				goto free_irq;
 			}
 
 			/* First step after attach is to negotiate bus config */
@@ -436,10 +432,9 @@ static int muc_attach(struct notifier_block *nb,
 						     (uint8_t *)&msg, sizeof(msg));
 			if (err) {
 				dev_err(&spi->dev, "Error requesting bus cfg\n");
-				goto free_rdy;
+				goto free_irq;
 			}
 		} else {
-			devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
 			devm_free_irq(&spi->dev, spi->irq, dd);
 
 			flush_work(&dd->attach_work);
@@ -455,8 +450,6 @@ static int muc_attach(struct notifier_block *nb,
 	}
 	return NOTIFY_OK;
 
-free_rdy:
-	devm_free_irq(&spi->dev, gpio_to_irq(dd->gpio_rdy_n), dd);
 free_irq:
 	devm_free_irq(&spi->dev, spi->irq, dd);
 set_missing:
@@ -596,7 +589,6 @@ static int muc_spi_probe(struct spi_device *spi)
 	muc_spi_quirks_init(dd);
 	mutex_init(&dd->mutex);
 	mutex_init(&dd->tx_mutex);
-	init_waitqueue_head(&dd->rdy_wq);
 
 	spi_set_drvdata(spi, dd);
 
