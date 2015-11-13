@@ -104,7 +104,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 
 	kfree(msg);
 
-	return rv;
+	return 0;
 }
 
 static void mods_ap_msg_cancel(struct gb_message *message)
