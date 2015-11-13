@@ -42,6 +42,7 @@ struct mods_dl_device {
 	struct mods_dl_driver	*drv;
 	u8			intf_id;
 	u8			device_id;
+	bool			hotplug_sent;
 	void			*dl_priv;
 	struct kobject		intf_kobj;
 	struct bin_attribute	manifest_attr;

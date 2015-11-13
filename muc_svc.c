@@ -139,8 +139,8 @@ hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 	if (!svc_dd->authenticate)
 		return count;
 
-	/* Nothing to do, there is no hotplug */
-	if (!dev->hpw)
+	/* Nothing to do, there is no hotplug, or we already sent */
+	if (!dev->hpw || dev->hotplug_sent)
 		return -EINVAL;
 
 	if (kstrtoul(buf, 10, &val) < 0)
@@ -1070,6 +1070,9 @@ static void muc_svc_attach_work(struct work_struct *work)
 
 	hpw = container_of(work, struct muc_svc_hotplug_work, work);
 
+	if (hpw->dld->hotplug_sent)
+		return;
+
 	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld,
 					(uint8_t *)&hpw->hotplug,
 					GB_SVC_TYPE_INTF_HOTPLUG,
@@ -1081,6 +1084,7 @@ static void muc_svc_attach_work(struct work_struct *work)
 		return;
 	}
 
+	hpw->dld->hotplug_sent = true;
 	dev_info(&svc_dd->pdev->dev, "[%d] Successfully sent HOTPLUG\n",
 			hpw->hotplug.intf_id);
 
@@ -1263,6 +1267,10 @@ static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 	struct gb_message *msg;
 	struct gb_svc_intf_hot_unplug_request unplug;
 
+	if (!mods_dev->hotplug_sent)
+		return 0;
+
+	mods_dev->hotplug_sent = 0;
 	unplug.intf_id = mods_dev->intf_id;
 
 	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&unplug,
@@ -1276,6 +1284,9 @@ static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 	}
 
 	svc_gb_msg_free(msg);
+
+	dev_info(&svc_dd->pdev->dev, "[%d] Successfully sent UNPLUG\n",
+			mods_dev->intf_id);
 
 	return 0;
 }
@@ -1293,9 +1304,7 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	muc_svc_destroy_dl_dev_sysfs(mods_dev);
 	list_del(&mods_dev->list);
 
-	/* XXX need to track if unplug already sent... */
-	if (muc_svc_generate_unplug(mods_dev))
-		return;
+	muc_svc_generate_unplug(mods_dev);
 
 	/* Destroy custom vendor control route */
 	muc_svc_destroy_control_route(mods_dev->intf_id,
@@ -1303,9 +1312,6 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 			VENDOR_CTRL_DEST_CPORT);
 
 	kfree(mods_dev->manifest);
-
-	dev_info(&svc_dd->pdev->dev, "[%d] Successfully sent UNPLUG\n",
-			mods_dev->intf_id);
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 
