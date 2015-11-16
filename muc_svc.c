@@ -1468,6 +1468,35 @@ void mods_remove_dl_device(struct mods_dl_device *dev)
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
+int mods_slave_ctrl_power(uint16_t master_id, uint8_t mode, uint32_t slave_id)
+{
+	struct gb_message *msg;
+	struct mb_svc_slave_power_ctrl power;
+	struct mods_dl_device *mods_dev = mods_nw_get_dl_device(master_id);
+
+	if (!mods_dev)
+		return -ENODEV;
+
+	power.mode = mode;
+	power.slave_id = cpu_to_le32(slave_id);
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&power,
+				MB_CONTROL_TYPE_SLAVE_POWER,
+				sizeof(power),
+				SVC_VENDOR_CTRL_CPORT(master_id));
+	if (IS_ERR(msg)) {
+		dev_err(&svc_dd->pdev->dev,
+			"[%d] Failed send SLAVE_POWER for %d\n",
+			mods_dev->intf_id, slave_id);
+		return PTR_ERR(msg);
+	}
+
+	svc_gb_msg_free(msg);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mods_slave_ctrl_power);
+
 int mods_register_slave_ctrl_driver(struct mods_slave_ctrl_driver *drv)
 {
 	if (!svc_dd)

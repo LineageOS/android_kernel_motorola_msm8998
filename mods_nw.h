@@ -92,4 +92,6 @@ extern void mods_nw_unregister_filter(struct mods_nw_msg_filter *filter);
 /* register slave control driver */
 extern int mods_register_slave_ctrl_driver(struct mods_slave_ctrl_driver *);
 extern void mods_unregister_slave_ctrl_driver(struct mods_slave_ctrl_driver *);
+extern int mods_slave_ctrl_power(uint16_t master_id, uint8_t mode,
+					uint32_t slave_id);
 #endif

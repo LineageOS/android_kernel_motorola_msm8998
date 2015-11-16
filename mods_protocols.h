@@ -70,6 +70,7 @@
 #define MB_CONTROL_TYPE_REBOOT                0x03
 #define MB_CONTROL_TYPE_PORT_CONNECTED        0x04
 #define MB_CONTROL_TYPE_PORT_DISCONNECTED     0x05
+#define MB_CONTROL_TYPE_SLAVE_POWER           0x06
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -78,6 +79,11 @@
 
 /* Valid masks for the slave mask */
 #define MB_CONTROL_SLAVE_MASK_APBE            (1 << 0)
+
+/* Valid modes for the slave power request */
+#define MB_CONTROL_SLAVE_POWER_ON             0x01
+#define MB_CONTROL_SLAVE_POWER_OFF            0x02
+#define MB_CONTROL_SLAVE_POWER_FLASH_MODE     0x03
 
 /* Control protocol reboot request */
 struct mb_control_reboot_request {
@@ -106,6 +112,13 @@ struct mb_control_disconnected_request {
 	__le16 cport_id;
 } __packed;
 /* Control protocol [dis]connected response has no payload */
+
+/* Control protocol slave power request */
+struct mb_svc_slave_power_ctrl {
+	__le32    slave_id;
+	__u8      mode;
+} __packed;
+/* Control protocol slave power response */
 
 #endif /* __MODS_PROTOCOLS_H */
 
