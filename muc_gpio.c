@@ -326,7 +326,7 @@ static void muc_reset_do_work(struct work_struct *work)
 	 * with a completion mechanism and tie into the 'removal'
 	 * interrupt.... or more than likely live forever in here.
 	 */
-	msleep(2000);
+	msleep(4000);
 	muc_attach_notifier_call_chain(1);
 
 	kfree(work);
