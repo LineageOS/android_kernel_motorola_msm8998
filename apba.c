@@ -292,12 +292,42 @@ static ssize_t erase_partition_store(struct device *dev,
 
 static DEVICE_ATTR_WO(erase_partition);
 
+static int apba_compare_partition(struct mtd_info *mtd_info,
+	const struct firmware *fw)
+{
+	int err;
+	void *ffff;
+	size_t retlen = 0;
+	/* Assume different */
+	int compare_result = 1;
+
+	ffff = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!ffff)
+		goto skip_compare;
+
+	err = mtd_info->_read(mtd_info, 0, PAGE_SIZE, &retlen, ffff);
+	if (err < 0)
+		goto cleanup;
+
+	if (retlen < PAGE_SIZE)
+		goto cleanup;
+
+	compare_result = memcmp(ffff, fw->data, PAGE_SIZE);
+
+cleanup:
+	kfree(ffff);
+
+skip_compare:
+	return compare_result;
+}
+
 static int apba_flash_partition(struct apba_ctrl *ctrl,
 	const char *partition, const struct firmware *fw)
 {
 	struct mtd_info *mtd_info;
 	int err;
 	size_t retlen = 0;
+	int compare_result;
 
 	if (!fw || !ctrl)
 		return -EINVAL;
@@ -310,6 +340,16 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 		pr_err("%s: mtd init module failed for %s, err=%d\n",
 			__func__, partition, err);
 		goto no_mtd;
+	}
+
+	/* Before erasing and flashing, compare the firmware and the partition
+	 * If they match, skip the process.  If anything fails during the
+	 * comparison, then flash.
+	 */
+	compare_result = apba_compare_partition(mtd_info, fw);
+	if (compare_result == 0) {
+		pr_info("%s: firmware unchanged, skipping flash\n", __func__);
+		goto cleanup;
 	}
 
 	/* Erase the flash */
@@ -484,9 +524,6 @@ static void apba_firmware_callback(const struct firmware *fw,
 	}
 
 	pr_debug("%s: size=%zu data=%p\n", __func__, fw->size, fw->data);
-
-	/* TODO: extract the version from the binary, check the version,
-		  apply the firmware. */
 
 	err = apba_flash_partition(ctrl, APBA_FIRMWARE_PARTITION, fw);
 	if (err < 0)
