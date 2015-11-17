@@ -136,7 +136,7 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	hdr->msg_type = cpu_to_le16(type);
 	memcpy(pkt + sizeof(*hdr), buf, len);
 
-	crc16 = gen_crc16(pkt, pkt_size);
+	crc16 = crc16_calc(0, pkt, pkt_size);
 
 	mutex_lock(&tty_mutex);
 	/* First send the message */
@@ -477,7 +477,7 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 		return 0;
 
 	rcvd_crc = (uint16_t *)&mud->rx_data[content_size];
-	calc_crc = gen_crc16((uint8_t *) mud->rx_data, content_size);
+	calc_crc = crc16_calc(0, (uint8_t *) mud->rx_data, content_size);
 	if (le16_to_cpu(*rcvd_crc) != calc_crc) {
 		mud->stats.rx_crc++;
 		dev_err(dev, "%s: CRC mismatch, received: 0x%x, "

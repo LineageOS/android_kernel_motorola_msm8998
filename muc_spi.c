@@ -333,7 +333,7 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 	}
 
 	rcvcrc_p = (uint16_t *)&dd->rx_pkt[CRC_NDX(dd->pkt_size)];
-	calcrc = gen_crc16(dd->rx_pkt, CRC_NDX(dd->pkt_size));
+	calcrc = crc16_calc(0, dd->rx_pkt, CRC_NDX(dd->pkt_size));
 	if (le16_to_cpu(*rcvcrc_p) != calcrc) {
 		dev_err(&spi->dev, "CRC mismatch, received: 0x%x,"
 			"calculated: 0x%x\n", le16_to_cpu(*rcvcrc_p), calcrc);
@@ -488,7 +488,7 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		hdr->bits |= (--packets & HDR_BIT_PKTS);
 		memcpy((dd->tx_pkt + sizeof(*hdr)), buf, this_pl);
 
-		*crc = gen_crc16(dd->tx_pkt, CRC_NDX(dd->pkt_size));
+		*crc = crc16_calc(0, dd->tx_pkt, CRC_NDX(dd->pkt_size));
 		*crc = cpu_to_le16(*crc);
 
 		muc_spi_transfer(dd, dd->tx_pkt, (packets > 0));

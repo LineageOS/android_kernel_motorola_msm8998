@@ -14,6 +14,6 @@
 #ifndef __CRC_H__
 #define __CRC_H__
 
-extern uint16_t gen_crc16(uint8_t *data, unsigned long len);
+extern uint16_t crc16_calc(uint16_t crc, uint8_t const *buffer, size_t len);
 
 #endif
