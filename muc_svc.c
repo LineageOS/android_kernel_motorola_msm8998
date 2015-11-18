@@ -1559,7 +1559,7 @@ svc_filter_ap_connected(struct mods_dl_device *orig_dev,
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "[%d] Failed send CONNECTED\n",
 			orig_dev->intf_id);
-		return PTR_ERR(msg);
+		return -ENOENT;
 	}
 
 	svc_gb_msg_free(msg);
@@ -1591,7 +1591,7 @@ svc_filter_ap_disconnected(struct mods_dl_device *orig_dev,
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev, "[%d] Failed send DISCONNECTED\n",
 			orig_dev->intf_id);
-		return PTR_ERR(msg);
+		return -ENOENT;
 	}
 
 	svc_gb_msg_free(msg);
