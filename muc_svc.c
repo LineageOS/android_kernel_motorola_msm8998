@@ -44,6 +44,7 @@ struct muc_svc_data {
 struct muc_svc_data *svc_dd;
 
 static DEFINE_MUTEX(slave_lock);
+static DEFINE_MUTEX(svc_list_lock);
 
 /* Define the SVCs reserved area of CPORTS to create the vendor
  * connections to each interface
@@ -1016,10 +1017,12 @@ static void muc_svc_check_slave_present(struct mods_slave_ctrl_driver *drv)
 	if (!drv->slave_present)
 		return;
 
+	mutex_lock(&svc_list_lock);
 	list_for_each_entry(mods_dev, &svc_dd->ext_intf, list)
 		if (mods_dev->slave_mask)
 			drv->slave_present(mods_dev->intf_id,
 						mods_dev->slave_mask);
+	mutex_unlock(&svc_list_lock);
 }
 
 /* Notify all Slave Control Drivers of the new slave mask */
@@ -1361,7 +1364,10 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	}
 
 	muc_svc_destroy_dl_dev_sysfs(mods_dev);
+
+	mutex_lock(&svc_list_lock);
 	list_del(&mods_dev->list);
+	mutex_unlock(&svc_list_lock);
 
 	muc_svc_generate_unplug(mods_dev);
 
@@ -1417,7 +1423,9 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		goto done;
 	}
 
+	mutex_lock(&svc_list_lock);
 	list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
+	mutex_unlock(&svc_list_lock);
 done:
 	return err;
 
@@ -1812,6 +1820,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 
 	/* Need to generate a hot unplug for each interface and then
 	 * issue the reboot command */
+	mutex_lock(&svc_list_lock);
 	list_for_each_entry(mods_dev, &dd->ext_intf, list) {
 		muc_svc_generate_unplug(mods_dev);
 
@@ -1822,6 +1831,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 			dev_warn(dev, "INTF: %d, failed to enter flashmode\n",
 				mods_dev->intf_id);
 	}
+	mutex_unlock(&svc_list_lock);
 
 	/* Reset the muc, to trigger the tear-down and re-init */
 	muc_reset();
