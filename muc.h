@@ -22,12 +22,25 @@ enum {
 
 #define MUC_MAX_SEQ (MUC_MAX_GPIOS*8)
 
+/* BPLUS State Transitions */
+enum bplus_state {
+	MUC_BPLUS_DISABLED = 0,
+	MUC_BPLUS_ENABLING,
+	MUC_BPLUS_ENABLED,
+};
+
 struct muc_data {
 	struct device *dev;
 	u8 muc_detected;
 
 	/* Reset workqueue */
 	struct workqueue_struct *wq;
+
+	/* Attach workqueue / delayed work */
+	struct workqueue_struct *attach_wq;
+	struct delayed_work attach_work;
+	bool force_removal;
+	uint8_t bplus_state;
 
 	/* Configuration */
 	int gpios[MUC_MAX_GPIOS];

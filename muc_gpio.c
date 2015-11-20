@@ -92,43 +92,98 @@ static void muc_seq(struct muc_data *cdata, u32 seq[], size_t seq_len)
 
 static void muc_handle_detection(struct muc_data *cdata)
 {
+	bool detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 	int err;
-	/* Detection gpio is active-low. */
-	bool tmp_detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 
-	if (tmp_detected == cdata->muc_detected) {
-		pr_debug("%s:%d: detection has not changed: %d\n",
-			__func__, __LINE__, tmp_detected);
+	pr_debug("%s: detected: %d previous state: %d\n",
+			__func__, detected, cdata->muc_detected);
+
+	/* If this is a force removal, send out removal first if we were
+	 * previously detected
+	 */
+	if (cdata->force_removal && cdata->muc_detected) {
+		pr_debug("%s: sending force removal\n", __func__);
+		err = muc_attach_notifier_call_chain(0);
+		if (err)
+			pr_warn("%s: force notify fail: %d\n", __func__, err);
+
+		/* If we were doing a force removal, and we are still detected
+		 * re-queue it for debouncing so it settles.
+		 */
+		if (detected) {
+			cdata->force_removal = false;
+			cdata->muc_detected = false;
+			queue_delayed_work(cdata->attach_wq,
+						&cdata->attach_work,
+						cdata->det_hysteresis);
+			return;
+		}
+	}
+	cdata->force_removal = false;
+
+	if (detected == cdata->muc_detected) {
+		pr_debug("%s: detection in same state, skipping\n", __func__);
 		return;
 	}
 
-	/* Power on first when inserted */
-	if (tmp_detected)
+	cdata->muc_detected = detected;
+
+	/* Send enable sequence when detected and in disabled. */
+	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED) {
+		cdata->bplus_state = MUC_BPLUS_ENABLING;
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
+		cdata->bplus_state = MUC_BPLUS_ENABLED;
 
-	err = muc_attach_notifier_call_chain((unsigned int)tmp_detected);
+		/* Re-read state after BPLUS settle time */
+		detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
+	}
+
+	err = muc_attach_notifier_call_chain(detected);
 	if (err)
-		pr_err("notification chain failed %d\n", err);
+		pr_warn("%s: notification failed: %d for detected = %s\n",
+			__func__, err, detected ? "true" : "false");
 
-	pr_debug("%s:%d detected=%d\n", __func__, __LINE__, tmp_detected);
-	cdata->muc_detected = tmp_detected;
-
-	/* Power off on removal */
-	if (!tmp_detected)
+	if (!detected && cdata->bplus_state == MUC_BPLUS_ENABLED) {
 		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+		cdata->bplus_state = MUC_BPLUS_DISABLED;
+	}
+}
+
+static void attach_work(struct work_struct *work)
+{
+	struct delayed_work *workitem;
+	struct muc_data *cdata;
+
+	workitem = container_of(work, struct delayed_work, work);
+	cdata = container_of(workitem, struct muc_data, attach_work);
+
+	muc_handle_detection(cdata);
 }
 
 static irqreturn_t muc_isr(int irq, void *data)
 {
 	struct muc_data *cdata = data;
+	bool det = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
+	bool res;
 
-	if (cdata->det_hysteresis) {
-		msleep(cdata->det_hysteresis);
-		pr_debug("%s:%d: det_hysteresis=%u\n",
-			__func__, __LINE__, cdata->det_hysteresis);
-	}
+	/* Ignore CC pin during BPLUS enable sequence due to propagation
+	 * of the reset/power-on sequence of the MUC.
+	 */
+	if (cdata->bplus_state == MUC_BPLUS_ENABLING)
+		return IRQ_HANDLED;
 
-	muc_handle_detection(cdata);
+	pr_debug("%s: detected: %d previous state: %d\n",
+			__func__, det, cdata->muc_detected);
+
+	/* Always cancel existing work */
+	res = cancel_delayed_work_sync(&cdata->attach_work);
+	if (res)
+		pr_debug("%s: Cancelled existing work\n", __func__);
+
+	cdata->force_removal = !det ? true : false;
+
+	queue_delayed_work(cdata->attach_wq, &cdata->attach_work,
+			cdata->force_removal ? 0 : cdata->det_hysteresis);
 
 	return IRQ_HANDLED;
 }
@@ -250,6 +305,7 @@ static int muc_parse_seq(struct muc_data *cdata,
 	return ret;
 }
 
+#define MSEC_TO_JIFFIES(msec) ((msec) * HZ / 1000)
 int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 {
 	int ret;
@@ -263,12 +319,19 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 		return -ENOMEM;
 	}
 
+	INIT_DELAYED_WORK(&cdata->attach_work, attach_work);
+	cdata->attach_wq = alloc_workqueue("muc_attach", WQ_UNBOUND, 1);
+	if (!cdata->attach_wq) {
+		dev_err(dev, "Failed to create attach workqueue\n");
+		goto freewq;
+	}
+
 	/* Mandatory configuration */
 	ret = muc_gpio_setup(cdata, dev);
 	if (ret) {
 		dev_err(dev, "%s:%d: failed to read gpios.\n",
 			__func__, __LINE__);
-		goto freewq;
+		goto free_attach_wq;
 	}
 
 	/* Optional configuration */
@@ -296,12 +359,15 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 		dev_warn(dev, "%s:%d failed to read det hysteresis.\n",
 			__func__, __LINE__);
 	}
+	cdata->det_hysteresis = MSEC_TO_JIFFIES(cdata->det_hysteresis);
 
 	/* Handle initial detection state. */
-	muc_handle_detection(cdata);
+	queue_delayed_work(cdata->attach_wq, &cdata->attach_work,
+				cdata->det_hysteresis);
 
 	return 0;
-
+free_attach_wq:
+	destroy_workqueue(cdata->attach_wq);
 freewq:
 	destroy_workqueue(cdata->wq);
 
@@ -313,6 +379,8 @@ void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 	muc_gpio_cleanup(cdata, dev);
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+	cancel_delayed_work_sync(&cdata->attach_work);
+	destroy_workqueue(cdata->attach_wq);
 	destroy_workqueue(cdata->wq);
 }
 
