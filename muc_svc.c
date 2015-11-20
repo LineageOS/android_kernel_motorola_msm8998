@@ -876,7 +876,8 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	return msg;
 
 remove_op:
-	list_del(&op->entry);
+	if (response)
+		list_del(&op->entry);
 	svc_gb_msg_free(op->request);
 gb_msg_alloc:
 	kfree(op);
