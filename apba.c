@@ -32,6 +32,7 @@
 #include "apba.h"
 #include "kernel_ver.h"
 #include "mods_nw.h"
+#include "mods_protocols.h"
 #include "mods_uart.h"
 
 #define MAX_PARTITION_NAME (sizeof(((struct mtd_info *)NULL)->name))
@@ -44,6 +45,8 @@
 
 #define APBA_NUM_GPIOS (8)
 #define APBA_MAX_SEQ   (APBA_NUM_GPIOS*3*2)
+
+#define APBE_RESET_DELAY (250)
 
 struct apba_seq {
 	u32 val[APBA_MAX_SEQ];
@@ -66,6 +69,7 @@ struct apba_ctrl {
 	int desired_on;
 	struct mutex log_mutex;
 	struct completion comp;
+	uint8_t master_intf;
 } *g_ctrl;
 
 /* message from APBA Ctrl driver in kernel */
@@ -109,11 +113,6 @@ struct apbe_attach_work_struct {
 	struct work_struct work;
 	int present;
 };
-
-static inline struct apba_ctrl *apba_sysfs_to_ctrl(struct device *dev)
-{
-	return g_ctrl;
-}
 
 static int apba_mtd_erase(struct mtd_info *mtd_info,
 	 unsigned int start, unsigned int len)
@@ -243,6 +242,7 @@ static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
 	if (!mtd_info) {
 		pr_err("%s: mtd init module failed for %s, err=%d\n",
 			__func__, partition, err);
+		err = -ENODEV;
 		goto no_mtd;
 	}
 
@@ -340,6 +340,7 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 	if (!mtd_info) {
 		pr_err("%s: mtd init module failed for %s, err=%d\n",
 			__func__, partition, err);
+		err = -ENODEV;
 		goto no_mtd;
 	}
 
@@ -350,6 +351,7 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 	compare_result = apba_compare_partition(mtd_info, fw);
 	if (compare_result == 0) {
 		pr_info("%s: firmware unchanged, skipping flash\n", __func__);
+		err = 0;
 		goto cleanup;
 	}
 
@@ -484,6 +486,7 @@ static ssize_t apba_log_show(struct device *dev,
 	if (!wait_for_completion_timeout(
 		    &g_ctrl->comp,
 		    msecs_to_jiffies(APBA_LOG_REQ_TIMEOUT))) {
+		pr_err("%s: timeout from LOG REQUEST\n", __func__);
 		return 0;
 	}
 
@@ -543,15 +546,17 @@ static irqreturn_t apba_isr(int irq, void *data)
 
 	pr_debug("%s: ctrl=%p, value=%d\n", __func__, ctrl, value);
 
-	if (!ctrl->mods_uart)
+	if (!ctrl->mods_uart) {
+		pr_err("%s: int ignored\n", __func__);
 		return IRQ_HANDLED;
+	}
 
 	msg.type = cpu_to_le16(APBA_CTRL_GET_INT_REASON);
 	msg.size = 0;
 
 	if (mods_uart_apba_send(ctrl->mods_uart,
 				(uint8_t *)&msg, sizeof(msg)) != 0)
-		pr_err("%s: failed to send INT_REASON requeist\n", __func__);
+		pr_err("%s: failed to send INT_REASON request\n", __func__);
 
 	return IRQ_HANDLED;
 }
@@ -728,17 +733,27 @@ static void apba_action_on_int_reason(uint16_t reason)
 {
 	pr_info("%s: %d\n", __func__, reason);
 
+	if (!g_ctrl || !g_ctrl->master_intf)
+		return;
+
 	switch (reason) {
 	case APBA_INT_APBE_ON:
-		/* TODO: will be filled in */
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
 		break;
 	case APBA_INT_APBE_RESET:
-		/* TODO: will be filled in */
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
+		msleep(APBE_RESET_DELAY);
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
 		break;
 	case APBA_INT_APBE_CONNECTED:
 		apba_notify_abpe_attach(1);
 		break;
 	case APBA_INT_APBE_DISCONNECTED:
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
 		apba_notify_abpe_attach(0);
 		break;
 	default:
@@ -753,6 +768,9 @@ void apba_handle_message(uint8_t *payload, size_t len)
 	int of;
 
 	struct apba_ctrl_msg_hdr *msg;
+
+	if (!g_ctrl)
+		return;
 
 	if (len < sizeof(struct apba_ctrl_msg_hdr)) {
 		pr_err("%s: Invalid message received.\n", __func__);
@@ -791,6 +809,28 @@ void apba_handle_message(uint8_t *payload, size_t len)
 	}
 }
 
+static void apba_slave_present(uint8_t master_intf, uint32_t slave_mask)
+{
+	if (!g_ctrl)
+		return;
+
+	pr_debug("%s: master_intf=%d, slave_mask=0x%x\n",
+		__func__, master_intf, slave_mask);
+
+	if (slave_mask != MB_CONTROL_SLAVE_MASK_APBE) {
+		pr_debug("%s: ignore\n", __func__);
+		return;
+	}
+
+	g_ctrl->master_intf = master_intf;
+
+	apba_enable();
+}
+
+static struct mods_slave_ctrl_driver apbe_ctrl_drv = {
+	.slave_present = apba_slave_present,
+};
+
 int apba_enable(void)
 {
 	int ret;
@@ -828,6 +868,9 @@ void apba_disable(void)
 {
 	if (!g_ctrl || !g_ctrl->desired_on)
 		return;
+
+	mods_slave_ctrl_power(g_ctrl->master_intf,
+		MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
 
 	if (g_ctrl->mods_uart)
 		mod_attach(g_ctrl->mods_uart, 0);
@@ -911,8 +954,16 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ctrl);
 
+	ret = mods_register_slave_ctrl_driver(&apbe_ctrl_drv);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to register slave driver\n");
+		goto reset_global;
+	}
+
 	return 0;
 
+reset_global:
+	g_ctrl = NULL;
 disable_irq:
 	disable_irq_wake(ctrl->irq);
 free_gpios:
@@ -927,9 +978,13 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 
 	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 
+	mods_unregister_slave_ctrl_driver(&apbe_ctrl_drv);
+
 	disable_irq_wake(ctrl->irq);
 	apba_disable();
 	apba_gpio_free(ctrl, &pdev->dev);
+
+	g_ctrl = NULL;
 
 	return 0;
 }
