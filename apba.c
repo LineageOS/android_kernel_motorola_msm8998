@@ -60,7 +60,8 @@ struct apba_ctrl {
 	int irq;
 	struct apba_seq enable_seq;
 	struct apba_seq disable_seq;
-	struct apba_seq wake_seq;
+	struct apba_seq wake_assert_seq;
+	struct apba_seq wake_deassert_seq;
 	void *mods_uart;
 	int desired_on;
 	struct mutex log_mutex;
@@ -674,6 +675,17 @@ gpio_cleanup:
 	return ret;
 }
 
+void apba_wake_assert(bool assert)
+{
+	if (!g_ctrl)
+		return;
+
+	if (assert)
+		apba_seq(g_ctrl, &g_ctrl->wake_assert_seq);
+	else
+		apba_seq(g_ctrl, &g_ctrl->wake_deassert_seq);
+}
+
 int apba_uart_register(void *mods_uart)
 {
 	if (!g_ctrl)
@@ -871,9 +883,15 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	if (ret)
 		goto disable_irq;
 
-	ctrl->wake_seq.len = ARRAY_SIZE(ctrl->wake_seq.val);
-	ret = apba_parse_seq(&pdev->dev, "mmi,wake-seq",
-		&ctrl->wake_seq);
+	ctrl->wake_assert_seq.len = ARRAY_SIZE(ctrl->wake_assert_seq.val);
+	ret = apba_parse_seq(&pdev->dev, "mmi,wake-assert-seq",
+		&ctrl->wake_assert_seq);
+	if (ret)
+		goto disable_irq;
+
+	ctrl->wake_deassert_seq.len = ARRAY_SIZE(ctrl->wake_deassert_seq.val);
+	ret = apba_parse_seq(&pdev->dev, "mmi,wake-deassert-seq",
+		&ctrl->wake_deassert_seq);
 	if (ret)
 		goto disable_irq;
 
