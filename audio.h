@@ -48,6 +48,7 @@ struct gb_snd {
 	struct platform_device		card;
 	struct platform_device		cpu_dai;
 	struct platform_device		*codec;
+	struct platform_device		*dai;
 	struct asoc_simple_card_info	*simple_card_info;
 	struct i2c_client		*rt5647;
 	struct gb_connection		*mgmt_connection;

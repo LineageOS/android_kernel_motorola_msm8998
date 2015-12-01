@@ -187,13 +187,13 @@ static int gb_i2s_transmitter_connection_init(struct gb_connection *connection)
 	dai = platform_device_register_simple("gb-pcm-audio", snd_dev->device_count, NULL, 0);
 	if (!dai) {
 		ret = -ENOMEM;
-		goto out;
+		goto out_dai;
 	}
 
 	simple_card = setup_card_info(snd_dev->device_count);
 	if (!simple_card) {
 		ret = -ENOMEM;
-		goto out;
+		goto out_cpu_dai;
 	}
 
 	spin_lock_irqsave(&snd_dev->lock, flags);
@@ -210,6 +210,7 @@ static int gb_i2s_transmitter_connection_init(struct gb_connection *connection)
 	snd_dev->card.dev.platform_data = simple_card;
 
 	snd_dev->codec = codec;
+	snd_dev->dai = dai;
 	snd_dev->i2s_tx_connection = connection;
 	snd_dev->cpu_dai.dev.platform_data = snd_dev;
 	snd_dev->i2s_tx_connection->private = snd_dev;
@@ -218,7 +219,7 @@ static int gb_i2s_transmitter_connection_init(struct gb_connection *connection)
 	ret = platform_device_register(&snd_dev->cpu_dai);
 	if (ret) {
 		pr_err("cpu_dai platform_device register failed\n");
-		goto out_dai;
+		goto out_cpu_dai;
 	}
 
 	ret = platform_device_register(&snd_dev->card);
@@ -253,6 +254,8 @@ out_get_ver:
 #endif
 out_card:
 	platform_device_unregister(&snd_dev->cpu_dai);
+out_cpu_dai:
+	platform_device_unregister(dai);
 out_dai:
 	platform_device_unregister(codec);
 out:
@@ -272,6 +275,7 @@ static void gb_i2s_transmitter_connection_exit(struct gb_connection *connection)
 
 	platform_device_unregister(&snd_dev->card);
 	platform_device_unregister(&snd_dev->cpu_dai);
+	platform_device_unregister(snd_dev->dai);
 	platform_device_unregister(snd_dev->codec);
 
 	free_card_info(snd_dev->simple_card_info);
