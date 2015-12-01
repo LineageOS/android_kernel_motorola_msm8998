@@ -20,6 +20,7 @@
 
 struct gb_ptp {
 	struct gb_connection	*connection;
+	struct mutex		conn_lock;
 	struct power_supply	psy;
 };
 
@@ -311,49 +312,52 @@ static int gb_ptp_get_property(struct power_supply *psy,
 	struct gb_ptp_functionality func;
 	int retval;
 
+	mutex_lock(&ptp->conn_lock);
+	if (!ptp->connection) {
+		mutex_unlock(&ptp->conn_lock);
+		pr_warn("%s: supply already free'd: %s\n",
+			__func__, psy->name);
+		return -ENODEV;
+	}
+
 	switch (psp) {
 	case POWER_SUPPLY_PROP_PTP_INTERNAL_SEND:
 		retval = gb_ptp_get_functionality(ptp, &func);
-		if (retval)
-			return retval;
-		val->intval = func.int_snd;
+		if (!retval)
+			val->intval = func.int_snd;
 		break;
 	case POWER_SUPPLY_PROP_PTP_INTERNAL_RECEIVE:
 		retval = gb_ptp_get_functionality(ptp, &func);
-		if (retval)
-			return retval;
-		val->intval = func.int_rcv;
+		if (!retval)
+			val->intval = func.int_rcv;
 		break;
 	case POWER_SUPPLY_PROP_PTP_INTERNAL_MAX_RECEIVE_VOLTAGE:
 		retval = gb_ptp_get_functionality(ptp, &func);
-		if (retval)
-			return retval;
-		val->intval = func.int_rcv_max_v;
+		if (!retval)
+			val->intval = func.int_rcv_max_v;
 		break;
 	case POWER_SUPPLY_PROP_PTP_EXTERNAL:
 		retval = gb_ptp_get_functionality(ptp, &func);
-		if (retval)
-			return retval;
-		val->intval = func.ext;
+		if (!retval)
+			val->intval = func.ext;
 		break;
 	case POWER_SUPPLY_PROP_PTP_CURRENT_FLOW:
 	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT:
-		return -ENODEV; /* to make power_supply_uevent() happy */
+		retval = -ENODEV; /* to make power_supply_uevent() happy */
+		break;
 	case POWER_SUPPLY_PROP_PTP_EXTERNAL_PRESENT:
 		retval = gb_ptp_ext_power_present(ptp, &val->intval);
-		if (retval)
-			return retval;
 		break;
 	case POWER_SUPPLY_PROP_PTP_POWER_REQUIRED:
 		retval = gb_ptp_power_required(ptp, &val->intval);
-		if (retval)
-			return retval;
 		break;
 	default:
-		return -EINVAL;
+		retval = -EINVAL;
 	}
 
-	return 0;
+	mutex_unlock(&ptp->conn_lock);
+
+	return retval;
 }
 
 static int gb_ptp_set_property(struct power_supply *psy,
@@ -361,15 +365,30 @@ static int gb_ptp_set_property(struct power_supply *psy,
 			       const union power_supply_propval *val)
 {
 	struct gb_ptp *ptp = container_of(psy, struct gb_ptp, psy);
+	int retval;
+
+	mutex_lock(&ptp->conn_lock);
+	if (!ptp->connection) {
+		mutex_unlock(&ptp->conn_lock);
+		pr_warn("%s: supply already free'd: %s\n",
+			__func__, psy->name);
+		return -ENODEV;
+	}
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_PTP_CURRENT_FLOW:
-		return gb_ptp_set_current_flow(ptp, val->intval);
+		retval = gb_ptp_set_current_flow(ptp, val->intval);
+		break;
 	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT:
-		return gb_ptp_set_maximum_input_current(ptp, val->intval);
+		retval = gb_ptp_set_maximum_input_current(ptp, val->intval);
+		break;
 	default:
-		return -EINVAL;
+		retval = -EINVAL;
 	}
+
+	mutex_unlock(&ptp->conn_lock);
+
+	return retval;
 }
 
 static int gb_ptp_property_is_writeable(struct power_supply *psy,
@@ -377,6 +396,19 @@ static int gb_ptp_property_is_writeable(struct power_supply *psy,
 {
 	return psp == POWER_SUPPLY_PROP_PTP_CURRENT_FLOW ||
 	       psp == POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT;
+}
+
+static void gb_ptp_psy_release(struct device *dev)
+{
+	struct power_supply *psy = dev_get_drvdata(dev);
+	struct gb_ptp *ptp;
+
+	if (!psy)
+		return;
+
+	ptp = container_of(psy, struct gb_ptp, psy);
+	kfree(ptp);
+	kfree(dev);
 }
 
 static int gb_ptp_connection_init(struct gb_connection *connection)
@@ -390,6 +422,7 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 
 	ptp->connection = connection;
 	connection->private = ptp;
+	mutex_init(&ptp->conn_lock);
 
 	/* Create a power supply */
 	ptp->psy.name		= "gb_ptp";
@@ -404,6 +437,8 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 	if (retval)
 		goto error;
 
+	ptp->psy.dev->release = gb_ptp_psy_release;
+
 	return 0;
 
 error:
@@ -416,7 +451,9 @@ static void gb_ptp_connection_exit(struct gb_connection *connection)
 	struct gb_ptp *ptp = connection->private;
 
 	power_supply_unregister(&ptp->psy);
-	kfree(ptp);
+	mutex_lock(&ptp->conn_lock);
+	ptp->connection = NULL;
+	mutex_unlock(&ptp->conn_lock);
 }
 
 static struct gb_protocol ptp_protocol = {
