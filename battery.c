@@ -27,6 +27,7 @@ struct gb_battery {
 	struct power_supply_desc desc;
 #define to_gb_battery(x) power_supply_get_drvdata(x)
 #endif
+	struct mutex conn_lock;
 	// FIXME
 	// we will want to keep the battery stats in here as we will be getting
 	// updates from the SVC "on the fly" so we don't have to always go ask
@@ -190,6 +191,13 @@ static int get_property(struct power_supply *b,
 {
 	struct gb_battery *gb = to_gb_battery(b);
 
+	mutex_lock(&gb->conn_lock);
+	if (!gb->connection) {
+		mutex_unlock(&gb->conn_lock);
+		pr_err("%s: supply already free'd: %s\n", __func__, b->name);
+		return -ENODEV;
+	}
+
 	switch (psp) {
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
 		val->intval = get_tech(gb);
@@ -216,8 +224,9 @@ static int get_property(struct power_supply *b,
 		break;
 
 	default:
-		return -EINVAL;
+		val->intval = -EINVAL;
 	}
+	mutex_unlock(&gb->conn_lock);
 
 	return (val->intval < 0) ? val->intval : 0;
 }
@@ -233,9 +242,24 @@ static enum power_supply_property battery_props[] = {
 };
 
 #ifdef DRIVER_OWNS_PSY_STRUCT
+static void gb_batt_psy_release(struct device *dev)
+{
+	struct power_supply *psy = dev_get_drvdata(dev);
+	struct gb_battery *gb;
+
+	if (!psy)
+		return;
+
+	gb = to_gb_battery(psy);
+	kfree(gb);
+	kfree(dev);
+}
+
 static int init_and_register(struct gb_connection *connection,
 			     struct gb_battery *gb)
 {
+	int ret;
+
 	// FIXME - get a better (i.e. unique) name
 	// FIXME - anything else needs to be set?
 	gb->bat.name		= "gb_battery";
@@ -244,7 +268,12 @@ static int init_and_register(struct gb_connection *connection,
 	gb->bat.num_properties	= ARRAY_SIZE(battery_props);
 	gb->bat.get_property	= get_property;
 
-	return power_supply_register(&connection->bundle->dev, &gb->bat);
+	ret = power_supply_register(&connection->bundle->dev, &gb->bat);
+
+	if (!ret)
+		gb->bat.dev->release = gb_batt_psy_release;
+
+	return ret;
 }
 #else
 static int init_and_register(struct gb_connection *connection,
@@ -283,6 +312,8 @@ static int gb_battery_connection_init(struct gb_connection *connection)
 	gb->connection = connection;
 	connection->private = gb;
 
+	mutex_init(&gb->conn_lock);
+
 	retval = init_and_register(connection, gb);
 	if (retval)
 		kfree(gb);
@@ -296,10 +327,13 @@ static void gb_battery_connection_exit(struct gb_connection *connection)
 
 #ifdef DRIVER_OWNS_PSY_STRUCT
 	power_supply_unregister(&gb->bat);
+	mutex_lock(&gb->conn_lock);
+	gb->connection = NULL;
+	mutex_unlock(&gb->conn_lock);
 #else
 	power_supply_unregister(gb->bat);
-#endif
 	kfree(gb);
+#endif
 }
 
 static struct gb_protocol battery_protocol = {
