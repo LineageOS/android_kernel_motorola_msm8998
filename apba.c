@@ -36,7 +36,7 @@
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
 
-#define MAX_PARTITION_NAME (sizeof(((struct mtd_info *)NULL)->name))
+#define MAX_PARTITION_NAME (16)
 
 #define FFFF_EXT (".ffff")
 #define BIN_EXT  (".bin")
@@ -264,17 +264,22 @@ static ssize_t erase_partition_store(struct device *dev,
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
-	char partition[MAX_PARTITION_NAME];
+	char partition[MAX_PARTITION_NAME + 1];
+	size_t partition_name_sz;
 	int err;
 
-	if (count && buf[count - 1] == '\n')
-		count--;
+	partition_name_sz = count;
+	if (partition_name_sz && buf[partition_name_sz - 1] == '\n')
+		partition_name_sz--;
 
-	if (!count || (count >= sizeof(partition)))
+	if (!partition_name_sz || (partition_name_sz >= sizeof(partition))) {
+		pr_err("%s: partition name too large %s\n",
+			__func__, buf);
 		return -EINVAL;
+	}
 
-	memcpy(partition, buf, count);
-	partition[count] = 0;
+	memcpy(partition, buf, partition_name_sz);
+	partition[partition_name_sz] = 0;
 	pr_debug("%s: partition=%s\n", __func__, partition);
 
 	err = apba_erase_partition(ctrl, partition);
@@ -375,21 +380,29 @@ static ssize_t flash_partition_store(struct device *dev,
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
-	char partition[MAX_PARTITION_NAME];
+	char partition[MAX_PARTITION_NAME + 1];
+	size_t partition_name_sz;
 	/* Null-termination accounted for in *_EXT macros. */
 	char fw_name[MAX_PARTITION_NAME + max(sizeof(FFFF_EXT), sizeof(BIN_EXT))];
 	const struct firmware *fw = NULL;
 	int err;
 
-	if (count && buf[count - 1] == '\n')
-		count--;
+	partition_name_sz = count;
+	if (partition_name_sz && buf[partition_name_sz - 1] == '\n')
+		partition_name_sz--;
 
-	if (!count || (count >= sizeof(partition)))
+	if (!partition_name_sz || (partition_name_sz >= sizeof(partition))) {
+		pr_err("%s: partition name too large %s\n",
+			__func__, buf);
 		return -EINVAL;
+	}
 
 	/* Try .ffff extension first. */
-        memcpy(fw_name, buf, count);
-	memcpy(fw_name + count, FFFF_EXT, sizeof(FFFF_EXT));
+	memcpy(fw_name, buf, partition_name_sz);
+	memcpy(fw_name + partition_name_sz, FFFF_EXT, sizeof(FFFF_EXT));
+
+	memcpy(partition, buf, partition_name_sz);
+	partition[partition_name_sz] = 0;
 
 	err = request_firmware(&fw, fw_name, ctrl->dev);
 	if (err < 0) {
@@ -397,7 +410,7 @@ static ssize_t flash_partition_store(struct device *dev,
 			__func__, partition, err);
 
 		/* Fallback and try .bin extension. */
-		memcpy(fw_name + count, BIN_EXT, sizeof(BIN_EXT));
+		memcpy(fw_name + partition_name_sz, BIN_EXT, sizeof(BIN_EXT));
 		err = request_firmware(&fw, fw_name, ctrl->dev);
 	}
 
@@ -413,8 +426,6 @@ static ssize_t flash_partition_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	memcpy(partition, buf, count);
-	partition[count] = 0;
 	pr_debug("%s: partition=%s, fw=%s, size=%zu\n",
 		__func__, partition, fw_name, fw->size);
 
