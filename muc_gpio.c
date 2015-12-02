@@ -83,7 +83,7 @@ static void muc_seq(struct muc_data *cdata, u32 seq[], size_t seq_len)
 
 		/* Delay (if valid). */
 		if (delay) {
-			usleep_range(delay * 1000, delay * 1000);
+			msleep(delay);
 			pr_debug("%s:%d: delay=%lu\n",
 				__func__, __LINE__, delay);
 		}
@@ -123,8 +123,7 @@ static irqreturn_t muc_isr(int irq, void *data)
 	struct muc_data *cdata = data;
 
 	if (cdata->det_hysteresis) {
-		usleep_range(cdata->det_hysteresis * 1000,
-					cdata->det_hysteresis * 1000);
+		msleep(cdata->det_hysteresis);
 		pr_debug("%s:%d: det_hysteresis=%u\n",
 			__func__, __LINE__, cdata->det_hysteresis);
 	}
