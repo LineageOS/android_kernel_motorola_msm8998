@@ -1632,7 +1632,7 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 	dev_info(dev, "[%d] Firmware flashing complete; resetting\n",
 		orig_dev->intf_id);
 
-	muc_reset();
+	muc_simulate_reset();
 
 	return 0;
 }
@@ -1836,7 +1836,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	mutex_unlock(&svc_list_lock);
 
 	/* Reset the muc, to trigger the tear-down and re-init */
-	muc_reset();
+	muc_simulate_reset();
 
 	return 0;
 }

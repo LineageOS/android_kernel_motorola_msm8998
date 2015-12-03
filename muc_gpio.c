@@ -254,6 +254,9 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 {
 	int ret;
 
+	/* WQ for 'fake' reset sequence where we can't detect the
+	 * actual reset on the detection line.
+	 */
 	cdata->wq = alloc_workqueue("muc_reset", WQ_UNBOUND, 1);
 	if (!cdata->wq) {
 		dev_err(dev, "Failed to create reset workqueue\n");
@@ -317,21 +320,22 @@ struct muc_reset_work {
 	struct work_struct work;
 };
 
+/* The simulated reset is performed in cases where we've asked
+ * the mod to reset itself and we do not have capability to detect
+ * that reset on the CC pin. We send out a detach, wait for 4s,
+ * then send out an attach. This is a wait-and-pray for older
+ * hardware.
+ */
 static void muc_reset_do_work(struct work_struct *work)
 {
 	muc_attach_notifier_call_chain(0);
-	/* XXX suSleep revived. Early mods won't have a way to detect
-	 * a reset. So we just sleep for now. This shall be replaced
-	 * with a completion mechanism and tie into the 'removal'
-	 * interrupt.... or more than likely live forever in here.
-	 */
 	msleep(4000);
 	muc_attach_notifier_call_chain(1);
 
 	kfree(work);
 }
 
-void muc_reset(void)
+void muc_simulate_reset(void)
 {
 	struct muc_reset_work *reset;
 
