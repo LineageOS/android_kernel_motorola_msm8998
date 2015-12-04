@@ -29,7 +29,8 @@ struct mods_codec_dai {
 	struct snd_pcm_substream *substream;
 	struct snd_soc_codec *codec;
 	uint32_t vol_step;
-	uint8_t use_case;
+	uint32_t playback_use_case;
+	uint32_t capture_use_case;
 	int sys_vol_step;
 	struct gb_aud_devices enabled_devices;
 };
@@ -61,15 +62,26 @@ static int mods_codec_get_in_enabled_devices(struct snd_kcontrol *kcontrol,
 static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol);
 
-static const char *const mods_use_case[] = {
+static const char *const mods_playback_use_case[] = {
 	"None",
 	"Music",
 	"Voice",
-	"Low Latency",
+	"Ringtone",
+	"Sonifications"
+};
+
+static const char *const mods_capture_use_case[] = {
+	"Default",
+	"Voice",
+	"Raw",
+	"Camcorder",
 };
 
 static const struct soc_enum mods_codec_enum[] = {
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(mods_use_case), mods_use_case),
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(mods_playback_use_case),
+						mods_playback_use_case),
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(mods_capture_use_case),
+						mods_capture_use_case),
 };
 
 static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
@@ -78,7 +90,10 @@ static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
 	SOC_SINGLE_EXT_TLV("Mods Codec System Volume", SND_SOC_NOPM,
 			0, 0xff, 0, mods_codec_get_sys_vol, mods_codec_set_sys_vol,
 				mods_sys_tlv_0_5),
-	SOC_ENUM_EXT("Mods Set Use Case", mods_codec_enum[0],
+	SOC_ENUM_EXT("Mods Set Playback Use Case", mods_codec_enum[0],
+				mods_codec_get_usecase,
+				mods_codec_set_usecase),
+	SOC_ENUM_EXT("Mods Set Capture Use Case", mods_codec_enum[1],
 				mods_codec_get_usecase,
 				mods_codec_set_usecase),
 	SOC_SINGLE_EXT("Mods Enable Output Devices", SND_SOC_NOPM,
@@ -155,7 +170,11 @@ static int mods_codec_get_usecase(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 
-	ucontrol->value.integer.value[0] = priv->use_case;
+	if (!strncmp(kcontrol->id.name, "Mods Set Playback Use Case",
+				strlen(kcontrol->id.name)))
+		ucontrol->value.integer.value[0] = priv->playback_use_case;
+	else
+		ucontrol->value.integer.value[0] = priv->capture_use_case;
 
 	return 0;
 }
@@ -166,7 +185,7 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	uint8_t use_case = ucontrol->value.integer.value[0];
+	uint32_t use_case = ucontrol->value.integer.value[0];
 	int ret;
 
 	mutex_lock(&gb_codec->lock);
@@ -176,8 +195,10 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
-	if (gb_codec->use_cases->use_cases & BIT(use_case)) {
-		ret = gb_mods_aud_set_supported_usecase(
+
+	if (!strncmp(kcontrol->id.name, "Mods Set Playback Use Case",
+				strlen(kcontrol->id.name))) {
+		ret = gb_mods_aud_set_playback_usecase(
 					gb_codec->mods_aud_connection,
 					BIT(use_case));
 		if (ret) {
@@ -185,8 +206,19 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 			mutex_unlock(&gb_codec->lock);
 			return -EIO;
 		}
-		priv->use_case = use_case;
+		priv->playback_use_case = use_case;
+	} else {
+		ret = gb_mods_aud_set_capture_usecase(
+				gb_codec->mods_aud_connection,
+				BIT(use_case));
+		if (ret) {
+			pr_err("%s: failed to set mods codec use case\n", __func__);
+			mutex_unlock(&gb_codec->lock);
+			return -EIO;
+		}
+		priv->capture_use_case = use_case;
 	}
+
 	mutex_unlock(&gb_codec->lock);
 	return 0;
 }
@@ -519,8 +551,8 @@ static ssize_t mods_codec_devices_show(struct device *dev,
 			__func__, codec->aud_devices->devices.out_devices);
 	count = scnprintf(buf, PAGE_SIZE,
 				"mods_codec_in_devices=%d;mods_codec_out_devices=%d\n",
-				codec->aud_devices->devices.in_devices,
-				codec->aud_devices->devices.out_devices);
+			le32_to_cpu(codec->aud_devices->devices.in_devices),
+			le32_to_cpu(codec->aud_devices->devices.out_devices));
 	mutex_unlock(&codec->lock);
 
 	return count;
@@ -528,8 +560,36 @@ static ssize_t mods_codec_devices_show(struct device *dev,
 
 static DEVICE_ATTR_RO(mods_codec_devices);
 
+static ssize_t mods_codec_usecases_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t count;
+	struct gb_snd_codec *codec;
+	struct mods_codec_dai *priv = dev_get_drvdata(dev);
+
+	codec = priv->snd_codec;
+	mutex_lock(&codec->lock);
+	if (!mods_codec_check_connection(codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&codec->lock);
+		return 0;
+	}
+	count = scnprintf(buf, PAGE_SIZE,
+			"mods_codec_playback_usecases=%d;mods_codec_capture_usecases=%d\n",
+			le32_to_cpu(codec->use_cases->aud_use_cases.playback_usecases),
+			le32_to_cpu(codec->use_cases->aud_use_cases.capture_usecases));
+	mutex_unlock(&codec->lock);
+
+	return count;
+}
+
+static DEVICE_ATTR_RO(mods_codec_usecases);
+
 static struct attribute *mods_codec_attrs[] = {
 	&dev_attr_mods_codec_devices.attr,
+	&dev_attr_mods_codec_usecases.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mods_codec);

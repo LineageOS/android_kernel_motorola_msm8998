@@ -248,14 +248,25 @@ int gb_mods_aud_set_sys_vol(struct gb_connection *connection,
 
 }
 
-int gb_mods_aud_set_supported_usecase(struct gb_connection *connection,
-			uint8_t usecase)
+int gb_mods_aud_set_playback_usecase(struct gb_connection *connection,
+			uint32_t usecase)
 {
 	struct gb_audio_set_use_case_request request;
 
-	request.use_case = usecase;
+	request.use_case = cpu_to_le32(usecase);
 
-	return gb_operation_sync(connection, GB_AUDIO_SET_USE_CASE,
+	return gb_operation_sync(connection, GB_AUDIO_SET_PLAYBACK_USE_CASE,
+				 &request, sizeof(request), NULL, 0);
+}
+
+int gb_mods_aud_set_capture_usecase(struct gb_connection *connection,
+			uint32_t usecase)
+{
+	struct gb_audio_set_use_case_request request;
+
+	request.use_case = cpu_to_le32(usecase);
+
+	return gb_operation_sync(connection, GB_AUDIO_SET_CAPTURE_USE_CASE,
 				 &request, sizeof(request), NULL, 0);
 }
 

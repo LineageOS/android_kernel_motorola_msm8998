@@ -122,8 +122,10 @@ int gb_mods_aud_set_vol(struct gb_connection *connection,
 			uint32_t vol_step);
 int gb_mods_aud_set_sys_vol(struct gb_connection *connection,
 			int vol_db);
-int gb_mods_aud_set_supported_usecase(struct gb_connection *connection,
-			uint8_t usecase);
+int gb_mods_aud_set_playback_usecase(struct gb_connection *connection,
+			uint32_t usecase);
+int gb_mods_aud_set_capture_usecase(struct gb_connection *connection,
+			uint32_t usecase);
 int gb_mods_aud_enable_devices(struct gb_connection *connection,
 			uint32_t in_devices, uint32_t out_devices);
 int gb_mods_aud_get_devices(
