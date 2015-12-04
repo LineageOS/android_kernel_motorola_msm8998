@@ -50,6 +50,7 @@ static int muc_probe(struct platform_device *pdev)
 		goto err_intr_init;
 	}
 
+	ps_muc->dev = dev;
 	dev_info(dev, "probed finished");
 
 	return 0;
