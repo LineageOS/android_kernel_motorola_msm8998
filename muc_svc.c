@@ -1081,6 +1081,8 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 		hotplug->data.ara_prod_id);
 	dev_info(&dd->pdev->dev, "[%d] MOD SERIAL: %016llX%016llX\n",
 		mods_dev->intf_id, mods_dev->uid_high, mods_dev->uid_low);
+	dev_info(&dd->pdev->dev, "[%d] MOD FW_VER: 0x%08X\n",
+		mods_dev->intf_id, mods_dev->fw_version);
 
 	mods_dev->slave_mask = le32_to_cpu(ids->slave_mask);
 	muc_svc_broadcast_slave_present(mods_dev);
