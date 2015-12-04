@@ -25,6 +25,7 @@
 #include "muc.h"
 
 static BLOCKING_NOTIFIER_HEAD(muc_attach_chain_head);
+static void muc_reset_do_work(struct work_struct *work);
 
 static int muc_attach_notifier_call_chain(unsigned long val)
 {
@@ -313,6 +314,7 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 	/* WQ for 'fake' reset sequence where we can't detect the
 	 * actual reset on the detection line.
 	 */
+	INIT_WORK(&cdata->reset_work, muc_reset_do_work);
 	cdata->wq = alloc_workqueue("muc_reset", WQ_UNBOUND, 1);
 	if (!cdata->wq) {
 		dev_err(dev, "Failed to create reset workqueue\n");
@@ -381,12 +383,9 @@ void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 	cancel_delayed_work_sync(&cdata->attach_work);
 	destroy_workqueue(cdata->attach_wq);
+	cancel_work_sync(&cdata->reset_work);
 	destroy_workqueue(cdata->wq);
 }
-
-struct muc_reset_work {
-	struct work_struct work;
-};
 
 /* The simulated reset is performed in cases where we've asked
  * the mod to reset itself and we do not have capability to detect
@@ -396,21 +395,28 @@ struct muc_reset_work {
  */
 static void muc_reset_do_work(struct work_struct *work)
 {
-	muc_attach_notifier_call_chain(0);
-	msleep(4000);
-	muc_attach_notifier_call_chain(1);
+	disable_irq_wake(muc_misc_data->irq);
+	disable_irq(muc_misc_data->irq);
 
-	kfree(work);
+	/* Cancel any pending work and reset the detection states */
+	cancel_delayed_work_sync(&muc_misc_data->attach_work);
+	muc_misc_data->force_removal = false;
+	muc_misc_data->muc_detected = false;
+
+	muc_attach_notifier_call_chain(0);
+
+	msleep(4000);
+
+	queue_delayed_work(muc_misc_data->attach_wq,
+				&muc_misc_data->attach_work, 0);
+
+	enable_irq(muc_misc_data->irq);
+	enable_irq_wake(muc_misc_data->irq);
 }
 
 void muc_simulate_reset(void)
 {
-	struct muc_reset_work *reset;
+	queue_work(muc_misc_data->wq, &muc_misc_data->reset_work);
 
-	reset = kmalloc(sizeof(*reset), GFP_KERNEL);
-	if (!reset)
-		return;
 
-	INIT_WORK(&reset->work, muc_reset_do_work);
-	queue_work(muc_misc_data->wq, &reset->work);
 }

@@ -35,6 +35,7 @@ struct muc_data {
 
 	/* Reset workqueue */
 	struct workqueue_struct *wq;
+	struct work_struct reset_work;
 
 	/* Attach workqueue / delayed work */
 	struct workqueue_struct *attach_wq;
