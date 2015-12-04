@@ -87,6 +87,8 @@ static int download_firmware(struct gb_firmware *firmware, u8 stage)
 		 intf->unipro_mfg_id, intf->unipro_prod_id,
 		 firmware->vendor_id, firmware->product_id, stage);
 
+	dev_info(&connection->bundle->dev, "requesting %s\n", firmware_name);
+
 	return request_firmware(&firmware->fw, firmware_name,
 				&connection->bundle->dev);
 }
