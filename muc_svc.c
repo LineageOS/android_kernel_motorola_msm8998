@@ -1155,8 +1155,8 @@ static void muc_svc_attach_work(struct work_struct *work)
 	svc_gb_msg_free(msg);
 }
 
-static int
-muc_svc_control_version(struct mods_dl_device *mods_dev, uint16_t cport)
+static int muc_svc_control_version(struct mods_dl_device *mods_dev, u8 type,
+					uint16_t cport, u8 *major, u8 *minor)
 {
 	struct gb_protocol_version_response *ver;
 	struct gb_message *msg;
@@ -1169,8 +1169,7 @@ muc_svc_control_version(struct mods_dl_device *mods_dev, uint16_t cport)
 	ver->minor = GB_CONTROL_VERSION_MINOR;
 
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)ver,
-				GB_REQUEST_TYPE_PROTOCOL_VERSION,
-				sizeof(*ver), cport);
+				type, sizeof(*ver), cport);
 	if (IS_ERR(msg)) {
 		kfree(ver);
 		return PTR_ERR(msg);
@@ -1179,12 +1178,11 @@ muc_svc_control_version(struct mods_dl_device *mods_dev, uint16_t cport)
 	kfree(ver);
 	ver = msg->payload;
 
-	/* XXX Check Control protocol when differences */
 	dev_dbg(&svc_dd->pdev->dev, "[%d] CONTROL VERSION: %hhu.%hhu\n",
 		cport, ver->major, ver->minor);
 
-	mods_dev->ctrl_major = ver->major;
-	mods_dev->ctrl_minor = ver->minor;
+	*major = ver->major;
+	*minor = ver->minor;
 
 	svc_gb_msg_free(msg);
 
@@ -1197,9 +1195,12 @@ muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 	struct gb_control_get_manifest_size_response *size_resp;
 	struct device *dev = &svc_dd->pdev->dev;
 	struct gb_message *msg;
+	u8 type = GB_REQUEST_TYPE_PROTOCOL_VERSION;
 	int err;
 
-	err = muc_svc_control_version(mods_dev, out_cport);
+	err = muc_svc_control_version(mods_dev, type, out_cport,
+					&mods_dev->gb_ctrl_major,
+					&mods_dev->gb_ctrl_minor);
 	if (err) {
 		dev_err(dev, "[%d] Failed VERSION on CONTROL\n",
 			mods_dev->intf_id);
@@ -1284,6 +1285,15 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 			mods_dev->intf_id);
 		goto free_hpw;
 	}
+
+	/* Get/Negotiate MB Control Protocol Version */
+	ret = muc_svc_control_version(mods_dev,
+				MB_CONTROL_TYPE_PROTOCOL_VERSION,
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+				&mods_dev->mb_ctrl_major,
+				&mods_dev->mb_ctrl_minor);
+	if (ret)
+		goto free_route;
 
 	/* Get the hotplug IDs */
 	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug, mods_dev);
@@ -1557,8 +1567,8 @@ svc_filter_ap_control_ver(struct mods_dl_device *orig_dev,
 
 	msg.header = (struct gb_operation_msg_hdr *)mm->gb_msg;
 
-	resp.major = orig_dev->ctrl_major;
-	resp.minor = orig_dev->ctrl_minor;
+	resp.major = orig_dev->gb_ctrl_major;
+	resp.minor = orig_dev->gb_ctrl_minor;
 
 	ret = svc_gb_send_response(orig_dev, le16_to_cpu(mm->hdr.cport), &msg,
 					sizeof(resp), &resp, GB_OP_SUCCESS);

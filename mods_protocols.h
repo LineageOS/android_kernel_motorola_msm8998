@@ -85,6 +85,12 @@
 #define MB_CONTROL_SLAVE_POWER_OFF            0x02
 #define MB_CONTROL_SLAVE_POWER_FLASH_MODE     0x03
 
+/* Version Support Macros */
+#define MB_CONTROL_SUPPORTS(mods_dev, name) \
+	((mods_dev->mb_ctrl_major > MB_CONTROL_SUPPORT_##name##_MAJOR) || \
+	 (mods_dev->mb_ctrl_major == MB_CONTROL_SUPPORT_##name##_MAJOR && \
+	  mods_dev->mb_ctrl_minor >= MB_CONTROL_SUPPORT_##name##_MINOR))
+
 /* Control protocol reboot request */
 struct mb_control_reboot_request {
 	__u8      mode;
