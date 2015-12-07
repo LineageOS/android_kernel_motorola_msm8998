@@ -202,7 +202,7 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 	dev_dbg(dev, "%s:%d irq: gpio=%d irq=%d\n",
 		__func__, __LINE__, gpio, cdata->irq);
 
-	ret = request_threaded_irq(cdata->irq, NULL /* handler */, muc_isr,
+	ret = devm_request_threaded_irq(dev, cdata->irq, NULL, muc_isr,
 				   flags, "muc_ctrl", cdata);
 	if (ret) {
 		dev_err(dev, "%s:%d irq request failed: %d\n",
@@ -218,7 +218,6 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
 {
 	disable_irq_wake(cdata->irq);
-	free_irq(cdata->irq, cdata);
 }
 
 static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
@@ -355,6 +354,25 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 		cdata->dis_seq_len = 0;
 	}
 
+	/* Force Flash Sequences (mod core dependent) */
+	cdata->ff_seq_v1_len = ARRAY_SIZE(cdata->ff_seq_v1);
+	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-ff-seq-v1",
+		cdata->ff_seq_v1, &cdata->ff_seq_v1_len);
+	if (ret) {
+		dev_warn(dev, "%s:%d no ff sequence (v1)\n",
+			__func__, __LINE__);
+		cdata->ff_seq_v1_len = 0;
+	}
+
+	cdata->ff_seq_v2_len = ARRAY_SIZE(cdata->ff_seq_v2);
+	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-ff-seq-v2",
+		cdata->ff_seq_v2, &cdata->ff_seq_v2_len);
+	if (ret) {
+		dev_warn(dev, "%s:%d no ff sequence (v2)\n",
+			__func__, __LINE__);
+		cdata->ff_seq_v2_len = 0;
+	}
+
 	ret = of_property_read_u32(dev->of_node,
 		"mmi,muc-ctrl-det-hysteresis", &cdata->det_hysteresis);
 	if (ret) {
@@ -417,6 +435,62 @@ static void muc_reset_do_work(struct work_struct *work)
 void muc_simulate_reset(void)
 {
 	queue_work(muc_misc_data->wq, &muc_misc_data->reset_work);
-
-
 }
+
+static void __muc_ff_reset(u8 root_ver, bool reset)
+{
+	struct muc_data *cd = muc_misc_data;
+	unsigned int flags;
+	int ret;
+
+	/* Take control of BPLUS, ignoring interrupts until done */
+	cd->bplus_state = MUC_BPLUS_ENABLING;
+
+	/* In order to provide reset / force flash, need to control the CC pin,
+	 * which means free/disable the IRQ, and set as an output low.
+	 */
+	disable_irq_wake(cd->irq);
+	disable_irq(cd->irq);
+	devm_free_irq(cd->dev, cd->irq, cd);
+	gpio_direction_output(cd->gpios[MUC_GPIO_DET_N], 0);
+
+	/* Perform force flash sequence */
+	if (root_ver <= MUC_ROOT_V1)
+		muc_seq(cd, cd->ff_seq_v1, cd->ff_seq_v1_len);
+	else
+		muc_seq(cd, cd->ff_seq_v2, cd->ff_seq_v2_len);
+
+
+	gpio_direction_input(cd->gpios[MUC_GPIO_DET_N]);
+
+	/* Re-setup the IRQ */
+	flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
+	ret = devm_request_threaded_irq(cd->dev, cd->irq, NULL, muc_isr,
+				   flags, "muc_ctrl", cd);
+	if (ret) {
+		pr_err("%s: Failed re-request IRQ!\n", __func__);
+		BUG();
+	}
+	enable_irq_wake(cd->irq);
+
+	/* Reset from FF simply does the disable sequence */
+	if (reset) {
+		muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
+		cd->bplus_state = MUC_BPLUS_DISABLED;
+	} else
+		cd->bplus_state = MUC_BPLUS_ENABLED;
+
+	cd->force_removal = true;
+	queue_delayed_work(cd->attach_wq, &cd->attach_work, 0);
+}
+
+void muc_force_flash(u8 root_ver)
+{
+	__muc_ff_reset(root_ver, false);
+}
+
+void muc_hard_reset(u8 root_ver)
+{
+	__muc_ff_reset(root_ver, true);
+}
+
