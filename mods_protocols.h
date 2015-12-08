@@ -61,7 +61,7 @@
 
 /* Version of the Greybus control protocol we support */
 #define MB_CONTROL_VERSION_MAJOR              0x00
-#define MB_CONTROL_VERSION_MINOR              0x01
+#define MB_CONTROL_VERSION_MINOR              0x02
 
 /* Greybus control request types */
 #define MB_CONTROL_TYPE_INVALID               0x00
@@ -71,6 +71,7 @@
 #define MB_CONTROL_TYPE_PORT_CONNECTED        0x04
 #define MB_CONTROL_TYPE_PORT_DISCONNECTED     0x05
 #define MB_CONTROL_TYPE_SLAVE_POWER           0x06
+#define MB_CONTROL_TYPE_GET_ROOT_VER          0x07
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -84,6 +85,13 @@
 #define MB_CONTROL_SLAVE_POWER_ON             0x01
 #define MB_CONTROL_SLAVE_POWER_OFF            0x02
 #define MB_CONTROL_SLAVE_POWER_FLASH_MODE     0x03
+
+/* Reserved Values for core version, all others are versions */
+#define MB_CONTROL_ROOT_VER_INVALID           0x00
+#define MB_CONTROL_ROOT_VER_NOT_APPLICABLE    0xff
+
+#define MB_CONTROL_SUPPORT_GET_ROOT_VER_MAJOR         0x00
+#define MB_CONTROL_SUPPORT_GET_ROOT_VER_MINOR         0x02
 
 /* Version Support Macros */
 #define MB_CONTROL_SUPPORTS(mods_dev, name) \
@@ -125,6 +133,11 @@ struct mb_svc_slave_power_ctrl {
 	__u8      mode;
 } __packed;
 /* Control protocol slave power response */
+
+/* Control protocol get core version response */
+struct mb_control_root_ver_response {
+	__u8      version;
+} __packed;
 
 #endif /* __MODS_PROTOCOLS_H */
 

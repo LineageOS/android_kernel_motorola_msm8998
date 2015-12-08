@@ -24,6 +24,7 @@
 
 #include "mods_protocols.h"
 #include "muc.h"
+#include "muc_attach.h"
 #include "muc_svc.h"
 #include "mods_nw.h"
 
@@ -40,6 +41,10 @@ struct muc_svc_data {
 
 	bool authenticate;
 	u16 endo_mask;
+
+	struct notifier_block attach_nb;
+
+	u8 mod_root_ver;
 };
 struct muc_svc_data *svc_dd;
 
@@ -67,6 +72,16 @@ struct muc_svc_hotplug_work {
 	container_of(k, struct mods_dl_device, intf_kobj)
 
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
+
+static int
+muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
+{
+	if (!state)
+		svc_dd->mod_root_ver = MB_CONTROL_ROOT_VER_INVALID;
+
+	return 0;
+}
+
 
 static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 				struct bin_attribute *attr, char *buf,
@@ -1098,6 +1113,46 @@ free_gb_msg:
 	return ret;
 }
 
+static int muc_svc_get_root_version(struct mods_dl_device *dld,
+					struct mods_dl_device *mods_dev)
+{
+	struct mb_control_root_ver_response *ver;
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct gb_message *msg;
+	int ret = 0;
+
+	/* GET_ROOT_VER has no payload */
+	msg = svc_gb_msg_send_sync(dld, NULL, MB_CONTROL_TYPE_GET_ROOT_VER,
+				0, SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
+	if (IS_ERR(msg)) {
+		dev_warn(&dd->pdev->dev, "[%d] Failed to get GET_ROOT_VER\n",
+			mods_dev->intf_id);
+		return PTR_ERR(msg);
+	}
+
+	ver = msg->payload;
+
+	/* This interface does not report core version */
+	if (ver->version == MB_CONTROL_ROOT_VER_NOT_APPLICABLE)
+		goto free_msg;
+
+	if (dd->mod_root_ver == MB_CONTROL_ROOT_VER_INVALID) {
+		dd->mod_root_ver = ver->version;
+		dev_info(&dd->pdev->dev, "[%d] ROOT_VER: %d\n",
+				mods_dev->intf_id, ver->version);
+	} else if (dd->mod_root_ver != ver->version) {
+		dev_err(&dd->pdev->dev,
+			"[%d] Got ROOT_VER: %d but already had: %d\n",
+			mods_dev->intf_id, ver->version, dd->mod_root_ver);
+		ret = -EINVAL;
+	}
+
+free_msg:
+	svc_gb_msg_free(msg);
+
+	return ret;
+}
+
 static int muc_svc_create_control_route(u8 intf_id, u16 src, u16 dest)
 {
 	int ret;
@@ -1301,6 +1356,13 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 		goto free_route;
 
 	hpw->hotplug.intf_id = mods_dev->intf_id;
+
+	/* Get the hardware's core version if protocol reported support */
+	if (MB_CONTROL_SUPPORTS(mods_dev, GET_ROOT_VER)) {
+		ret = muc_svc_get_root_version(svc_dd->dld, mods_dev);
+		if (ret)
+			goto free_route;
+	}
 
 	ret = muc_svc_get_manifest(mods_dev, mods_dev->intf_id);
 	if (ret)
@@ -1965,6 +2027,9 @@ static int muc_svc_probe(struct platform_device *pdev)
 
 	svc_dd = dd;
 
+	dd->attach_nb.notifier_call = muc_svc_attach;
+	register_muc_attach_notifier(&dd->attach_nb);
+
 	/* XXX Let's re-notify user space the device is added... since the
 	 * OF framework will create our platform device during parsing,
 	 * userspace won't be able to know new sysfs entries have been
@@ -1988,6 +2053,7 @@ static int muc_svc_remove(struct platform_device *pdev)
 {
 	struct muc_svc_data *dd = platform_get_drvdata(pdev);
 
+	unregister_muc_attach_notifier(&dd->attach_nb);
 	muc_svc_remove_ap_filters(dd);
 	muc_svc_base_sysfs_exit(dd);
 	destroy_workqueue(dd->wq);
