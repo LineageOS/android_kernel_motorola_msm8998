@@ -1704,7 +1704,8 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 	dev_info(dev, "[%d] Firmware flashing complete; resetting\n",
 		orig_dev->intf_id);
 
-	muc_simulate_reset();
+	/* Force a reboot */
+	muc_reset(svc_dd->mod_root_ver, false);
 
 	return 0;
 }
@@ -1898,9 +1899,12 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	list_for_each_entry(mods_dev, &dd->ext_intf, list) {
 		muc_svc_generate_unplug(mods_dev);
 
-		/* XXX What to do if a single interface fails? Clear the
-		 * other ones?
+		/* Only do software reboot for hardware that can't
+		 * support force flash via hardware.
 		 */
+		if (muc_can_force_flash(svc_dd->mod_root_ver))
+			continue;
+
 		if (muc_svc_send_reboot(mods_dev, mode))
 			dev_warn(dev, "INTF: %d, failed to enter flashmode\n",
 				mods_dev->intf_id);
@@ -1908,7 +1912,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	mutex_unlock(&svc_list_lock);
 
 	/* Reset the muc, to trigger the tear-down and re-init */
-	muc_simulate_reset();
+	muc_reset(svc_dd->mod_root_ver, true);
 
 	return 0;
 }
