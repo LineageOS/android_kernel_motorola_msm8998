@@ -33,7 +33,13 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <media/v4l2-ioctl.h>
+#include <uapi/video/v4l2_camera_ext_ctrls.h>
 #include "camera_ext.h"
+
+#define CAM_EXT_CTRL_NUM_HINT 100
+
+#define CAM_DEV_FROM_V4L2_CTRL(ctrl) \
+	container_of(ctrl->handler, struct camera_ext, hdl_ctrls)
 
 struct camera_ext_v4l2 {
 	struct regulator *cdsi_reg;
@@ -231,18 +237,102 @@ static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
 	.release = mod_v4l2_close,
 };
 
-int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev, struct device *gb_dev)
+static int mod_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct camera_ext *cam_dev = CAM_DEV_FROM_V4L2_CTRL(ctrl);
+	struct device *gb_dev = cam_dev->gb_dev;
+
+	return gb_camera_ext_g_volatile_ctrl(gb_dev, ctrl);
+}
+
+static int mod_s_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct camera_ext *cam_dev = CAM_DEV_FROM_V4L2_CTRL(ctrl);
+	struct device *gb_dev = cam_dev->gb_dev;
+
+	return gb_camera_ext_s_ctrl(gb_dev, ctrl);
+}
+
+static int mod_try_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct camera_ext *cam_dev = CAM_DEV_FROM_V4L2_CTRL(ctrl);
+	struct device *gb_dev = cam_dev->gb_dev;
+
+	return gb_camera_ext_try_ctrl(gb_dev, ctrl);
+}
+
+static const struct v4l2_ctrl_ops mod_ctrl_ops = {
+	.g_volatile_ctrl = mod_g_volatile_ctrl,
+	.s_ctrl = mod_s_ctrl,
+	.try_ctrl = mod_try_ctrl,
+};
+
+static int custom_ctrl_register(
+	struct camera_ext_predefined_ctrl_v4l2_cfg *mod_cfg, void *ctx)
+{
+	void *priv;
+	struct v4l2_ctrl *ctrl;
+	struct camera_ext *cam_dev = ctx;
+	int idx = mod_cfg->id - CID_CAM_EXT_CLASS_BASE;
+	struct v4l2_ctrl_config *cfg = camera_ext_get_ctrl_config(idx);
+
+	if (cfg == NULL)
+		return -EINVAL;
+
+	cfg->ops = &mod_ctrl_ops;
+	cfg->def = mod_cfg->def;
+	cfg->menu_skip_mask = mod_cfg->menu_mask;
+	priv = (void *)mod_cfg->idx;
+	ctrl = v4l2_ctrl_new_custom(&cam_dev->hdl_ctrls, cfg, priv);
+
+	if (ctrl == NULL) {
+		pr_err("register id 0x%x failed\n", mod_cfg->id);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static const struct v4l2_ctrl_config mod_ctrl_class = {
+	.flags = V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_WRITE_ONLY,
+	.id = MOD_CID_MOD_CLASS,
+	.name = "Mod controls",
+	.type = V4L2_CTRL_TYPE_CTRL_CLASS,
+};
+
+/* TODO: make this function asynchronously if it takes too long */
+int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 {
 	int retval;
+	struct device *gb_dev = cam_dev->gb_dev;
+
+	v4l2_ctrl_handler_init(&cam_dev->hdl_ctrls, CAM_EXT_CTRL_NUM_HINT);
+	v4l2_ctrl_new_custom(&cam_dev->hdl_ctrls, &mod_ctrl_class, NULL);
+
+	retval = gb_camera_ext_ctrl_process_all(gb_dev, custom_ctrl_register,
+			cam_dev);
+
+	if (retval != 0 || cam_dev->hdl_ctrls.error != 0) {
+		pr_err("%s: failed to process ctrl\n", __func__);
+		goto error_ctrl_process;
+	}
+
+	/* set default value to all none readonly controls */
+	retval = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
+
+	if (retval != 0) {
+		pr_err("failed to apply contrl default value\n");
+		goto error_ctrl_process;
+	}
 
 	snprintf(cam_dev->v4l2_dev.name, sizeof(cam_dev->v4l2_dev.name),
 				"%s", CAMERA_EXT_DEV_NAME);
 	retval = v4l2_device_register(NULL, &cam_dev->v4l2_dev);
 	if (retval) {
 		pr_err("failed to register v4l2 device\n");
-		return -ENODEV;
+		goto error_ctrl_process;
 	}
 
+	cam_dev->vdev_mod.ctrl_handler = &cam_dev->hdl_ctrls;
 	cam_dev->vdev_mod.v4l2_dev = &cam_dev->v4l2_dev;
 	cam_dev->vdev_mod.release = video_device_release;
 	cam_dev->vdev_mod.fops = &camera_ext_mod_v4l2_fops;
@@ -262,6 +352,8 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev, struct device *gb_dev)
 
 error_reg_vdev:
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
+error_ctrl_process:
+	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
 	return retval;
 }
 
@@ -269,6 +361,7 @@ void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev)
 {
 	video_unregister_device(&cam_dev->vdev_mod);
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
+	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
 }
 
 static int camera_ext_v4l2_probe(struct platform_device *pdev)
@@ -286,7 +379,7 @@ static int camera_ext_v4l2_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	data->cdsi_reg = devm_regulator_get(&pdev->dev, "camera_ext_cdsi");
-	if (IS_ERR(data->cdsi_reg))  {
+	if (IS_ERR(data->cdsi_reg)) {
 		dev_err(&pdev->dev, "%s: failed to get cdsi regulator.\n",
 			__func__);
 		return PTR_ERR(data->cdsi_reg);

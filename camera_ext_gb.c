@@ -33,6 +33,8 @@
 #include "greybus.h"
 #include "kernel_ver.h"
 
+#define MAX_CTRLS_SUPPORT 1000
+
 /* Version of the Greybus camera protocol we support */
 #define GB_CAMERA_EXT_VERSION_MAJOR 0x00
 #define GB_CAMERA_EXT_VERSION_MINOR 0x01
@@ -60,6 +62,16 @@
 
 #define GB_CAMERA_EXT_TYPE_STREAM_PARM_SET	0x0E
 #define GB_CAMERA_EXT_TYPE_STREAM_PARM_GET	0x0F
+
+#define GB_CAMERA_EXT_TYPE_CTRL_GET_CFG		0x10
+
+#define GB_CAMERA_EXT_TYPE_CTRL_GET		0x11
+#define GB_CAMERA_EXT_TYPE_CTRL_SET		0x12
+#define GB_CAMERA_EXT_TYPE_CTRL_TRY		0x13
+
+#define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_GET	0x14
+#define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_SET	0x15
+#define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_TRY	0x16
 
 #define dev_to_conn(dev) container_of(dev, struct gb_connection, dev)
 
@@ -373,6 +385,272 @@ int gb_camera_ext_stream_parm_get(struct device *dev,
 	return retval;
 }
 
+int gb_camera_ext_ctrl_process_all(struct device *dev,
+	int (*register_custom_mod_ctrl)(
+		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx),
+	void *ctx)
+{
+	int retval = 0;
+	__le32 le_idx;
+	uint32_t idx;
+	struct camera_ext_predefined_ctrl_mod_cfg mod_cfg;
+	struct camera_ext_predefined_ctrl_v4l2_cfg v4l2_cfg;
+
+	/* start from idx 0 */
+	idx = 0;
+	while (1) {
+		le_idx = cpu_to_le32(idx);
+		retval = gb_operation_sync(dev_to_conn(dev),
+				GB_CAMERA_EXT_TYPE_CTRL_GET_CFG,
+				&le_idx,
+				sizeof(le_idx),
+				&mod_cfg,
+				sizeof(mod_cfg));
+
+		if (retval != 0) {
+			/* enumeration is done */
+			retval = 0;
+			break;
+		}
+
+		v4l2_cfg.id = (le32_to_cpu(mod_cfg.id) & CAM_EXT_CTRL_ID_MASK);
+		v4l2_cfg.def = le64_to_cpu(mod_cfg.def);
+		v4l2_cfg.menu_mask = le64_to_cpu(mod_cfg.menu_mask);
+		v4l2_cfg.idx = idx;
+		retval = register_custom_mod_ctrl(&v4l2_cfg, ctx);
+
+		if (retval != 0)
+			break;
+
+		++idx;
+		/* in case a misbehave mod cause a deadloop here */
+		if (idx > MAX_CTRLS_SUPPORT) {
+			retval = -EINVAL;
+			break;
+		}
+	}
+
+	return retval;
+}
+
+/* called by get_ctrl */
+static int ctrl_val_mod_to_v4l2(
+	struct camera_ext_ctrl_val *mod_ctrl_val,
+	struct v4l2_ctrl *ctrl)
+{
+	int retval = 0;
+
+	switch (ctrl->type) {
+	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+		ctrl->cur.val = le32_to_cpu(mod_ctrl_val->val);
+		break;
+	case V4L2_CTRL_TYPE_INTEGER64:
+		*ctrl->p_cur.p_s64 = le64_to_cpu(mod_ctrl_val->val_64);
+		break;
+	default:
+		retval = -EINVAL;
+		pr_err("%s: error type %d\n", __func__, ctrl->type);
+		break;
+	}
+	return retval;
+}
+
+/* called by get_ctrl */
+static int ctrl_val_array_mod_to_v4l2(
+	struct camera_ext_ctrl_array_val *mod_ctrl_val,
+	struct v4l2_ctrl *ctrl)
+{
+	int retval = 0;
+	uint32_t i;
+	/* num of elements in the N-dim array */
+	uint32_t elems = ctrl->elems;
+
+	switch (ctrl->type) {
+	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 2)) {
+			pr_err("%s: control %d has size %d exceeds limit\n",
+				__func__, ctrl->id, elems);
+			return -EINVAL;
+		}
+		for (i = 0; i < elems; i++)
+			ctrl->p_cur.p_s32[i] =
+				le32_to_cpu(mod_ctrl_val->val[i]);
+		break;
+
+	case V4L2_CTRL_TYPE_INTEGER64:
+		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 3)) {
+			pr_err("%s: control %d has size %d exceeds limit\n",
+				__func__, ctrl->id, elems);
+			return -EINVAL;
+		}
+		for (i = 0; i < elems; i++)
+			ctrl->p_cur.p_s64[i] =
+				le64_to_cpu(mod_ctrl_val->val_64[i]);
+		break;
+
+	default:
+		pr_err("%s:error type %d\n", __func__, ctrl->type);
+		break;
+	}
+
+	return retval;
+}
+
+int gb_camera_ext_g_volatile_ctrl(struct device *dev,
+	struct v4l2_ctrl *ctrl)
+{
+	int retval = -EINVAL;
+	__le32 idx = cpu_to_le32((uint32_t)(unsigned long)ctrl->priv);
+
+	if (ctrl->is_array) {
+		struct camera_ext_ctrl_array_val mod_ctrl_val;
+
+		retval = gb_operation_sync(dev_to_conn(dev),
+				GB_CAMERA_EXT_TYPE_CTRL_ARRAY_GET,
+				&idx,
+				sizeof(idx),
+				&mod_ctrl_val,
+				sizeof(mod_ctrl_val));
+		if (retval == 0)
+			retval = ctrl_val_array_mod_to_v4l2(
+					&mod_ctrl_val, ctrl);
+
+	} else {
+		struct camera_ext_ctrl_val mod_ctrl_val;
+
+		retval = gb_operation_sync(dev_to_conn(dev),
+				GB_CAMERA_EXT_TYPE_CTRL_GET,
+				&idx,
+				sizeof(idx),
+				&mod_ctrl_val,
+				sizeof(mod_ctrl_val));
+		if (retval == 0)
+			retval = ctrl_val_mod_to_v4l2(&mod_ctrl_val, ctrl);
+	}
+
+	return retval;
+}
+
+/* called by set_ctrl */
+static int ctrl_val_v4l2_to_mod(struct v4l2_ctrl *ctrl,
+		struct camera_ext_ctrl_val *mod_ctrl_val)
+{
+	int retval = 0;
+
+	cam_ext_set_ctrl_val_idx(mod_ctrl_val,
+		cpu_to_le32((uint32_t)(unsigned long)ctrl->priv));
+	switch (ctrl->type) {
+	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+	case V4L2_CTRL_TYPE_BUTTON:
+	case V4L2_CTRL_TYPE_MENU:
+	case V4L2_CTRL_TYPE_INTEGER_MENU:
+		mod_ctrl_val->val = cpu_to_le32(ctrl->val);
+		break;
+
+	case V4L2_CTRL_TYPE_INTEGER64:
+		mod_ctrl_val->val_64 = cpu_to_le64(*ctrl->p_new.p_s64);
+		break;
+
+	default:
+		retval = -EINVAL;
+		pr_err("%s: error type %d\n", __func__, ctrl->type);
+		break;
+	}
+
+	return retval;
+}
+
+/* called by set_trl */
+static int ctrl_val_array_v4l2_to_mod(struct v4l2_ctrl *ctrl,
+		struct camera_ext_ctrl_array_val *mod_ctrl_val)
+{
+	int retval = 0;
+	uint32_t i;
+	uint32_t elems = ctrl->elems;
+
+	cam_ext_set_ctrl_val_idx(mod_ctrl_val,
+		cpu_to_le32((uint32_t)(unsigned long)ctrl->priv));
+	switch (ctrl->type) {
+	case V4L2_CTRL_TYPE_INTEGER:
+	case V4L2_CTRL_TYPE_BOOLEAN:
+		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 2)) {
+			pr_err("%s: control %d has size %d exceeds limit\n",
+				__func__, ctrl->id, elems);
+			return -EINVAL;
+		}
+		for (i = 0; i < elems; i++)
+			mod_ctrl_val->val[i] =
+				cpu_to_le32(ctrl->p_new.p_s32[i]);
+		break;
+
+	case V4L2_CTRL_TYPE_INTEGER64:
+		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 3)) {
+			pr_err("%s: control %d has size %d exceeds limit\n",
+				__func__, ctrl->id, elems);
+			return -EINVAL;
+		}
+		for (i = 0; i < elems; i++)
+			mod_ctrl_val->val_64[i] =
+				cpu_to_le64(ctrl->p_new.p_s64[i]);
+		break;
+
+	default:
+		pr_err("%s:error type %d\n", __func__, ctrl->type);
+		break;
+	}
+
+	return retval;
+}
+
+static int gb_camera_ext_s_or_try_ctrl(struct device *dev,
+		struct v4l2_ctrl *ctrl, int is_try)
+{
+	int retval = -EINVAL;
+
+	if (ctrl->is_array) {
+		struct camera_ext_ctrl_array_val mod_ctrl_val;
+		int op = is_try ? GB_CAMERA_EXT_TYPE_CTRL_ARRAY_TRY
+				: GB_CAMERA_EXT_TYPE_CTRL_ARRAY_SET;
+
+		retval = ctrl_val_array_v4l2_to_mod(ctrl, &mod_ctrl_val);
+		if (retval == 0)
+			retval = gb_operation_sync(dev_to_conn(dev),
+					op,
+					&mod_ctrl_val,
+					sizeof(mod_ctrl_val),
+					NULL,
+					0);
+	} else {
+		struct camera_ext_ctrl_val mod_ctrl_val;
+		int op = is_try ? GB_CAMERA_EXT_TYPE_CTRL_TRY
+				: GB_CAMERA_EXT_TYPE_CTRL_SET;
+
+		retval = ctrl_val_v4l2_to_mod(ctrl, &mod_ctrl_val);
+		if (retval == 0)
+			retval = gb_operation_sync(dev_to_conn(dev),
+					op,
+					&mod_ctrl_val,
+					sizeof(mod_ctrl_val),
+					NULL,
+					0);
+	}
+
+	return retval;
+}
+
+int gb_camera_ext_s_ctrl(struct device *dev, struct v4l2_ctrl *ctrl)
+{
+	return gb_camera_ext_s_or_try_ctrl(dev, ctrl, 0);
+}
+
+int gb_camera_ext_try_ctrl(struct device *dev, struct v4l2_ctrl *ctrl)
+{
+	return gb_camera_ext_s_or_try_ctrl(dev, ctrl, 1);
+}
+
 static int gb_camera_ext_connection_init(struct gb_connection *connection)
 {
 	int retval;
@@ -383,9 +661,10 @@ static int gb_camera_ext_connection_init(struct gb_connection *connection)
 		return -ENOMEM;
 
 	cam->connection = connection;
+	cam->gb_dev = &connection->dev;
 	connection->private = cam;
 
-	retval = camera_ext_mod_v4l2_init(cam, &connection->dev);
+	retval = camera_ext_mod_v4l2_init(cam);
 	if (retval) {
 		pr_err("failed to init v4l2 for mod control\n");
 		kfree(cam);
@@ -418,7 +697,7 @@ static int camera_ext_init(void)
 
 	/*
 	 * The function below should always success unless there are
-         * duplicate platform devices.
+	 * duplicate platform devices.
 	 */
 	rc = camera_ext_v4l2_driver_init();
 	if (rc < 0)

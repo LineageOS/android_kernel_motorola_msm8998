@@ -33,14 +33,17 @@
 #include <linux/types.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-device.h>
+#include <media/v4l2-ctrls.h>
 #include "camera_ext_defs.h"
 
 #define CAMERA_EXT_DEV_NAME "camera_ext"
 
 struct camera_ext {
 	struct gb_connection *connection;
+	struct device *gb_dev;
 	struct v4l2_device v4l2_dev;
 	struct video_device vdev_mod;
+	struct v4l2_ctrl_handler hdl_ctrls;
 };
 
 /* gb functions */
@@ -66,10 +69,28 @@ int gb_camera_ext_stream_parm_get(struct device *dev,
 int gb_camera_ext_stream_parm_set(struct device *dev,
 		struct v4l2_streamparm *parm);
 
-/* v4l2 functions */
-int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev, struct device *gb_dev);
-void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev);
+struct camera_ext_predefined_ctrl_v4l2_cfg {
+	uint32_t id;
+	u64 def;
+	u64 menu_mask;
+	/* idx will be store as v4l2_cfg->priv which type is void*,
+	 * sizeof(long) == sizeof(void*) for 32 or 64 bit system.
+	 */
+	unsigned long idx;
+};
 
+int gb_camera_ext_ctrl_process_all(struct device *dev,
+	int (*register_custom_mod_ctrl)(
+		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx),
+	void *ctx);
+int gb_camera_ext_g_volatile_ctrl(struct device *dev, struct v4l2_ctrl *ctrl);
+int gb_camera_ext_s_ctrl(struct device *dev, struct v4l2_ctrl *ctrl);
+int gb_camera_ext_try_ctrl(struct device *dev, struct v4l2_ctrl *ctrl);
+
+/* v4l2 functions */
+int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev);
+void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev);
 int camera_ext_v4l2_driver_init(void);
 void camera_ext_v4l2_driver_exit(void);
+struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t idx);
 #endif /* CAMERA_EXT_H */

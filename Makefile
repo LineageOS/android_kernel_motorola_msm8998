@@ -49,7 +49,7 @@ gb-db3-y := db3-platform.o
 gb-camera-y := camera.o
 gb-vendor-moto-y := vendor_moto.o
 gb-ptp-y := ptp.o
-gb-camera_ext-y := camera_ext_gb.o camera_ext_mod_v4l2.o
+gb-camera_ext-y := camera_ext_gb.o camera_ext_mod_v4l2.o camera_ext_ctrls.o
 
 obj-m += greybus.o
 obj-m += gb-phy.o
