@@ -69,4 +69,7 @@ int gb_camera_ext_stream_parm_set(struct device *dev,
 /* v4l2 functions */
 int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev, struct device *gb_dev);
 void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev);
+
+int camera_ext_v4l2_driver_init(void);
+void camera_ext_v4l2_driver_exit(void);
 #endif /* CAMERA_EXT_H */

@@ -412,6 +412,31 @@ static struct gb_protocol camera_ext_protocol = {
 	.request_recv		= NULL, /* no incoming requests */
 };
 
-gb_protocol_driver(&camera_ext_protocol);
+static int camera_ext_init(void)
+{
+	int rc;
+
+	/*
+	 * The function below should always success unless there are
+         * duplicate platform devices.
+	 */
+	rc = camera_ext_v4l2_driver_init();
+	if (rc < 0)
+		return rc;
+
+	rc = gb_protocol_register(&camera_ext_protocol);
+	if (rc < 0)
+		camera_ext_v4l2_driver_exit();
+
+	return rc;
+}
+module_init(camera_ext_init);
+
+static void __exit camera_ext_exit(void)
+{
+	gb_protocol_deregister(&camera_ext_protocol);
+	camera_ext_v4l2_driver_exit();
+}
+module_exit(camera_ext_exit);
 
 MODULE_LICENSE("GPL v2");

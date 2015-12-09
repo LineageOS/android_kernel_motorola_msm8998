@@ -28,9 +28,18 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/platform_device.h>
+#include <linux/regulator/consumer.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 #include <media/v4l2-ioctl.h>
 #include "camera_ext.h"
+
+struct camera_ext_v4l2 {
+	struct regulator *cdsi_reg;
+};
+
+struct camera_ext_v4l2 *g_v4l2_data;
 
 static int input_enum(struct file *file, void *fh, struct v4l2_input *inp)
 {
@@ -156,18 +165,49 @@ static const struct v4l2_ioctl_ops camera_ext_v4l2_ioctl_ops = {
 	.vidioc_s_parm			= stream_parm_set,
 };
 
+static int mod_v4l2_reg_control(bool on)
+{
+	int rc;
+
+	/* NO-OP if there is no platform device probed */
+	if (!g_v4l2_data)
+		return 0;
+
+	if (on)
+		rc = regulator_enable(g_v4l2_data->cdsi_reg);
+	else
+		rc = regulator_disable(g_v4l2_data->cdsi_reg);
+
+	return rc;
+}
+
+
 static int mod_v4l2_open(struct file *file)
 {
+	int rc;
 	struct device *gb_dev = video_drvdata(file);
 
-	return gb_camera_ext_power_on(gb_dev);
+	rc = mod_v4l2_reg_control(true);
+	if (rc < 0)
+		return rc;
+
+	rc = gb_camera_ext_power_on(gb_dev);
+	if (rc < 0)
+		mod_v4l2_reg_control(false);
+
+	return rc;
 }
 
 static int mod_v4l2_close(struct file *file)
 {
+	int ret;
 	struct device *gb_dev = video_drvdata(file);
 
-	return gb_camera_ext_power_off(gb_dev);
+	ret = gb_camera_ext_power_off(gb_dev);
+
+	mod_v4l2_reg_control(false);
+
+	return ret;
 }
 
 static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
@@ -215,4 +255,68 @@ void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev)
 {
 	video_unregister_device(&cam_dev->vdev_mod);
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
+}
+
+static int camera_ext_v4l2_probe(struct platform_device *pdev)
+{
+	struct camera_ext_v4l2 *data;
+
+	if (!pdev->dev.of_node) {
+		/* Platform data not currently supported */
+		dev_err(&pdev->dev, "%s: of devtree not found\n", __func__);
+		return -EINVAL;
+	}
+
+	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	data->cdsi_reg = devm_regulator_get(&pdev->dev, "camera_ext_cdsi");
+	if (IS_ERR(data->cdsi_reg))  {
+		dev_err(&pdev->dev, "%s: failed to get cdsi regulator.\n",
+			__func__);
+		return PTR_ERR(data->cdsi_reg);
+	}
+
+	g_v4l2_data = data;
+
+	return 0;
+}
+
+static int camera_ext_v4l2_remove(struct platform_device *pdev)
+{
+	g_v4l2_data = NULL;
+
+	return 0;
+}
+
+static const struct of_device_id camera_ext_match[] = {
+	{.compatible = "mmi,mods-camera-ext",},
+	{},
+};
+
+static const struct platform_device_id camera_ext_id_table[] = {
+	{"camera_ext", 0},
+	{},
+};
+
+static struct platform_driver camera_ext_v4l2_driver = {
+	.driver = {
+		.name = "camera_ext_v4l2",
+		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(camera_ext_match),
+	},
+	.probe = camera_ext_v4l2_probe,
+	.remove = camera_ext_v4l2_remove,
+	.id_table = camera_ext_id_table,
+};
+
+int camera_ext_v4l2_driver_init(void)
+{
+	return platform_driver_register(&camera_ext_v4l2_driver);
+}
+
+void camera_ext_v4l2_driver_exit(void)
+{
+	platform_driver_unregister(&camera_ext_v4l2_driver);
 }
