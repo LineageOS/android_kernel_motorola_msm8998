@@ -467,6 +467,7 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 	int remaining = len;
 	size_t pl_size = PL_SIZE(dd->pkt_size);
 	int packets;
+	int ret = 0;
 
 	if (!dd->present)
 		return -ENODEV;
@@ -493,14 +494,16 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		*crc = crc16_calc(0, dd->tx_pkt, CRC_NDX(dd->pkt_size));
 		*crc = cpu_to_le16(*crc);
 
-		muc_spi_transfer(dd, dd->tx_pkt, (packets > 0));
+		ret = muc_spi_transfer(dd, dd->tx_pkt, (packets > 0));
+		if (ret)
+			break;
 
 		remaining -= this_pl;
 		buf += this_pl;
 	}
 	mutex_unlock(&dd->tx_mutex);
 
-	return 0;
+	return ret;
 }
 
 /* send message from switch to muc */
