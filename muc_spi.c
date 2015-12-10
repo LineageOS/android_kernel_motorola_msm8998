@@ -283,16 +283,18 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	/* Wait for RDY to be asserted */
 	rdy_timeout = jiffies + RDY_TIMEOUT_JIFFIES;
 	while ((ret = gpio_get_value(dd->gpio_rdy_n)) &&
-	       (jiffies <= rdy_timeout));
+	       (jiffies <= rdy_timeout) && dd->present);
 
-	/* Deassert WAKE if no longer requested OR on timeout */
-	if (!keep_wake || ret != 0)
+	/* Deassert WAKE if no longer requested OR on timeout OR removal */
+	if (!keep_wake || ret != 0 || !dd->present)
 		gpio_set_value(dd->gpio_wake_n, 1);
 
 	/*
 	 * Check that RDY successfully was asserted after wake deassert to ensure
 	 * wake line is deasserted.
 	 */
+	if (unlikely(!dd->present))
+		return -ENODEV;
 	if (unlikely(ret != 0)) {
 		dev_err(&dd->spi->dev, "Timeout waiting for rdy to assert\n");
 		return -ETIMEDOUT;
