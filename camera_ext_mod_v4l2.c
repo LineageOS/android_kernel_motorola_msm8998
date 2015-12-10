@@ -41,6 +41,19 @@ struct camera_ext_v4l2 {
 
 struct camera_ext_v4l2 *g_v4l2_data;
 
+#define MOD_V4L2_DRIVER_VERSION 1
+
+static int query_cap(struct file *file, void *fh, struct v4l2_capability *cap)
+{
+	strlcpy(cap->driver, "mods v4l2 ctrl", sizeof(cap->driver));
+	strlcpy(cap->card, "camera_ext mod", sizeof(cap->card));
+	strlcpy(cap->bus_info, "greybus", sizeof(cap->card));
+	cap->version = MOD_V4L2_DRIVER_VERSION;
+	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+	return 0;
+}
+
 static int input_enum(struct file *file, void *fh, struct v4l2_input *inp)
 {
 	struct device *gb_dev = video_drvdata(file);
@@ -151,6 +164,7 @@ static int stream_parm_set(struct file *file, void *fh,
  * It does not support video buffer related operations.
  */
 static const struct v4l2_ioctl_ops camera_ext_v4l2_ioctl_ops = {
+	.vidioc_querycap		= query_cap,
 	.vidioc_enum_input		= input_enum,
 	.vidioc_g_input			= input_get,
 	.vidioc_s_input			= input_set,
