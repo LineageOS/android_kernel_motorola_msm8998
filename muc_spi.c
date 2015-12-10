@@ -402,13 +402,33 @@ static irqreturn_t muc_spi_isr_thread(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+#define SPI_NEGOTIATE_RETRIES 8
+static int _muc_spi_negotiate(struct muc_spi_data *dd)
+{
+	struct spi_dl_msg msg;
+	int err;
+	int retries = 0;
+
+	msg.id = DL_MSG_ID_BUS_CFG_REQ;
+	msg.bus_req.max_pl_size = cpu_to_le16(MUC_MSG_SIZE_MAX);
+
+	do {
+		err = __muc_spi_message_send(dd, MSG_TYPE_DL, (uint8_t *)&msg,
+						sizeof(msg));
+	} while (err && retries++ < SPI_NEGOTIATE_RETRIES);
+
+	if (retries)
+		dev_dbg(&dd->spi->dev, "negotiate retried: %d\n", retries);
+
+	return err;
+}
+
 static int muc_attach(struct notifier_block *nb,
 		      unsigned long now_present, void *not_used)
 {
 	struct muc_spi_data *dd = container_of(nb, struct muc_spi_data, attach_nb);
 	struct spi_device *spi = dd->spi;
 	int err;
-	struct spi_dl_msg msg;
 
 	if (now_present != dd->present) {
 		dev_info(&spi->dev, "%s: state = %lu\n", __func__, now_present);
@@ -427,10 +447,7 @@ static int muc_attach(struct notifier_block *nb,
 			}
 
 			/* First step after attach is to negotiate bus config */
-			msg.id = DL_MSG_ID_BUS_CFG_REQ;
-			msg.bus_req.max_pl_size = cpu_to_le16(MUC_MSG_SIZE_MAX);
-			err = __muc_spi_message_send(dd, MSG_TYPE_DL,
-						     (uint8_t *)&msg, sizeof(msg));
+			err = _muc_spi_negotiate(dd);
 			if (err) {
 				dev_err(&spi->dev, "Error requesting bus cfg\n");
 				goto free_irq;
