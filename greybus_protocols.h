@@ -219,7 +219,7 @@ struct gb_firmware_get_vid_pid_response {
 #define	GB_BATTERY_TYPE_TEMPERATURE		0x06
 #define	GB_BATTERY_TYPE_VOLTAGE			0x07
 #define	GB_BATTERY_TYPE_CURRENT			0x08
-#define GB_BATTERY_TYPE_CAPACITY		0x09	// TODO - POWER_SUPPLY_PROP_CURRENT_MAX
+#define GB_BATTERY_TYPE_CAPACITY		0x09
 #define GB_BATTERY_TYPE_SHUTDOWN_TEMP		0x0a	// TODO - POWER_SUPPLY_PROP_TEMP_ALERT_MAX
 
 /* Should match up with battery types in linux/power_supply.h */
@@ -260,6 +260,10 @@ struct gb_battery_temperature_response {
 
 struct gb_battery_voltage_response {
 	__le32	voltage;
+} __packed;
+
+struct gb_battery_full_capacity_response {
+	__le32	full_capacity;
 } __packed;
 
 

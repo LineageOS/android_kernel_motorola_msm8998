@@ -185,6 +185,23 @@ static int get_voltage(struct gb_battery *gb)
 	return voltage;
 }
 
+static int get_capacity(struct gb_battery *gb)
+{
+	struct gb_battery_full_capacity_response full_capacity_response;
+	u32 full_capacity;
+	int retval;
+
+	retval = gb_operation_sync(gb->connection,
+				   GB_BATTERY_TYPE_CAPACITY,
+				   NULL, 0, &full_capacity_response,
+				   sizeof(full_capacity_response));
+	if (retval)
+		return retval;
+
+	full_capacity = le32_to_cpu(full_capacity_response.full_capacity);
+	return full_capacity;
+}
+
 static int get_property(struct power_supply *b,
 			enum power_supply_property psp,
 			union power_supply_propval *val)
@@ -223,6 +240,10 @@ static int get_property(struct power_supply *b,
 		val->intval = get_voltage(gb);
 		break;
 
+	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+		val->intval = get_capacity(gb);
+		break;
+
 	default:
 		val->intval = -EINVAL;
 	}
@@ -239,6 +260,7 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 };
 
 #ifdef DRIVER_OWNS_PSY_STRUCT
