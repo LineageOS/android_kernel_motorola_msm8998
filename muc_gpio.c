@@ -335,23 +335,22 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 		goto free_attach_wq;
 	}
 
-	/* Optional configuration */
 	cdata->en_seq_len = ARRAY_SIZE(cdata->en_seq);
 	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-en-seq",
 		cdata->en_seq, &cdata->en_seq_len);
 	if (ret) {
-		dev_warn(dev, "%s:%d failed to read enable sequence.\n",
+		dev_err(dev, "%s:%d failed to read enable sequence.\n",
 			__func__, __LINE__);
-		cdata->en_seq_len = 0;
+		goto free_attach_wq;
 	}
 
 	cdata->dis_seq_len = ARRAY_SIZE(cdata->dis_seq);
 	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-dis-seq",
 		cdata->dis_seq, &cdata->dis_seq_len);
 	if (ret) {
-		dev_warn(dev, "%s:%d failed to read disable sequence.\n",
+		dev_err(dev, "%s:%d failed to read disable sequence.\n",
 			__func__, __LINE__);
-		cdata->dis_seq_len = 0;
+		goto free_attach_wq;
 	}
 
 	/* Force Flash Sequences (mod core dependent) */
@@ -359,18 +358,18 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-ff-seq-v1",
 		cdata->ff_seq_v1, &cdata->ff_seq_v1_len);
 	if (ret) {
-		dev_warn(dev, "%s:%d no ff sequence (v1)\n",
+		dev_err(dev, "%s:%d no ff sequence (v1)\n",
 			__func__, __LINE__);
-		cdata->ff_seq_v1_len = 0;
+		goto free_attach_wq;
 	}
 
 	cdata->ff_seq_v2_len = ARRAY_SIZE(cdata->ff_seq_v2);
 	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-ff-seq-v2",
 		cdata->ff_seq_v2, &cdata->ff_seq_v2_len);
 	if (ret) {
-		dev_warn(dev, "%s:%d no ff sequence (v2)\n",
+		dev_err(dev, "%s:%d no ff sequence (v2)\n",
 			__func__, __LINE__);
-		cdata->ff_seq_v2_len = 0;
+		goto free_attach_wq;
 	}
 
 	ret = of_property_read_u32(dev->of_node,
