@@ -17,8 +17,17 @@
 enum {
 	MUC_GPIO_DET_N    = 0,
 	MUC_GPIO_BPLUS_EN = 1,
+	MUC_GPIO_FORCE_FLASH = 2,
 	MUC_MAX_GPIOS
 };
+
+/* The force flash pin is optional depending on specific
+ * hardware version.
+ */
+static inline bool muc_gpio_optional(int index)
+{
+	return index >= MUC_GPIO_FORCE_FLASH;
+}
 
 #define MUC_ROOT_VER_UNKNOWN     0x00 /* For not implemented */
 #define MUC_ROOT_V1              0x01

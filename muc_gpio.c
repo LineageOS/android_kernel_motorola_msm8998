@@ -241,6 +241,10 @@ static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
 
 		gpio = of_get_gpio_flags(dev->of_node, i, &flags);
 		if (!gpio_is_valid(gpio)) {
+			if (muc_gpio_optional(i)) {
+				cdata->gpios[i] = -ENODEV;
+				continue;
+			}
 			dev_err(dev, "of_get_gpio failed: %d\n", gpio);
 			ret = -EINVAL;
 			goto free_gpios;
@@ -277,13 +281,15 @@ static void muc_gpio_cleanup(struct muc_data *cdata, struct device *dev)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(cdata->gpios); i++)
-		gpio_unexport(cdata->gpios[i]);
+		if (gpio_is_valid(cdata->gpios[i]))
+			gpio_unexport(cdata->gpios[i]);
 }
 
 static int muc_parse_seq(struct muc_data *cdata,
 	struct device *dev, const char *name, u32 *seq, size_t *len)
 {
 	int ret;
+	int i;
 	int cnt = 0;
 	struct property *pp = of_find_property(dev->of_node, name, &cnt);
 
@@ -296,10 +302,31 @@ static int muc_parse_seq(struct muc_data *cdata,
 
 
 	ret = of_property_read_u32_array(dev->of_node, name, seq, cnt);
-	if (ret)
+	if (ret) {
 		dev_err(dev, "%s:%d, unable to read %s, ret = %d\n",
 			__func__, __LINE__, name, ret);
-	else
+		return ret;
+	}
+
+	for (i = 0; i < cnt; i += 3) {
+		int index = seq[i];
+
+		if (index >= ARRAY_SIZE(cdata->gpios)) {
+			dev_err(dev, "%s:%d, invalid gpio index: %d\n",
+				__func__, __LINE__, index);
+			ret = -ENODEV;
+			break;
+		}
+
+		if (cdata->gpios[index] < 0) {
+			dev_err(dev, "%s:%d, gpio not supported: %d\n",
+				__func__, __LINE__, index);
+			ret = -ENODEV;
+			break;
+		}
+	}
+
+	if (!ret)
 		*len = cnt;
 
 	return ret;
