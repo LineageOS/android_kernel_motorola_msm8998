@@ -80,6 +80,9 @@ extern void gb_i2c_protocol_exit(void);
 extern int gb_spi_protocol_init(void);
 extern void gb_spi_protocol_exit(void);
 
+extern int gb_audio_protocol_init(void);
+extern void gb_audio_protocol_exit(void);
+
 /* __protocol: Pointer to struct gb_protocol */
 #define gb_protocol_driver(__protocol)			\
 static int __init protocol_init(void)			\

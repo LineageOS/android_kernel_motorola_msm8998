@@ -50,8 +50,15 @@ static int __init gpbridge_init(void)
 		goto error_spi;
 	}
 
+	if (gb_audio_protocol_init()) {
+		pr_err("error initializing audio protocol\n");
+		goto error_audio;
+	}
+
 	return 0;
 
+error_audio:
+	gb_spi_protocol_exit();
 error_spi:
 	gb_i2c_protocol_exit();
 error_i2c:
@@ -71,6 +78,7 @@ module_init(gpbridge_init);
 
 static void __exit gpbridge_exit(void)
 {
+	gb_audio_protocol_exit();
 	gb_spi_protocol_exit();
 	gb_i2c_protocol_exit();
 	gb_usb_protocol_exit();
