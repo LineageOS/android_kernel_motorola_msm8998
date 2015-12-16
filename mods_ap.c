@@ -124,7 +124,7 @@ static int mods_ap_probe(struct platform_device *pdev)
 	struct mods_ap_data *ap_data;
 
 	/* setup host device */
-	g_hd = greybus_create_hd(&mods_ap_host_driver, &pdev->dev,
+	g_hd = gb_hd_create(&mods_ap_host_driver, &pdev->dev,
 			PAYLOAD_MAX_SIZE, CPORT_ID_MAX);
 	if (IS_ERR(g_hd)) {
 		dev_err(&pdev->dev, "Unable to create greybus host driver.\n");
@@ -150,18 +150,22 @@ static int mods_ap_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	err = gb_hd_add(g_hd);
+	if (err)
+		goto remove_dl;
+
 	err = mods_dl_dev_attached(ap_data->dld);
 	if (err) {
 		dev_err(&pdev->dev, "Unable to notify SVC of attach\n");
-		goto remove_dl;
+		goto free_hd;
 	}
 
 	return 0;
-
+free_hd:
+	gb_hd_del(g_hd);
 remove_dl:
 	mods_remove_dl_device(ap_data->dld);
 err:
-	greybus_remove_hd(g_hd);
 	g_hd = NULL;
 	return err;
 
@@ -173,7 +177,7 @@ static int mods_ap_remove(struct platform_device *pdev)
 
 	mods_dl_dev_detached(ap_data->dld);
 	mods_remove_dl_device(ap_data->dld);
-	greybus_remove_hd(ap_data->hd);
+	gb_hd_del(ap_data->hd);
 
 	return 0;
 }
