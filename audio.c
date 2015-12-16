@@ -345,7 +345,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	}
 	ret = gb_mods_aud_get_vol_range(get_vol, connection);
 	if (ret) {
-		dev_err(&connection->dev, "failed to get aud dev vol range: %d\n",
+		dev_err(&connection->bundle->dev, "failed to get aud dev vol range: %d\n",
 				ret);
 		goto free_get_vol;
 	}
@@ -359,7 +359,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	ret = gb_mods_aud_get_supported_usecase(get_use_cases,
 						  connection);
 	if (ret) {
-		dev_err(&connection->dev, "failed to get aud dev supp usecases %d\n",
+		dev_err(&connection->bundle->dev, "failed to get aud dev supp usecases %d\n",
 				ret);
 		goto free_use_case;
 	}
@@ -373,7 +373,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	ret = gb_mods_aud_get_devices(get_devices,
 						  connection);
 	if (ret) {
-		dev_err(&connection->dev, "failed to get aud devices %d\n",
+		dev_err(&connection->bundle->dev, "failed to get aud devices %d\n",
 			ret);
 		goto free_aud_dev;
 	}
@@ -498,13 +498,13 @@ static int gb_mods_audio_event_recv(u8 type, struct gb_operation *op)
 			(struct gb_snd_codec *)connection->private;
 
 	if (type != GB_AUDIO_DEVICES_REPORT_EVENT) {
-		dev_err(&connection->dev, "Invalid request type: %d\n",
+		dev_err(&connection->bundle->dev, "Invalid request type: %d\n",
 			type);
 		return -EINVAL;
 	}
 
 	if (op->request->payload_size < sizeof(*req)) {
-		dev_err(&connection->dev, "Short request received (%zu < %zu)\n",
+		dev_err(&connection->bundle->dev, "Short request received (%zu < %zu)\n",
 			op->request->payload_size, sizeof(*req));
 		return -EINVAL;
 	}
@@ -515,7 +515,7 @@ static int gb_mods_audio_event_recv(u8 type, struct gb_operation *op)
 	if (codec->report_devices)
 		codec->report_devices(codec);
 
-	dev_dbg(&connection->dev, "available audio devices changed\n");
+	dev_dbg(&connection->bundle->dev, "available audio devices changed\n");
 
 	return 0;
 }
