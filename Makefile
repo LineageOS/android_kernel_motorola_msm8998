@@ -26,7 +26,7 @@ gb-phy-y :=	gpbridge.o	\
 
 # Prefix all modules with gb-
 gb-vibrator-y := vibrator.o
-gb-power-supply-y := power_supply.o
+gb-battery-y := battery.o
 gb-loopback-y := loopback.o
 gb-light-y := light.o
 gb-raw-y := raw.o
@@ -38,7 +38,7 @@ gb-camera-y := camera.o
 obj-m += greybus.o
 obj-m += gb-phy.o
 obj-m += gb-vibrator.o
-obj-m += gb-power-supply.o
+obj-m += gb-battery.o
 obj-m += gb-loopback.o
 obj-m += gb-light.o
 obj-m += gb-hid.o
