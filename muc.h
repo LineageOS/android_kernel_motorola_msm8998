@@ -71,6 +71,8 @@ struct muc_data {
 	size_t ff_seq_v1_len;
 	u32 ff_seq_v2[MUC_MAX_SEQ];
 	size_t ff_seq_v2_len;
+
+	bool need_det_output;
 };
 
 /* Global functions */

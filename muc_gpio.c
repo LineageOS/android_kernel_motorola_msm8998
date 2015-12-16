@@ -411,6 +411,9 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 	queue_delayed_work(cdata->attach_wq, &cdata->attach_work,
 				cdata->det_hysteresis);
 
+	cdata->need_det_output = of_property_read_bool(dev->of_node,
+		"mmi,muc-det-pin-reconfig");
+
 	return 0;
 free_attach_wq:
 	destroy_workqueue(cdata->attach_wq);
@@ -478,7 +481,9 @@ static void __muc_ff_reset(u8 root_ver, bool reset)
 	disable_irq_wake(cd->irq);
 	disable_irq(cd->irq);
 	devm_free_irq(cd->dev, cd->irq, cd);
-	gpio_direction_output(cd->gpios[MUC_GPIO_DET_N], 0);
+
+	if (cd->need_det_output)
+		gpio_direction_output(cd->gpios[MUC_GPIO_DET_N], 0);
 
 	/* Perform force flash sequence */
 	if (root_ver <= MUC_ROOT_V1)
@@ -487,7 +492,8 @@ static void __muc_ff_reset(u8 root_ver, bool reset)
 		muc_seq(cd, cd->ff_seq_v2, cd->ff_seq_v2_len);
 
 
-	gpio_direction_input(cd->gpios[MUC_GPIO_DET_N]);
+	if (cd->need_det_output)
+		gpio_direction_input(cd->gpios[MUC_GPIO_DET_N]);
 
 	/* Re-setup the IRQ */
 	flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
