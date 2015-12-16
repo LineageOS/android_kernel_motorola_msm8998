@@ -43,6 +43,10 @@ struct muc_svc_data {
 	u16 endo_mask;
 
 	struct notifier_block attach_nb;
+	struct workqueue_struct *wdog_wq;
+	struct delayed_work wdog_work;
+	unsigned long first_fail;
+	u8 fail_count;
 
 	u8 mod_root_ver;
 };
@@ -73,11 +77,62 @@ struct muc_svc_hotplug_work {
 
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 
+#define MUC_SVC_FAILURE_WINDOW (60 * 5 * HZ) /* 5 minute window */
+#define MUC_SVC_WATCHDOG_MAX_RETRIES 5
+static void muc_svc_recovery(void)
+{
+	unsigned long end_time;
+
+	/* If this is first failure event, save the timestamp */
+	if (!svc_dd->fail_count)
+		svc_dd->first_fail = jiffies;
+
+	/* If this failure event is sufficient time after the back-off
+	 * time, lets try again in case a new device is attached.
+	 */
+	end_time = svc_dd->first_fail + MUC_SVC_FAILURE_WINDOW;
+	if (time_after_eq(jiffies, end_time)) {
+		dev_dbg(&svc_dd->pdev->dev,
+				"Failure window expired, reset count\n");
+		svc_dd->fail_count = 0;
+		svc_dd->first_fail = jiffies;
+	}
+
+	/* Too many failures within the window, shut her down */
+	if (++svc_dd->fail_count > MUC_SVC_WATCHDOG_MAX_RETRIES) {
+		dev_err(&svc_dd->pdev->dev,
+				"Too many failures; shutting down\n");
+		muc_poweroff();
+		svc_dd->fail_count = 0;
+	} else {
+		dev_err(&svc_dd->pdev->dev, "Performing hard-reset recovery\n");
+		muc_reset(svc_dd->mod_root_ver, false);
+	}
+}
+
+static void muc_svc_wdog(struct work_struct *work)
+{
+	dev_err(&svc_dd->pdev->dev, "Watchdog waiting for DL device\n");
+	muc_svc_recovery();
+}
+
+static void muc_svc_clear_wdog(void)
+{
+	cancel_delayed_work_sync(&svc_dd->wdog_work);
+	svc_dd->fail_count = 0;
+}
+
+#define MUC_SVC_WATCHDOG_ATTACH_TIMEOUT (5 * HZ) /* 5s */
 static int
 muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 {
-	if (!state)
+	if (state) {
+		queue_delayed_work(svc_dd->wdog_wq, &svc_dd->wdog_work,
+				MUC_SVC_WATCHDOG_ATTACH_TIMEOUT);
+	} else {
+		cancel_delayed_work_sync(&svc_dd->wdog_work);
 		svc_dd->mod_root_ver = MB_CONTROL_ROOT_VER_INVALID;
+	}
 
 	return 0;
 }
@@ -1517,6 +1572,9 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		return 0;
 	}
 
+	/* Got external interface notification, can cancel wdog */
+	muc_svc_clear_wdog();
+
 	/* Create route for vendor control protocol on reserved CPORT */
 	err = muc_svc_create_control_route(mods_dev->intf_id,
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
@@ -1525,21 +1583,26 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		dev_err(&svc_dd->pdev->dev,
 			"[%d] VENDOR CONTROL setup failed\n",
 			mods_dev->intf_id);
-		return err;
+		goto recovery;
 	}
 
 	err = muc_svc_generate_hotplug(mods_dev);
-	if (err) {
-		muc_svc_destroy_control_route(mods_dev->intf_id,
-				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
-				VENDOR_CTRL_DEST_CPORT);
-		goto done;
-	}
+	if (err)
+		goto free_ext_ctrl;
 
 	mutex_lock(&svc_list_lock);
 	list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
 	mutex_unlock(&svc_list_lock);
-done:
+
+	return 0;
+
+free_ext_ctrl:
+	muc_svc_destroy_control_route(mods_dev->intf_id,
+			SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+			VENDOR_CTRL_DEST_CPORT);
+recovery:
+	muc_svc_recovery();
+
 	return err;
 
 free_ap_to_svc:
@@ -2081,6 +2144,14 @@ static int muc_svc_probe(struct platform_device *pdev)
 		goto free_dl_dev;
 	}
 
+	INIT_DELAYED_WORK(&dd->wdog_work, muc_svc_wdog);
+	dd->wdog_wq = alloc_workqueue("muc_svc_wdog", WQ_UNBOUND, 1);
+	if (!dd->wq) {
+		dev_err(&pdev->dev, "Failed to create WDOG workqueue.\n");
+		ret = -ENOMEM;
+		goto free_wq;
+	}
+
 	dd->dld->dl_priv = dd;
 
 	dd->pdev = pdev;
@@ -2093,7 +2164,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 	ret = muc_svc_base_sysfs_init(dd);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to create base sysfs\n");
-		goto free_wq;
+		goto free_wdog_wq;
 	}
 
 	ret = muc_svc_install_ap_filters(svc_dd);
@@ -2120,6 +2191,8 @@ static int muc_svc_probe(struct platform_device *pdev)
 
 free_kset:
 	kset_unregister(dd->intf_kset);
+free_wdog_wq:
+	destroy_workqueue(dd->wdog_wq);
 free_wq:
 	destroy_workqueue(dd->wq);
 free_dl_dev:
@@ -2135,6 +2208,8 @@ static int muc_svc_remove(struct platform_device *pdev)
 	unregister_muc_attach_notifier(&dd->attach_nb);
 	muc_svc_remove_ap_filters(dd);
 	muc_svc_base_sysfs_exit(dd);
+	cancel_delayed_work_sync(&dd->wdog_work);
+	destroy_workqueue(dd->wdog_wq);
 	destroy_workqueue(dd->wq);
 	mods_remove_dl_device(dd->dld);
 
