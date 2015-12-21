@@ -16,9 +16,6 @@
 #include <sound/tlv.h>
 #include "audio.h"
 
-#define MODS_VOL_STEP		50
-#define MODS_MIN_VOL		-12750
-
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
 	struct mods_codec_device *m_dev;
@@ -30,9 +27,6 @@ struct mods_codec_dai {
 	struct snd_pcm_substream *substream;
 	struct snd_soc_codec *codec;
 	uint32_t vol_step;
-	uint32_t playback_use_case;
-	uint32_t capture_use_case;
-	int sys_vol_step;
 	struct gb_aud_devices enabled_devices;
 	bool tx_active;
 	bool rx_active;
@@ -173,12 +167,13 @@ static int mods_codec_get_usecase(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
 
 	if (!strncmp(kcontrol->id.name, "Mods Set Playback Use Case",
 				strlen(kcontrol->id.name)))
-		ucontrol->value.integer.value[0] = priv->playback_use_case;
+		ucontrol->value.integer.value[0] = gb_codec->playback_use_case;
 	else
-		ucontrol->value.integer.value[0] = priv->capture_use_case;
+		ucontrol->value.integer.value[0] = gb_codec->capture_use_case;
 
 	return 0;
 }
@@ -193,6 +188,15 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 	int ret;
 
 	mutex_lock(&gb_codec->lock);
+	/* save the use case if mod is attached or not, saved
+	 * use case will be set when mod is attached.
+	 */
+	if (!strncmp(kcontrol->id.name, "Mods Set Playback Use Case",
+				strlen(kcontrol->id.name)))
+		gb_codec->playback_use_case = use_case;
+	else
+		gb_codec->capture_use_case = use_case;
+
 	if (!mods_codec_check_connection(gb_codec)) {
 		pr_err("%s: audio mods connection is not init'ed yet\n",
 				__func__);
@@ -210,7 +214,6 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 			mutex_unlock(&gb_codec->lock);
 			return -EIO;
 		}
-		priv->playback_use_case = use_case;
 	} else {
 		ret = gb_mods_aud_set_capture_usecase(
 				gb_codec->mods_aud_connection,
@@ -220,7 +223,6 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 			mutex_unlock(&gb_codec->lock);
 			return -EIO;
 		}
-		priv->capture_use_case = use_case;
 	}
 
 	mutex_unlock(&gb_codec->lock);
@@ -232,9 +234,10 @@ static int mods_codec_get_vol(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
 
 	/* should we read vol step from remote end instead of cached value ?*/
-	ucontrol->value.integer.value[0] = priv->vol_step;
+	ucontrol->value.integer.value[0] = gb_codec->mods_vol_step;
 
 	return 0;
 }
@@ -250,6 +253,7 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 	uint32_t vol_step = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
+	gb_codec->mods_vol_step = vol_step;
 	if (!mods_codec_check_connection(gb_codec)) {
 		pr_err("%s: audio mods connection is not init'ed yet\n",
 			__func__);
@@ -276,8 +280,9 @@ static int mods_codec_get_sys_vol(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
 
-	ucontrol->value.integer.value[0] = priv->sys_vol_step;
+	ucontrol->value.integer.value[0] = gb_codec->sys_vol_step;
 
 	return 0;
 }
@@ -293,6 +298,7 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 	uint32_t vol_step = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
+	gb_codec->sys_vol_step = vol_step;
 	if (!mods_codec_check_connection(gb_codec)) {
 		pr_err("%s: audio mods connection is not init'ed yet\n",
 			__func__);
@@ -308,7 +314,6 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EIO;
 	}
-	priv->sys_vol_step = vol_step;
 	mutex_unlock(&gb_codec->lock);
 
 	return 0;

@@ -76,6 +76,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	struct gb_audio_get_supported_usecases_response *get_use_cases;
 	struct gb_audio_get_devices_response *get_devices;
 	int ret;
+	int mods_vol_step;
 
 	mutex_lock(&snd_codec.lock);
 	snd_codec.mods_aud_connection = connection;
@@ -123,6 +124,24 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	snd_codec.aud_devices = get_devices;
 	if (snd_codec.report_devices)
 		snd_codec.report_devices(&snd_codec);
+
+	/* set current use case and sys volume */
+	ret = gb_mods_aud_set_playback_usecase(
+			connection,
+			BIT(snd_codec.playback_use_case));
+	if (ret)
+		pr_warn("%s: failed to set mods codec playback use case\n",
+				__func__);
+
+	ret = gb_mods_aud_set_sys_vol(connection, snd_codec.sys_vol_step);
+	if (ret)
+		pr_warn("%s: failed to set mods codec sys volume\n", __func__);
+	/* calculate remote codec vol step and set it*/
+	mods_vol_step = (snd_codec.mods_vol_step*MODS_VOL_STEP)/(snd_codec.vol_range->vol_range.step);
+	ret = gb_mods_aud_set_vol(connection, mods_vol_step);
+	if (ret)
+		pr_warn("%s: failed to set mods codec volume\n", __func__);
+
 	mutex_unlock(&snd_codec.lock);
 
 	return 0;
@@ -159,7 +178,8 @@ static void gb_mods_audio_connection_exit(struct gb_connection *connection)
 
 static void gb_i2s_mgmt_connection_exit(struct gb_connection *connection)
 {
-	struct gb_snd_codec *snd_codec = (struct gb_snd_codec *)connection->private;
+	struct gb_snd_codec *snd_codec =
+			(struct gb_snd_codec *)connection->private;
 
 	gb_i2s_mgmt_free_cfgs(snd_codec);
 

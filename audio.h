@@ -26,6 +26,8 @@
 #define CONFIG_COUNT_MAX			5
 #define CONFIG_SAMPLES_PER_MSG                 48L
 
+#define MODS_VOL_STEP		50
+#define MODS_MIN_VOL		-12750
 /*
  * This codec structure will be passed as platform data
  * to mods codec when physical I2S interface is used
@@ -40,6 +42,10 @@ struct gb_snd_codec {
 					*i2s_configs;
 	struct gb_connection *mods_aud_connection;
 	struct gb_connection *mgmt_connection;
+	uint32_t playback_use_case;
+	uint32_t capture_use_case;
+	int sys_vol_step;
+	int mods_vol_step;
 	struct mutex lock;
 	int (*report_devices)(struct gb_snd_codec *);
 };
