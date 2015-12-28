@@ -273,21 +273,84 @@ static int custom_ctrl_register(
 	void *priv;
 	struct v4l2_ctrl *ctrl;
 	struct camera_ext *cam_dev = ctx;
-	int idx = mod_cfg->id - CID_CAM_EXT_CLASS_BASE;
-	struct v4l2_ctrl_config *cfg = camera_ext_get_ctrl_config(idx);
+	struct v4l2_ctrl_config *cfg = camera_ext_get_ctrl_config(mod_cfg->id);
 
 	if (cfg == NULL)
 		return -EINVAL;
 
 	cfg->ops = &mod_ctrl_ops;
-	cfg->def = mod_cfg->def;
-	cfg->menu_skip_mask = mod_cfg->menu_mask;
 	priv = (void *)mod_cfg->idx;
+
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MIN)
+		cfg->min = mod_cfg->min;
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MAX)
+		cfg->max = mod_cfg->max;
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_STEP)
+		cfg->step = mod_cfg->step;
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF) {
+		if (!(cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER))
+			cfg->def = mod_cfg->def;
+		/* else keep def = 0 for STRING_AS_NUMBER */
+	}
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DIMS)
+		memcpy(cfg->dims, mod_cfg->dims, sizeof(cfg->dims));
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK)
+		cfg->menu_skip_mask = mod_cfg->menu_skip_mask;
+
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_INT)
+		memcpy((s64*)cfg->qmenu_int, mod_cfg->menu_int,
+			sizeof(u64) * CAMERA_EXT_MAX_MENU_NUM);
+
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_FLOAT) {
+		int i;
+		camera_ext_ctrl_float *mem_pool =
+			(camera_ext_ctrl_float *)cfg->qmenu[0];
+		memcpy(mem_pool, mod_cfg->menu_float,
+		sizeof(camera_ext_ctrl_float) * CAMERA_EXT_MAX_MENU_NUM);
+
+		/* qmenu[0] always points to the mem pool */
+		for (i = 1; i < CAMERA_EXT_MAX_MENU_NUM; i++) {
+			/* cast it to writable memory */
+			char **qmenu = (char**)&cfg->qmenu[i];
+			*qmenu = mem_pool[i];
+			if (cfg->qmenu[i][0] == 0) {
+				/* reach the end. NULL is required by v4l2 */
+				*qmenu = NULL;
+				break;
+			}
+		}
+	}
+
 	ctrl = v4l2_ctrl_new_custom(&cam_dev->hdl_ctrls, cfg, priv);
 
 	if (ctrl == NULL) {
 		pr_err("register id 0x%x failed\n", mod_cfg->id);
 		return -EINVAL;
+	}
+	if ((cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER)
+		&& (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF)) {
+		/* update default value for string as float */
+		/* TODO: extend v4l2 ctrl with type_ops.init and support to set def
+		 * array data from MOD (currently all array data are set
+		 * with the same value, v4l2 behaviour) */
+		int i;
+		void *def = NULL;
+
+		if (cfg->max == sizeof(camera_ext_ctrl_float) - 1)
+			def = mod_cfg->def_f;
+		else if (cfg->max == sizeof(camera_ext_ctrl_double) - 1)
+			def = mod_cfg->def_d;
+		else
+			pr_warn("%s: invalid max %lld\n", __func__, cfg->max);
+
+		if (def != NULL) {
+			for (i = 0; i < ctrl->elems; i++) {
+				memcpy(ctrl->p_cur.p_char + i * ctrl->elem_size,
+					def, cfg->max);
+				memcpy(ctrl->p_new.p_char + i * ctrl->elem_size,
+					def, cfg->max);
+			}
+		}
 	}
 	return 0;
 }

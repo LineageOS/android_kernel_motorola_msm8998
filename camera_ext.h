@@ -70,18 +70,34 @@ int gb_camera_ext_stream_parm_set(struct gb_connection *conn,
 
 struct camera_ext_predefined_ctrl_v4l2_cfg {
 	uint32_t id;
-	u64 def;
-	u64 menu_mask;
+	s64 min;
+	s64 max;
+	u64 step;
+	union {
+		s64 def;
+		/* TODO: transfer float/double in 4/8 bytes */
+		camera_ext_ctrl_float def_f;
+		camera_ext_ctrl_double def_d;
+	};
+	u64 menu_skip_mask;
+	union {
+		u32 dims[V4L2_CTRL_MAX_DIMS];
+		s64 menu_int[CAMERA_EXT_MAX_MENU_NUM];
+		/* reserve one more space to append a NULL string */
+		/* TODO: use 4/8 bytes to transfer float/double over greybus */
+		camera_ext_ctrl_float menu_float[CAMERA_EXT_MAX_MENU_NUM + 1];
+	};
 	/* idx will be store as v4l2_cfg->priv which type is void*,
 	 * sizeof(long) == sizeof(void*) for 32 or 64 bit system.
 	 */
 	unsigned long idx;
 };
 
+typedef int (*register_custom_mod_ctrl_func_t)(
+		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx);
+
 int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
-	int (*register_custom_mod_ctrl)(
-		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx),
-	void *ctx);
+	register_custom_mod_ctrl_func_t register_custom_mod_ctrl, void *ctx);
 int gb_camera_ext_g_volatile_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl);
 int gb_camera_ext_s_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl);
 int gb_camera_ext_try_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl);
@@ -91,5 +107,5 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev);
 void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev);
 int camera_ext_v4l2_driver_init(void);
 void camera_ext_v4l2_driver_exit(void);
-struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t idx);
+struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id);
 #endif /* CAMERA_EXT_H */

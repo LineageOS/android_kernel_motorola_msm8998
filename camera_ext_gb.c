@@ -72,10 +72,6 @@
 #define GB_CAMERA_EXT_TYPE_CTRL_SET		0x12
 #define GB_CAMERA_EXT_TYPE_CTRL_TRY		0x13
 
-#define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_GET	0x14
-#define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_SET	0x15
-#define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_TRY	0x16
-
 int gb_camera_ext_power_on(struct gb_connection *conn)
 {
 	return gb_operation_sync(conn,
@@ -397,39 +393,456 @@ int gb_camera_ext_stream_parm_get(struct gb_connection *conn,
 	return retval;
 }
 
-int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
-	int (*register_custom_mod_ctrl)(
-		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx),
-	void *ctx)
+/* read s64 from *p and fill it to target */
+static inline int get_s64(uint8_t **p, size_t *size, s64 *target)
+{
+	if (*size < sizeof(s64))
+		return -EINVAL;
+
+	*target = (s64)(le64_to_cpu(*(__le64*)*p));
+	*p += sizeof(s64);
+	*size -= sizeof(s64);
+
+	return 0;
+}
+
+/* read list of s64 from *p and fill them to target */
+static inline int get_s64s(uint8_t **p, size_t *size, s64 *target, size_t num)
 {
 	int retval = 0;
-	__le32 le_idx;
-	uint32_t idx;
-	struct camera_ext_predefined_ctrl_mod_cfg mod_cfg;
-	struct camera_ext_predefined_ctrl_v4l2_cfg v4l2_cfg;
+	size_t i;
+	if (*size < sizeof(s64) * num)
+		return -EINVAL;
 
-	/* start from idx 0 */
-	idx = 0;
-	while (1) {
-		le_idx = cpu_to_le32(idx);
-		retval = gb_operation_sync(conn,
-				GB_CAMERA_EXT_TYPE_CTRL_GET_CFG,
-				&le_idx,
-				sizeof(le_idx),
-				&mod_cfg,
-				sizeof(mod_cfg));
+	for (i = 0; i < num; i++) {
+		retval = get_s64(p, size, target++);
+		if (retval != 0)
+			break;
+	}
 
-		if (retval != 0 || mod_cfg.id == GB_CAMERA_EXT_INVALID_INDEX) {
-			/* enumeration is done */
-			retval = 0;
+	return retval;
+}
+
+/* read u64 from *p and fill it to target */
+static inline int get_u64(uint8_t **p, size_t *size, u64 *target)
+{
+	if (*size < sizeof(u64))
+		return -EINVAL;
+
+	*target = le64_to_cpu(*(__le64*)*p);
+	*p += sizeof(u64);
+	*size -= sizeof(u64);
+
+	return 0;
+}
+
+/* read u32 from *p and fill it to target */
+static inline int get_u32(uint8_t **p, size_t *size, u32 *target)
+{
+	if (*size < sizeof(u32))
+		return -EINVAL;
+
+	*target = le32_to_cpu(*(__le32*)*p);
+	*p += sizeof(u32);
+	*size -= sizeof(u32);
+
+	return 0;
+}
+
+/* read list of u32 from *p and fill them to target */
+static inline int get_u32s(uint8_t **p, size_t *size, u32 *target, size_t num)
+{
+	int retval = 0;
+	size_t i;
+	if (*size < sizeof(u32) * num) {
+		pr_err("%s: expect %ld u32 from %ld bytes\n", __func__,
+			num, *size);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < num; i++) {
+		retval = get_u32(p, size, target++);
+		if (retval != 0)
+			break;
+	}
+
+	return retval;
+}
+
+static inline void camera_ext_ctrl_float_set_empty(camera_ext_ctrl_float *ff)
+{
+	(*ff)[0] = '\0';
+}
+
+static inline void camera_ext_ctrl_float_copy(camera_ext_ctrl_float *src,
+						camera_ext_ctrl_float *dst)
+{
+	memcpy(*src, *dst, sizeof(camera_ext_ctrl_float));
+}
+
+static inline void camera_ext_ctrl_double_copy(camera_ext_ctrl_double *src,
+						camera_ext_ctrl_double *dst)
+{
+	memcpy(*src, *dst, sizeof(camera_ext_ctrl_double));
+}
+
+static inline int get_camera_ext_ctrl_float(uint8_t **p, size_t *size,
+					camera_ext_ctrl_float *target)
+{
+	if (*size < sizeof(camera_ext_ctrl_float)) {
+		pr_err("%s: invalid camera_ext_ctrl_float size %ld\n",
+			__func__, *size);
+		return -EINVAL;
+	}
+
+	camera_ext_ctrl_float_copy(target, (camera_ext_ctrl_float*) *p);
+	*p += sizeof(camera_ext_ctrl_float);
+	*size -= sizeof(camera_ext_ctrl_float);
+
+	return 0;
+}
+
+static inline int get_camera_ext_ctrl_double(uint8_t **p, size_t *size,
+					camera_ext_ctrl_double *target)
+{
+	if (*size < sizeof(camera_ext_ctrl_double)) {
+		pr_err("%s: invalid camera_ext_ctrl_double size %ld\n",
+			__func__, *size);
+		return -EINVAL;
+	}
+
+	camera_ext_ctrl_double_copy(target, (camera_ext_ctrl_double*) *p);
+	*p += sizeof(camera_ext_ctrl_double);
+	*size -= sizeof(camera_ext_ctrl_double);
+
+	return 0;
+}
+
+/* read list of camera_ext_ctrl_float from *p and fill them to target */
+static inline int get_camera_ext_ctrl_floats(uint8_t **p, size_t *size,
+	camera_ext_ctrl_float *target, size_t num)
+{
+	if (*size < sizeof(camera_ext_ctrl_float) * num) {
+		pr_err("%s: expect %ld floats from %ld bytes\n", __func__,
+			num, *size);
+		return -EINVAL;
+	}
+
+	memcpy(target, *p, sizeof(camera_ext_ctrl_float) * num);
+	*p += sizeof(camera_ext_ctrl_float) * num;
+	*size -= sizeof(camera_ext_ctrl_float) * num;
+
+	target += num; /* we reserved MENU_MAX + 1 items */
+	camera_ext_ctrl_float_set_empty(target); /* add a NULL string */
+	return 0;
+}
+
+/* Read a field from stream p and fill to cam_ext_v4l2_cfg.
+ * This field is described by mod_flag_tag (CAMERA_EXT_CTRL_FLAG_NEED_XXX)
+ *
+ * predef_cfg - predefined config for this control
+ * p - stream (from greybus) to read out the field. Advance *p after read.
+ * reamain_size - size of stream. descrease size after read.
+ * array_size - If this config has array data (dim, menu). It's the size.
+ * cam_ext_v4l2_cfg - cfg to update.
+ */
+static int camera_ext_ctrl_process_one_field(
+		struct v4l2_ctrl_config *predef_cfg,
+		uint32_t mod_flag_tag,
+		uint8_t **p,
+		size_t *remain_size,
+		uint32_t array_size,
+		struct camera_ext_predefined_ctrl_v4l2_cfg *cam_ext_v4l2_cfg)
+{
+	int retval = 0;
+
+	switch (mod_flag_tag) {
+	case CAMERA_EXT_CTRL_FLAG_NEED_MIN:
+		retval = get_s64(p, remain_size, &cam_ext_v4l2_cfg->min);
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_MAX:
+		retval = get_s64(p, remain_size, &cam_ext_v4l2_cfg->max);
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_STEP:
+		retval = get_u64(p, remain_size, &cam_ext_v4l2_cfg->step);
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_DEF:
+		/* def must be 0 for V4L2_CTRL_TYPE_STRING type */
+		if (predef_cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER) {
+			/* get default for float/double */
+			if (predef_cfg->max ==
+				sizeof(camera_ext_ctrl_float) - 1)
+				retval = get_camera_ext_ctrl_float(p,
+					remain_size,
+					&cam_ext_v4l2_cfg->def_f);
+			else if (predef_cfg->max ==
+				sizeof(camera_ext_ctrl_double) - 1)
+				retval = get_camera_ext_ctrl_double(p,
+					remain_size,
+					&cam_ext_v4l2_cfg->def_d);
+			else {
+				pr_err("%s: invalid str as number control.\n",
+					__func__);
+				retval = -EINVAL;
+			}
+		} else if (predef_cfg->type == V4L2_CTRL_TYPE_STRING) {
+			pr_err("%s:def for %x string type\n", __func__,
+				cam_ext_v4l2_cfg->id);
+			retval = -EINVAL;
+		} else
+			retval = get_s64(p, remain_size,
+					&cam_ext_v4l2_cfg->def);
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_DIMS:
+		if (unlikely(array_size > V4L2_CTRL_MAX_DIMS))
+			pr_warn("%s: illegal dims %u\n", __func__, array_size);
+		else
+			retval = get_u32s(p, remain_size,
+					cam_ext_v4l2_cfg->dims,
+					array_size);
+		if (array_size < V4L2_CTRL_MAX_DIMS)
+			cam_ext_v4l2_cfg->dims[array_size] = 0;
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK:
+		retval = get_u64(p, remain_size,
+				&cam_ext_v4l2_cfg->menu_skip_mask);
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_MENU_INT:
+		if (unlikely(array_size > CAMERA_EXT_MAX_MENU_NUM))
+			pr_warn("%s: illegal menu number %u\n", __func__,
+				array_size);
+		else
+			retval = get_s64s(p, remain_size,
+					cam_ext_v4l2_cfg->menu_int,
+					array_size);
+		break;
+	case CAMERA_EXT_CTRL_FLAG_NEED_MENU_FLOAT:
+		if (unlikely(array_size > CAMERA_EXT_MAX_MENU_NUM))
+			pr_warn("%s: illegal menu number %u\n", __func__,
+				array_size);
+		else
+			retval = get_camera_ext_ctrl_floats(p, remain_size,
+					cam_ext_v4l2_cfg->menu_float,
+					array_size);
+		break;
+	default:
+		pr_err("unknow flag 0x%x\n", mod_flag_tag);
+		retval = -EINVAL;
+		break;
+	}
+
+	return retval;
+}
+
+/* Process one control config data from MOD.
+ * ctrl_idx - current processing control index at mod side. This index will be
+ * used to access mod control later.
+ * mod_cfg - mod side control config data
+ * mod_cfg_size - size in bytes of mod_cfg
+ * array_size - if this config has array data (dim or menu). It's the size.
+ * register_custom_mod_ctrl - function to register the control to kernel.
+ * ctx - parameter of register_custom_mod_ctrl
+ */
+static int camera_ext_ctrl_process_one(
+	uint32_t ctrl_idx,
+	struct camera_ext_predefined_ctrl_mod_cfg *mod_cfg,
+	uint32_t mod_cfg_size,
+	uint32_t array_size,
+	register_custom_mod_ctrl_func_t register_custom_mod_ctrl,
+	void *ctx)
+{
+	int retval;
+	uint8_t *p;
+	size_t remain_size;
+	uint32_t mod_flag_tag;
+	struct v4l2_ctrl_config *predef_cfg;
+	struct camera_ext_predefined_ctrl_v4l2_cfg cam_ext_v4l2_cfg;
+
+	cam_ext_v4l2_cfg.id = (le32_to_cpu(mod_cfg->id) & CAM_EXT_CTRL_ID_MASK);
+	predef_cfg = camera_ext_get_ctrl_config(cam_ext_v4l2_cfg.id);
+	if (predef_cfg == NULL) {
+		pr_err("%s: invalid config id %d from MOD\n", __func__,
+			cam_ext_v4l2_cfg.id);
+		return -EINVAL;
+	}
+
+	cam_ext_v4l2_cfg.idx = ctrl_idx;
+	p = mod_cfg->data;
+	remain_size = mod_cfg_size - sizeof(*mod_cfg);
+
+	retval = 0;
+	while (retval == 0 && remain_size > 0) {
+		retval = get_u32(&p, &remain_size, &mod_flag_tag);
+		if (retval != 0) {
+			pr_err("failed to read flag tag\n");
 			break;
 		}
 
-		v4l2_cfg.id = (le32_to_cpu(mod_cfg.id) & CAM_EXT_CTRL_ID_MASK);
-		v4l2_cfg.def = le64_to_cpu(mod_cfg.def);
-		v4l2_cfg.menu_mask = le64_to_cpu(mod_cfg.menu_mask);
-		v4l2_cfg.idx = idx;
-		retval = register_custom_mod_ctrl(&v4l2_cfg, ctx);
+		/* MOD can only use flags used by phone */
+		if (!(predef_cfg->flags & mod_flag_tag)) {
+			pr_err("reject mod control %d with illegal flag %x\n",
+				cam_ext_v4l2_cfg.id, mod_flag_tag);
+			retval = -EINVAL;
+			break;
+		}
+		retval = camera_ext_ctrl_process_one_field(predef_cfg,
+				mod_flag_tag,
+				&p, &remain_size, array_size,
+				&cam_ext_v4l2_cfg);
+	}
+
+	if (retval == 0)
+		retval = register_custom_mod_ctrl(&cam_ext_v4l2_cfg, ctx);
+	else
+		pr_err("failed to parse config data for control %d\n",
+			cam_ext_v4l2_cfg.id);
+
+	/* TODO: if CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER is set,
+	 * the default control value will be spaces with number 'ctrl->min'.
+	 * Need to call extra get_ctrl. (extra get_ctrl also needed for controls
+	 * with array value.
+	 */
+	return retval;
+}
+
+static int camera_ext_ctrl_get_cfg_payload_size(size_t *data_size, uint32_t id,
+					uint32_t next_array_size)
+{
+	struct v4l2_ctrl_config *cfg = camera_ext_get_ctrl_config(id);
+	uint32_t flags;
+	*data_size = 0;
+	if (cfg == NULL) {
+		pr_err("%s: control id %x not found\n", __func__, id);
+		return -EINVAL;
+	}
+
+	/* the config data has the format [FLAG0 DATA0 FLAG1 DATA1 ...] */
+	flags = cfg->flags;
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_MIN)
+		*data_size += sizeof(uint32_t) + sizeof(s64);
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_MAX)
+		*data_size += sizeof(uint32_t) + sizeof(s64);
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_STEP)
+		*data_size += sizeof(uint32_t) + sizeof(u64);
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF) {
+		if (flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER)
+			*data_size += sizeof(uint32_t) + (cfg->max + 1);
+		else
+			*data_size += sizeof(uint32_t) + sizeof(s64);
+	}
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_DIMS) {
+		if (next_array_size <= V4L2_CTRL_MAX_DIMS)
+			*data_size += sizeof(uint32_t)
+				+ sizeof(u32) * next_array_size;
+		else {
+			pr_err("%s: wrong dim size %u\n", __func__,
+				next_array_size);
+			return -EINVAL;
+		}
+	}
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK)
+		*data_size += sizeof(uint32_t) + sizeof(u64);
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_INT) {
+		if (next_array_size <= CAMERA_EXT_MAX_MENU_NUM)
+			*data_size += sizeof(uint32_t)
+				+ sizeof(s64) * next_array_size;
+		else {
+			pr_err("%s: wrong int menu size %u\n", __func__,
+				next_array_size);
+			return -EINVAL;
+		}
+	}
+
+	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_FLOAT) {
+		if (next_array_size <= CAMERA_EXT_MAX_MENU_NUM)
+			*data_size += sizeof(uint32_t)
+					+ sizeof(camera_ext_ctrl_float)
+					* next_array_size;
+		else {
+			pr_err("%s: wrong float menu size %u\n", __func__,
+				next_array_size);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
+	register_custom_mod_ctrl_func_t register_custom_mod_ctrl, void *ctx)
+{
+	int retval = 0;
+	uint32_t idx;
+	size_t data_size, last_array_size;
+	struct camera_ext_predefined_ctrl_mod_cfg *mod_cfg;
+	struct camera_ext_predefined_ctrl_mod_req req;
+
+	idx = -1;
+	/* -1 is invalid index at MOD side. The return mod_cfg will
+	 * only have the header.
+	 */
+	data_size = sizeof(*mod_cfg);
+	last_array_size = 0;
+	while (1) {
+		mod_cfg = kmalloc(data_size, GFP_KERNEL);
+		if (mod_cfg == NULL) {
+			retval = -ENOMEM;
+			break;
+		}
+
+		req.idx = cpu_to_le32(idx);
+		req.data_size = cpu_to_le32(data_size);
+		retval = gb_operation_sync(conn,
+				GB_CAMERA_EXT_TYPE_CTRL_GET_CFG,
+				&req,
+				sizeof(req),
+				mod_cfg,
+				data_size);
+		if (retval != 0) {
+			/* enumeration is done */
+			retval = 0;
+			kfree(mod_cfg);
+			break;
+		}
+
+		/* skip if no control for this idx (e.g. -1 index) */
+		if (mod_cfg->id != (uint32_t) -1) {
+			retval = camera_ext_ctrl_process_one(idx, mod_cfg, data_size,
+				last_array_size, register_custom_mod_ctrl, ctx);
+			if (retval != 0)
+				pr_err("failed to process control %x\n",
+					mod_cfg->id);
+		}
+
+		if (retval == 0) {
+			if (mod_cfg->next_id != (uint32_t) -1) {
+				/* calculate next response size */
+				retval = camera_ext_ctrl_get_cfg_payload_size(
+					&data_size,
+					le32_to_cpu(mod_cfg->next_id),
+					le32_to_cpu(mod_cfg->next_array_size));
+				if (retval == 0) {
+					/* adding header */
+					data_size += sizeof(*mod_cfg);
+					/* save for later use when unpack
+					 * next_id's config.
+					 */
+					last_array_size =
+						mod_cfg->next_array_size;
+				}
+			} else {
+				/* no more controls */
+				kfree(mod_cfg);
+				break;
+			}
+		}
+
+		kfree(mod_cfg);
 
 		if (retval != 0)
 			break;
@@ -446,174 +859,100 @@ int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 }
 
 /* called by get_ctrl */
-static int ctrl_val_mod_to_v4l2(
-	struct camera_ext_ctrl_val *mod_ctrl_val,
-	struct v4l2_ctrl *ctrl)
-{
-	int retval = 0;
-
-	switch (ctrl->type) {
-	case V4L2_CTRL_TYPE_INTEGER:
-	case V4L2_CTRL_TYPE_BOOLEAN:
-		ctrl->cur.val = le32_to_cpu(mod_ctrl_val->val);
-		break;
-	case V4L2_CTRL_TYPE_INTEGER64:
-		*ctrl->p_cur.p_s64 = le64_to_cpu(mod_ctrl_val->val_64);
-		break;
-	default:
-		retval = -EINVAL;
-		pr_err("%s: error type %d\n", __func__, ctrl->type);
-		break;
-	}
-	return retval;
-}
-
-/* called by get_ctrl */
-static int ctrl_val_array_mod_to_v4l2(
-	struct camera_ext_ctrl_array_val *mod_ctrl_val,
-	struct v4l2_ctrl *ctrl)
+static int ctrl_val_mod_to_v4l2(uint8_t *mod_ctrl_val, struct v4l2_ctrl *ctrl)
 {
 	int retval = 0;
 	uint32_t i;
-	/* num of elements in the N-dim array */
-	uint32_t elems = ctrl->elems;
+	uint8_t *p = mod_ctrl_val;
+	uint8_t *q = ctrl->p_new.p;
 
-	switch (ctrl->type) {
-	case V4L2_CTRL_TYPE_INTEGER:
-	case V4L2_CTRL_TYPE_BOOLEAN:
-		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 2)) {
-			pr_err("%s: control %d has size %d exceeds limit\n",
-				__func__, ctrl->id, elems);
-			return -EINVAL;
+	for (i = 0; i < ctrl->elems; i++) {
+		switch (ctrl->type) {
+		case V4L2_CTRL_TYPE_INTEGER:
+		case V4L2_CTRL_TYPE_BOOLEAN:
+		case V4L2_CTRL_TYPE_MENU:
+		case V4L2_CTRL_TYPE_INTEGER_MENU:
+			*(s32 *)q = le32_to_cpu(*(__le32 *)p);
+			break;
+		case V4L2_CTRL_TYPE_INTEGER64:
+			*(s64 *)q = le64_to_cpu(*(__le64 *)p);
+			break;
+		case V4L2_CTRL_TYPE_STRING:
+			memcpy(q, p, ctrl->elem_size);
+			break;
+
+		default:
+			retval = -EINVAL;
+			pr_err("%s: error type %d\n", __func__, ctrl->type);
+			break;
 		}
-		for (i = 0; i < elems; i++)
-			ctrl->p_cur.p_s32[i] =
-				le32_to_cpu(mod_ctrl_val->val[i]);
-		break;
-
-	case V4L2_CTRL_TYPE_INTEGER64:
-		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 3)) {
-			pr_err("%s: control %d has size %d exceeds limit\n",
-				__func__, ctrl->id, elems);
-			return -EINVAL;
-		}
-		for (i = 0; i < elems; i++)
-			ctrl->p_cur.p_s64[i] =
-				le64_to_cpu(mod_ctrl_val->val_64[i]);
-		break;
-
-	default:
-		pr_err("%s:error type %d\n", __func__, ctrl->type);
-		break;
+		p += ctrl->elem_size;
+		q += ctrl->elem_size;
 	}
-
 	return retval;
 }
 
 int gb_camera_ext_g_volatile_ctrl(struct gb_connection *conn,
-	struct v4l2_ctrl *ctrl)
+		struct v4l2_ctrl *ctrl)
 {
 	int retval = -EINVAL;
-	__le32 idx = cpu_to_le32((uint32_t)(unsigned long)ctrl->priv);
+	struct camera_ext_predefined_ctrl_mod_req req;
+	size_t mod_ctrl_val_size;
+	uint8_t *mod_ctrl_val;
 
-	if (ctrl->is_array) {
-		struct camera_ext_ctrl_array_val mod_ctrl_val;
+	mod_ctrl_val_size = ctrl->elems * ctrl->elem_size;
+	mod_ctrl_val = kmalloc(mod_ctrl_val_size, GFP_KERNEL);
+	if (mod_ctrl_val == NULL)
+		return -ENOMEM;
 
-		retval = gb_operation_sync(conn,
-				GB_CAMERA_EXT_TYPE_CTRL_ARRAY_GET,
-				&idx,
-				sizeof(idx),
-				&mod_ctrl_val,
-				sizeof(mod_ctrl_val));
-		if (retval == 0)
-			retval = ctrl_val_array_mod_to_v4l2(
-					&mod_ctrl_val, ctrl);
+	req.idx = cpu_to_le32((uint32_t)(unsigned long)ctrl->priv);
+	req.data_size = cpu_to_le32(mod_ctrl_val_size);
 
-	} else {
-		struct camera_ext_ctrl_val mod_ctrl_val;
-
-		retval = gb_operation_sync(conn,
-				GB_CAMERA_EXT_TYPE_CTRL_GET,
-				&idx,
-				sizeof(idx),
-				&mod_ctrl_val,
-				sizeof(mod_ctrl_val));
-		if (retval == 0)
-			retval = ctrl_val_mod_to_v4l2(&mod_ctrl_val, ctrl);
-	}
+	retval = gb_operation_sync(conn,
+			GB_CAMERA_EXT_TYPE_CTRL_GET,
+			&req,
+			sizeof(req),
+			mod_ctrl_val,
+			mod_ctrl_val_size);
+	if (retval == 0)
+		retval = ctrl_val_mod_to_v4l2(mod_ctrl_val, ctrl);
+	kfree(mod_ctrl_val);
 
 	return retval;
 }
 
 /* called by set_ctrl */
-static int ctrl_val_v4l2_to_mod(struct v4l2_ctrl *ctrl,
-		struct camera_ext_ctrl_val *mod_ctrl_val)
-{
-	int retval = 0;
-
-	cam_ext_set_ctrl_val_idx(mod_ctrl_val,
-		cpu_to_le32((uint32_t)(unsigned long)ctrl->priv));
-	switch (ctrl->type) {
-	case V4L2_CTRL_TYPE_INTEGER:
-	case V4L2_CTRL_TYPE_BOOLEAN:
-	case V4L2_CTRL_TYPE_BUTTON:
-	case V4L2_CTRL_TYPE_MENU:
-	case V4L2_CTRL_TYPE_INTEGER_MENU:
-		mod_ctrl_val->val = cpu_to_le32(ctrl->val);
-		break;
-
-	case V4L2_CTRL_TYPE_INTEGER64:
-		mod_ctrl_val->val_64 = cpu_to_le64(*ctrl->p_new.p_s64);
-		break;
-
-	default:
-		retval = -EINVAL;
-		pr_err("%s: error type %d\n", __func__, ctrl->type);
-		break;
-	}
-
-	return retval;
-}
-
-/* called by set_trl */
-static int ctrl_val_array_v4l2_to_mod(struct v4l2_ctrl *ctrl,
-		struct camera_ext_ctrl_array_val *mod_ctrl_val)
+static int ctrl_val_v4l2_to_mod(struct v4l2_ctrl *ctrl, uint8_t *mod_ctrl_val)
 {
 	int retval = 0;
 	uint32_t i;
-	uint32_t elems = ctrl->elems;
+	uint8_t *p = mod_ctrl_val;
+	uint8_t *q = ctrl->p_new.p;
 
-	cam_ext_set_ctrl_val_idx(mod_ctrl_val,
-		cpu_to_le32((uint32_t)(unsigned long)ctrl->priv));
-	switch (ctrl->type) {
-	case V4L2_CTRL_TYPE_INTEGER:
-	case V4L2_CTRL_TYPE_BOOLEAN:
-		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 2)) {
-			pr_err("%s: control %d has size %d exceeds limit\n",
-				__func__, ctrl->id, elems);
-			return -EINVAL;
+	for (i = 0; i < ctrl->elems; i++) {
+		switch (ctrl->type) {
+		case V4L2_CTRL_TYPE_INTEGER:
+		case V4L2_CTRL_TYPE_BOOLEAN:
+		case V4L2_CTRL_TYPE_BUTTON:
+		case V4L2_CTRL_TYPE_MENU:
+		case V4L2_CTRL_TYPE_INTEGER_MENU:
+			*(__le32 *)p = cpu_to_le32(*(s32*)q);
+			break;
+		case V4L2_CTRL_TYPE_STRING:
+			memcpy(p, q, ctrl->elem_size);
+			break;
+		case V4L2_CTRL_TYPE_INTEGER64:
+			*(__le64 *)p = cpu_to_le64(*(s64*)q);
+			break;
+
+		default:
+			retval = -EINVAL;
+			pr_err("%s: error type %d\n", __func__, ctrl->type);
+			break;
 		}
-		for (i = 0; i < elems; i++)
-			mod_ctrl_val->val[i] =
-				cpu_to_le32(ctrl->p_new.p_s32[i]);
-		break;
-
-	case V4L2_CTRL_TYPE_INTEGER64:
-		if (elems > (CAMERA_EXT_CTRL_ARRAY_SIZE >> 3)) {
-			pr_err("%s: control %d has size %d exceeds limit\n",
-				__func__, ctrl->id, elems);
-			return -EINVAL;
-		}
-		for (i = 0; i < elems; i++)
-			mod_ctrl_val->val_64[i] =
-				cpu_to_le64(ctrl->p_new.p_s64[i]);
-		break;
-
-	default:
-		pr_err("%s:error type %d\n", __func__, ctrl->type);
-		break;
+		p += ctrl->elem_size;
+		q += ctrl->elem_size;
 	}
-
 	return retval;
 }
 
@@ -621,35 +960,32 @@ static int gb_camera_ext_s_or_try_ctrl(struct gb_connection *conn,
 		struct v4l2_ctrl *ctrl, int is_try)
 {
 	int retval = -EINVAL;
+	uint32_t data_size;
+	struct camera_ext_predefined_ctrl_mod_req *req;
+	size_t mod_ctrl_val_size;
+	int op = is_try ? GB_CAMERA_EXT_TYPE_CTRL_TRY
+			: GB_CAMERA_EXT_TYPE_CTRL_SET;
 
-	if (ctrl->is_array) {
-		struct camera_ext_ctrl_array_val mod_ctrl_val;
-		int op = is_try ? GB_CAMERA_EXT_TYPE_CTRL_ARRAY_TRY
-				: GB_CAMERA_EXT_TYPE_CTRL_ARRAY_SET;
-
-		retval = ctrl_val_array_v4l2_to_mod(ctrl, &mod_ctrl_val);
-		if (retval == 0)
-			retval = gb_operation_sync(conn,
-					op,
-					&mod_ctrl_val,
-					sizeof(mod_ctrl_val),
-					NULL,
-					0);
-	} else {
-		struct camera_ext_ctrl_val mod_ctrl_val;
-		int op = is_try ? GB_CAMERA_EXT_TYPE_CTRL_TRY
-				: GB_CAMERA_EXT_TYPE_CTRL_SET;
-
-		retval = ctrl_val_v4l2_to_mod(ctrl, &mod_ctrl_val);
-		if (retval == 0)
-			retval = gb_operation_sync(conn,
-					op,
-					&mod_ctrl_val,
-					sizeof(mod_ctrl_val),
-					NULL,
-					0);
+	data_size = ctrl->elems * ctrl->elem_size;;
+	mod_ctrl_val_size = sizeof(*req) + data_size;
+	req = kmalloc(mod_ctrl_val_size, GFP_KERNEL);
+	if (req == NULL) {
+		pr_err("%s: failed to allocate %ld bytes\n", __func__,
+			mod_ctrl_val_size);
+		return -ENOMEM;
 	}
 
+	req->idx = cpu_to_le32((uint32_t)(unsigned long)ctrl->priv);
+	req->data_size = cpu_to_le32(data_size);
+	retval = ctrl_val_v4l2_to_mod(ctrl, req->data);
+	if (retval == 0)
+		retval = gb_operation_sync(conn,
+				op,
+				req,
+				mod_ctrl_val_size,
+				NULL,
+				0);
+	kfree(req);
 	return retval;
 }
 
