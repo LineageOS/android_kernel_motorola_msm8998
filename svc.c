@@ -19,6 +19,7 @@
 struct gb_svc_deferred_request {
 	struct work_struct work;
 	struct gb_operation *operation;
+	struct completion *completion;
 };
 
 
@@ -504,6 +505,7 @@ static void gb_svc_process_deferred_request(struct work_struct *work)
 		break;
 	case GB_SVC_TYPE_INTF_HOT_UNPLUG:
 		gb_svc_process_intf_hot_unplug(operation);
+		complete(dr->completion);
 		break;
 	default:
 		dev_err(&svc->dev, "bad deferred request type: 0x%02x\n", type);
@@ -517,6 +519,10 @@ static int gb_svc_queue_deferred_request(struct gb_operation *operation)
 {
 	struct gb_svc *svc = operation->connection->private;
 	struct gb_svc_deferred_request *dr;
+	struct completion comp;
+	bool wait;
+
+	wait = operation->request->header->type == GB_SVC_TYPE_INTF_HOT_UNPLUG;
 
 	dr = kmalloc(sizeof(*dr), GFP_KERNEL);
 	if (!dr)
@@ -525,9 +531,18 @@ static int gb_svc_queue_deferred_request(struct gb_operation *operation)
 	gb_operation_get(operation);
 
 	dr->operation = operation;
+
+	if (wait) {
+		init_completion(&comp);
+		dr->completion = &comp;
+	}
+
 	INIT_WORK(&dr->work, gb_svc_process_deferred_request);
 
 	queue_work(svc->wq, &dr->work);
+
+	if (wait)
+		wait_for_completion(&comp);
 
 	return 0;
 }
