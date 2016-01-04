@@ -73,12 +73,9 @@
 #define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_SET	0x15
 #define GB_CAMERA_EXT_TYPE_CTRL_ARRAY_TRY	0x16
 
-#define dev_to_conn(dev) container_of(dev, struct gb_connection, dev)
-
-/* dev points to gb_connection->dev for all gb_camera_ext_XYZ functions */
-int gb_camera_ext_power_on(struct device *dev)
+int gb_camera_ext_power_on(struct gb_connection *conn)
 {
-	return gb_operation_sync(dev_to_conn(dev),
+	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_POWER_ON,
 				NULL,
 				0,
@@ -86,9 +83,9 @@ int gb_camera_ext_power_on(struct device *dev)
 				0);
 }
 
-int gb_camera_ext_power_off(struct device *dev)
+int gb_camera_ext_power_off(struct gb_connection *conn)
 {
-	return gb_operation_sync(dev_to_conn(dev),
+	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_POWER_OFF,
 				NULL,
 				0,
@@ -96,9 +93,9 @@ int gb_camera_ext_power_off(struct device *dev)
 				0);
 }
 
-int gb_camera_ext_stream_on(struct device *dev)
+int gb_camera_ext_stream_on(struct gb_connection *conn)
 {
-	return gb_operation_sync(dev_to_conn(dev),
+	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_STREAM_ON,
 				NULL,
 				0,
@@ -106,9 +103,9 @@ int gb_camera_ext_stream_on(struct device *dev)
 				0);
 }
 
-int gb_camera_ext_stream_off(struct device *dev)
+int gb_camera_ext_stream_off(struct gb_connection *conn)
 {
-	return gb_operation_sync(dev_to_conn(dev),
+	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_STREAM_OFF,
 				NULL,
 				0,
@@ -116,13 +113,13 @@ int gb_camera_ext_stream_off(struct device *dev)
 				0);
 }
 
-int gb_camera_ext_input_enum(struct device *dev, struct v4l2_input *inp)
+int gb_camera_ext_input_enum(struct gb_connection *conn, struct v4l2_input *inp)
 {
 	int retval;
 	struct camera_ext_input input;
 	__le32 index = cpu_to_le32(inp->index);
 
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_INPUT_ENUM,
 				&index,
 				sizeof(index),
@@ -136,13 +133,13 @@ int gb_camera_ext_input_enum(struct device *dev, struct v4l2_input *inp)
 	return retval;
 }
 
-int gb_camera_ext_input_get(struct device *dev, int32_t *i)
+int gb_camera_ext_input_get(struct gb_connection *conn, int32_t *i)
 {
 
 	int retval;
 	__le32 index = 0;
 
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_INPUT_GET,
 				NULL,
 				0,
@@ -153,11 +150,11 @@ int gb_camera_ext_input_get(struct device *dev, int32_t *i)
 	return retval;
 }
 
-int gb_camera_ext_input_set(struct device *dev, int32_t i)
+int gb_camera_ext_input_set(struct gb_connection *conn, int32_t i)
 {
 	__le32 index = cpu_to_le32(i);
 
-	return gb_operation_sync(dev_to_conn(dev),
+	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_INPUT_SET,
 				&index,
 				sizeof(index),
@@ -165,7 +162,7 @@ int gb_camera_ext_input_set(struct device *dev, int32_t i)
 				0);
 }
 
-int gb_camera_ext_format_enum(struct device *dev, struct v4l2_fmtdesc *fmt)
+int gb_camera_ext_format_enum(struct gb_connection *conn, struct v4l2_fmtdesc *fmt)
 {
 	int retval;
 	__le32 index;
@@ -173,7 +170,7 @@ int gb_camera_ext_format_enum(struct device *dev, struct v4l2_fmtdesc *fmt)
 
 	memset(&fmtdesc, 0, sizeof(fmtdesc));
 	index = cpu_to_le32(fmt->index);
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_FMT_ENUM,
 				&index,
 				sizeof(index),
@@ -187,12 +184,12 @@ int gb_camera_ext_format_enum(struct device *dev, struct v4l2_fmtdesc *fmt)
 	return retval;
 }
 
-int gb_camera_ext_format_get(struct device *dev, struct v4l2_format *fmt)
+int gb_camera_ext_format_get(struct gb_connection *conn, struct v4l2_format *fmt)
 {
 	int retval;
 	struct camera_ext_format format;
 
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_FMT_GET,
 				NULL,
 				0,
@@ -208,7 +205,7 @@ int gb_camera_ext_format_get(struct device *dev, struct v4l2_format *fmt)
 	return retval;
 }
 
-int gb_camera_ext_format_set(struct device *dev, struct v4l2_format *fmt)
+int gb_camera_ext_format_set(struct gb_connection *conn, struct v4l2_format *fmt)
 {
 	int retval;
 	struct camera_ext_format format;
@@ -216,7 +213,7 @@ int gb_camera_ext_format_set(struct device *dev, struct v4l2_format *fmt)
 	format.width = cpu_to_le32(fmt->fmt.pix.width);
 	format.height = cpu_to_le32(fmt->fmt.pix.height);
 	format.pixelformat = cpu_to_le32(fmt->fmt.pix.pixelformat);
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_FMT_SET,
 				&format,
 				sizeof(format),
@@ -225,7 +222,7 @@ int gb_camera_ext_format_set(struct device *dev, struct v4l2_format *fmt)
 	return retval;
 }
 
-int gb_camera_ext_frmsize_enum(struct device *dev,
+int gb_camera_ext_frmsize_enum(struct gb_connection *conn,
 		struct v4l2_frmsizeenum *frmsize)
 {
 	int retval;
@@ -233,7 +230,7 @@ int gb_camera_ext_frmsize_enum(struct device *dev,
 
 	mod_frmsize.index = cpu_to_le32(frmsize->index);
 	mod_frmsize.pixelformat = cpu_to_le32(frmsize->pixel_format);
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_FMSIZE_ENUM,
 				&mod_frmsize,
 				sizeof(mod_frmsize),
@@ -272,7 +269,7 @@ int gb_camera_ext_frmsize_enum(struct device *dev,
 	return retval;
 }
 
-int gb_camera_ext_frmival_enum(struct device *dev,
+int gb_camera_ext_frmival_enum(struct gb_connection *conn,
 		struct v4l2_frmivalenum *frmival)
 {
 	int retval;
@@ -284,7 +281,7 @@ int gb_camera_ext_frmival_enum(struct device *dev,
 	mod_frmival.width = cpu_to_le32(frmival->width);
 	mod_frmival.height = cpu_to_le32(frmival->height);
 
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_FRMIVAL_ENUM,
 				&mod_frmival,
 				sizeof(mod_frmival),
@@ -322,7 +319,7 @@ int gb_camera_ext_frmival_enum(struct device *dev,
 	return retval;
 }
 
-int gb_camera_ext_stream_parm_set(struct device *dev,
+int gb_camera_ext_stream_parm_set(struct gb_connection *conn,
 		struct v4l2_streamparm *parm)
 {
 	struct camera_ext_streamparm mod_streamparm;
@@ -336,7 +333,7 @@ int gb_camera_ext_stream_parm_set(struct device *dev,
 			parm->parm.capture.timeperframe.numerator);
 	mod_streamparm.capture.timeperframe.denominator = cpu_to_le32(
 				parm->parm.capture.timeperframe.denominator);
-	return gb_operation_sync(dev_to_conn(dev),
+	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_STREAM_PARM_SET,
 				&mod_streamparm,
 				sizeof(mod_streamparm),
@@ -344,14 +341,14 @@ int gb_camera_ext_stream_parm_set(struct device *dev,
 				0);
 }
 
-int gb_camera_ext_stream_parm_get(struct device *dev,
+int gb_camera_ext_stream_parm_get(struct gb_connection *conn,
 		struct v4l2_streamparm *parm)
 {
 	int retval;
 	struct camera_ext_streamparm mod_streamparm;
 
 	memset(&mod_streamparm, 0, sizeof(mod_streamparm));
-	retval = gb_operation_sync(dev_to_conn(dev),
+	retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_STREAM_PARM_GET,
 				NULL,
 				0,
@@ -385,7 +382,7 @@ int gb_camera_ext_stream_parm_get(struct device *dev,
 	return retval;
 }
 
-int gb_camera_ext_ctrl_process_all(struct device *dev,
+int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 	int (*register_custom_mod_ctrl)(
 		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx),
 	void *ctx)
@@ -400,7 +397,7 @@ int gb_camera_ext_ctrl_process_all(struct device *dev,
 	idx = 0;
 	while (1) {
 		le_idx = cpu_to_le32(idx);
-		retval = gb_operation_sync(dev_to_conn(dev),
+		retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_CTRL_GET_CFG,
 				&le_idx,
 				sizeof(le_idx),
@@ -498,7 +495,7 @@ static int ctrl_val_array_mod_to_v4l2(
 	return retval;
 }
 
-int gb_camera_ext_g_volatile_ctrl(struct device *dev,
+int gb_camera_ext_g_volatile_ctrl(struct gb_connection *conn,
 	struct v4l2_ctrl *ctrl)
 {
 	int retval = -EINVAL;
@@ -507,7 +504,7 @@ int gb_camera_ext_g_volatile_ctrl(struct device *dev,
 	if (ctrl->is_array) {
 		struct camera_ext_ctrl_array_val mod_ctrl_val;
 
-		retval = gb_operation_sync(dev_to_conn(dev),
+		retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_CTRL_ARRAY_GET,
 				&idx,
 				sizeof(idx),
@@ -520,7 +517,7 @@ int gb_camera_ext_g_volatile_ctrl(struct device *dev,
 	} else {
 		struct camera_ext_ctrl_val mod_ctrl_val;
 
-		retval = gb_operation_sync(dev_to_conn(dev),
+		retval = gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_CTRL_GET,
 				&idx,
 				sizeof(idx),
@@ -605,7 +602,7 @@ static int ctrl_val_array_v4l2_to_mod(struct v4l2_ctrl *ctrl,
 	return retval;
 }
 
-static int gb_camera_ext_s_or_try_ctrl(struct device *dev,
+static int gb_camera_ext_s_or_try_ctrl(struct gb_connection *conn,
 		struct v4l2_ctrl *ctrl, int is_try)
 {
 	int retval = -EINVAL;
@@ -617,7 +614,7 @@ static int gb_camera_ext_s_or_try_ctrl(struct device *dev,
 
 		retval = ctrl_val_array_v4l2_to_mod(ctrl, &mod_ctrl_val);
 		if (retval == 0)
-			retval = gb_operation_sync(dev_to_conn(dev),
+			retval = gb_operation_sync(conn,
 					op,
 					&mod_ctrl_val,
 					sizeof(mod_ctrl_val),
@@ -630,7 +627,7 @@ static int gb_camera_ext_s_or_try_ctrl(struct device *dev,
 
 		retval = ctrl_val_v4l2_to_mod(ctrl, &mod_ctrl_val);
 		if (retval == 0)
-			retval = gb_operation_sync(dev_to_conn(dev),
+			retval = gb_operation_sync(conn,
 					op,
 					&mod_ctrl_val,
 					sizeof(mod_ctrl_val),
@@ -641,14 +638,14 @@ static int gb_camera_ext_s_or_try_ctrl(struct device *dev,
 	return retval;
 }
 
-int gb_camera_ext_s_ctrl(struct device *dev, struct v4l2_ctrl *ctrl)
+int gb_camera_ext_s_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl)
 {
-	return gb_camera_ext_s_or_try_ctrl(dev, ctrl, 0);
+	return gb_camera_ext_s_or_try_ctrl(conn, ctrl, 0);
 }
 
-int gb_camera_ext_try_ctrl(struct device *dev, struct v4l2_ctrl *ctrl)
+int gb_camera_ext_try_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl)
 {
-	return gb_camera_ext_s_or_try_ctrl(dev, ctrl, 1);
+	return gb_camera_ext_s_or_try_ctrl(conn, ctrl, 1);
 }
 
 static int gb_camera_ext_connection_init(struct gb_connection *connection)
@@ -661,7 +658,6 @@ static int gb_camera_ext_connection_init(struct gb_connection *connection)
 		return -ENOMEM;
 
 	cam->connection = connection;
-	cam->gb_dev = &connection->dev;
 	connection->private = cam;
 
 	retval = camera_ext_mod_v4l2_init(cam);

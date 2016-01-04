@@ -40,33 +40,32 @@
 
 struct camera_ext {
 	struct gb_connection *connection;
-	struct device *gb_dev;
 	struct v4l2_device v4l2_dev;
 	struct video_device vdev_mod;
 	struct v4l2_ctrl_handler hdl_ctrls;
 };
 
 /* gb functions */
-int gb_camera_ext_power_on(struct device *dev);
-int gb_camera_ext_power_off(struct device *dev);
-int gb_camera_ext_stream_on(struct device *dev);
-int gb_camera_ext_stream_off(struct device *dev);
-int gb_camera_ext_input_enum(struct device *dev, struct v4l2_input *input);
-int gb_camera_ext_input_get(struct device *dev, int32_t *index);
-int gb_camera_ext_input_set(struct device *dev, int32_t index);
-int gb_camera_ext_format_enum(struct device *dev,
+int gb_camera_ext_power_on(struct gb_connection *conn);
+int gb_camera_ext_power_off(struct gb_connection *conn);
+int gb_camera_ext_stream_on(struct gb_connection *conn);
+int gb_camera_ext_stream_off(struct gb_connection *conn);
+int gb_camera_ext_input_enum(struct gb_connection *conn, struct v4l2_input *input);
+int gb_camera_ext_input_get(struct gb_connection *conn, int32_t *index);
+int gb_camera_ext_input_set(struct gb_connection *conn, int32_t index);
+int gb_camera_ext_format_enum(struct gb_connection *conn,
 		struct v4l2_fmtdesc *fmtdesc);
-int gb_camera_ext_format_get(struct device *dev,
+int gb_camera_ext_format_get(struct gb_connection *conn,
 		struct v4l2_format *format);
-int gb_camera_ext_format_set(struct device *dev,
+int gb_camera_ext_format_set(struct gb_connection *conn,
 		struct v4l2_format *format);
-int gb_camera_ext_frmsize_enum(struct device *dev,
+int gb_camera_ext_frmsize_enum(struct gb_connection *conn,
 		struct v4l2_frmsizeenum *frmsize);
-int gb_camera_ext_frmival_enum(struct device *dev,
+int gb_camera_ext_frmival_enum(struct gb_connection *conn,
 		struct v4l2_frmivalenum *frmival);
-int gb_camera_ext_stream_parm_get(struct device *dev,
+int gb_camera_ext_stream_parm_get(struct gb_connection *conn,
 		struct v4l2_streamparm *parm);
-int gb_camera_ext_stream_parm_set(struct device *dev,
+int gb_camera_ext_stream_parm_set(struct gb_connection *conn,
 		struct v4l2_streamparm *parm);
 
 struct camera_ext_predefined_ctrl_v4l2_cfg {
@@ -79,13 +78,13 @@ struct camera_ext_predefined_ctrl_v4l2_cfg {
 	unsigned long idx;
 };
 
-int gb_camera_ext_ctrl_process_all(struct device *dev,
+int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 	int (*register_custom_mod_ctrl)(
 		struct camera_ext_predefined_ctrl_v4l2_cfg *cfg, void *ctx),
 	void *ctx);
-int gb_camera_ext_g_volatile_ctrl(struct device *dev, struct v4l2_ctrl *ctrl);
-int gb_camera_ext_s_ctrl(struct device *dev, struct v4l2_ctrl *ctrl);
-int gb_camera_ext_try_ctrl(struct device *dev, struct v4l2_ctrl *ctrl);
+int gb_camera_ext_g_volatile_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl);
+int gb_camera_ext_s_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl);
+int gb_camera_ext_try_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl);
 
 /* v4l2 functions */
 int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev);
