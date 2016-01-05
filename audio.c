@@ -259,6 +259,7 @@ out_cpu_dai:
 out_dai:
 	platform_device_unregister(codec);
 out:
+	snd_dev->i2s_tx_connection = NULL;
 	gb_free_snd(snd_dev);
 	return ret;
 }
@@ -323,6 +324,7 @@ static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 err_free_i2s_configs:
 	gb_i2s_mgmt_free_cfgs(snd_dev);
 err_free_snd_dev:
+	snd_dev->mgmt_connection = NULL;
 	gb_free_snd(snd_dev);
 	return ret;
 }
