@@ -70,7 +70,9 @@ struct apba_ctrl {
 	int desired_on;
 	struct mutex log_mutex;
 	struct completion comp;
+	struct completion mode_comp;
 	uint8_t master_intf;
+	uint8_t mode;
 } *g_ctrl;
 
 /* message from APBA Ctrl driver in kernel */
@@ -78,6 +80,14 @@ struct apba_ctrl {
 struct apba_ctrl_int_reason_resp {
 	struct apba_ctrl_msg_hdr hdr;
 	__le16 reason;
+};
+#pragma pack(pop)
+
+/* message to APBA for mode request */
+#pragma pack(push, 1)
+struct apba_mode_req {
+	struct apba_ctrl_msg_hdr hdr;
+	uint8_t mode;
 };
 #pragma pack(pop)
 
@@ -96,6 +106,7 @@ static DEFINE_KFIFO(apba_log_fifo, char, APBA_LOG_SIZE);
 static char fifo_overflow[MUC_MSG_SIZE_MAX];
 
 #define APBA_LOG_REQ_TIMEOUT	1000 /* ms */
+#define APBA_MODE_REQ_TIMEOUT	1000 /* ms */
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
@@ -213,8 +224,10 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 
 	if (on)
 		apba_seq(ctrl, &ctrl->enable_seq);
-	else
+	else {
+		ctrl->mode = 0;
 		apba_seq(ctrl, &ctrl->disable_seq);
+	}
 
 	if (ctrl->mods_uart)
 		mods_uart_pm_on(ctrl->mods_uart, on);
@@ -469,6 +482,51 @@ static ssize_t apba_enable_store(struct device *dev,
 
 static DEVICE_ATTR_RW(apba_enable);
 
+static ssize_t apba_mode_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return 0;
+
+	return scnprintf(buf, 4, "%d\n", g_ctrl->mode);
+}
+
+static ssize_t apba_mode_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val;
+	struct apba_mode_req msg;
+
+	if (!g_ctrl)
+		return 0;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	g_ctrl->mode = val;
+
+	msg.hdr.type = cpu_to_le16(APBA_CTRL_MODE_REQUEST);
+	msg.hdr.size = cpu_to_le16(sizeof(msg.mode));
+	msg.mode = (uint8_t)val;
+
+	if (mods_uart_apba_send(g_ctrl->mods_uart,
+				(uint8_t *)&msg, sizeof(msg), 0) != 0) {
+		pr_err("%s: failed to send MODE\n", __func__);
+		return count;
+	}
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->mode_comp,
+		    msecs_to_jiffies(APBA_MODE_REQ_TIMEOUT))) {
+		pr_err("%s: timeout for MODE\n", __func__);
+		return count;
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(apba_mode);
+
 static ssize_t apba_log_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -508,6 +566,7 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_flash_partition.attr,
 	&dev_attr_apba_enable.attr,
 	&dev_attr_apba_log.attr,
+	&dev_attr_apba_mode.attr,
 	NULL,
 };
 
@@ -808,6 +867,9 @@ void apba_handle_message(uint8_t *payload, size_t len)
 	case APBA_CTRL_LOG_REQUEST:
 		complete(&g_ctrl->comp);
 		break;
+	case APBA_CTRL_MODE_REQUEST:
+		complete(&g_ctrl->mode_comp);
+		break;
 	default:
 		pr_err("%s: Unknown message received.\n", __func__);
 		break;
@@ -945,6 +1007,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	mutex_init(&ctrl->log_mutex);
 	init_completion(&ctrl->comp);
+	init_completion(&ctrl->mode_comp);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, apba_groups);
 	if (ret) {
