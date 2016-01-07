@@ -1700,14 +1700,22 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 			uint8_t *payload, size_t size)
 {
 	struct device *dev = &svc_dd->pdev->dev;
+	int empty;
 
-	dev_info(dev, "[%d] Firmware flashing complete; resetting\n",
+	dev_info(dev, "[%d] Firmware flashing complete\n",
 		orig_dev->intf_id);
 
-	/* Force a reboot */
-	muc_reset(svc_dd->mod_root_ver, false);
+	/* HACK: Remove once user-space takes on the reset responsibility. */
+	mutex_lock(&slave_lock);
+	empty = list_empty(&svc_dd->slave_drv);
+	mutex_unlock(&slave_lock);
+	if (empty) {
+		dev_info(dev, "[%d] Force a reboot\n", orig_dev->intf_id);
+		muc_reset(svc_dd->mod_root_ver, false);
+		return 0;
+	}
 
-	return 0;
+	return -ENOENT;
 }
 
 static int
