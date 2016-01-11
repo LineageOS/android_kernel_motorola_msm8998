@@ -131,6 +131,10 @@ static void muc_handle_detection(struct muc_data *cdata)
 
 	/* Send enable sequence when detected and in disabled. */
 	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED) {
+		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con))
+			pr_warn("%s: select SPI active pinctrl failed\n",
+				__func__);
+
 		cdata->bplus_state = MUC_BPLUS_ENABLING;
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
 		cdata->bplus_state = MUC_BPLUS_ENABLED;
@@ -147,6 +151,10 @@ static void muc_handle_detection(struct muc_data *cdata)
 	if (!detected && cdata->bplus_state == MUC_BPLUS_ENABLED) {
 		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 		cdata->bplus_state = MUC_BPLUS_DISABLED;
+
+		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_discon))
+			pr_warn("%s: select disconnected pinctrl failed\n",
+				__func__);
 	}
 }
 
@@ -218,6 +226,44 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
 {
 	disable_irq_wake(cdata->irq);
+}
+
+static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
+{
+	int ret;
+
+	cdata->pinctrl = devm_pinctrl_get(dev);
+	if (IS_ERR(cdata->pinctrl)) {
+		dev_err(dev, "Failed to get pin ctrl\n");
+		return PTR_ERR(cdata->pinctrl);
+	}
+
+	cdata->pins_discon = pinctrl_lookup_state(cdata->pinctrl,
+				"disconnected");
+	if (IS_ERR(cdata->pins_discon)) {
+		dev_err(dev, "Failed to lookup 'disconnected' pinctrl\n");
+		return PTR_ERR(cdata->pins_discon);
+	}
+
+	cdata->pins_spi_con = pinctrl_lookup_state(cdata->pinctrl,
+				"spi_active");
+	if (IS_ERR(cdata->pins_spi_con)) {
+		dev_err(dev, "Failed to lookup 'spi_active' pinctrl\n");
+		return PTR_ERR(cdata->pins_spi_con);
+	}
+
+	ret = pinctrl_select_state(cdata->pinctrl, cdata->pins_discon);
+	if (ret) {
+		dev_err(dev, "Failed to select pinctrl initial state\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static void muc_pinctrl_cleanup(struct muc_data *cdata, struct device *dev)
+{
+	(void)pinctrl_select_state(cdata->pinctrl, cdata->pins_discon);
 }
 
 static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
@@ -354,6 +400,11 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 		goto freewq;
 	}
 
+	/* Pin Configuration */
+	ret = muc_pinctrl_setup(cdata, dev);
+	if (ret)
+		goto free_attach_wq;
+
 	/* Mandatory configuration */
 	ret = muc_gpio_setup(cdata, dev);
 	if (ret) {
@@ -425,6 +476,7 @@ freewq:
 
 void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 {
+	muc_pinctrl_cleanup(cdata, dev);
 	muc_gpio_cleanup(cdata, dev);
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);

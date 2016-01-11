@@ -14,6 +14,8 @@
 #ifndef __MUC_H__
 #define __MUC_H__
 
+#include <linux/pinctrl/consumer.h>
+
 enum {
 	MUC_GPIO_DET_N    = 0,
 	MUC_GPIO_BPLUS_EN = 1,
@@ -71,6 +73,11 @@ struct muc_data {
 	size_t ff_seq_v1_len;
 	u32 ff_seq_v2[MUC_MAX_SEQ];
 	size_t ff_seq_v2_len;
+
+	/* Pin Control */
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pins_discon;
+	struct pinctrl_state *pins_spi_con;
 
 	bool need_det_output;
 };
