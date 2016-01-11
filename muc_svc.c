@@ -1316,6 +1316,22 @@ clear_size:
 	return err;
 }
 
+static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev)
+{
+	int ret;
+	struct timespec ts;
+	struct mb_control_rtc_sync_request req;
+
+	getnstimeofday(&ts);
+	req.nsec = cpu_to_le64(timespec_to_ns(&ts));
+
+	ret = svc_gb_msg_send_no_resp(svc_dd->dld, (uint8_t *)&req,
+				MB_CONTROL_TYPE_RTC_SYNC, sizeof(req),
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
+
+	return ret;
+}
+
 static struct muc_svc_hotplug_work *
 muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 {
@@ -1349,6 +1365,16 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 				&mods_dev->mb_ctrl_minor);
 	if (ret)
 		goto free_route;
+
+	/* If supported, sync RTC clocks early so the time is correct if a
+	 * failure occurs later in the initialization sequence. This will
+	 * allow the event logs from both the AP and mod to be compared.
+	 */
+	if (MB_CONTROL_SUPPORTS(mods_dev, RTC_SYNC)) {
+		ret = muc_svc_send_rtc_sync(mods_dev);
+		if (ret)
+			goto free_route;
+	}
 
 	/* Get the hotplug IDs */
 	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug, mods_dev);

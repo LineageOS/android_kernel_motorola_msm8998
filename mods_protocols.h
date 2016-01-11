@@ -6,7 +6,7 @@
  *
  * Copyright(c) 2014 - 2015 Google Inc. All rights reserved.
  * Copyright(c) 2014 - 2015 Linaro Ltd. All rights reserved.
- * Copyright(c) 2015 - 2015 Motorola LLC. All rights reserved.
+ * Copyright(c) 2015 - 2016 Motorola LLC. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -21,7 +21,7 @@
  *
  * Copyright(c) 2014 - 2015 Google Inc. All rights reserved.
  * Copyright(c) 2014 - 2015 Linaro Ltd. All rights reserved.
- * Copyright(c) 2015 - 2015 Motorola LLC. All rights reserved.
+ * Copyright(c) 2015 - 2016 Motorola LLC. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -61,7 +61,7 @@
 
 /* Version of the Greybus control protocol we support */
 #define MB_CONTROL_VERSION_MAJOR              0x00
-#define MB_CONTROL_VERSION_MINOR              0x02
+#define MB_CONTROL_VERSION_MINOR              0x03
 
 /* Greybus control request types */
 #define MB_CONTROL_TYPE_INVALID               0x00
@@ -72,6 +72,7 @@
 #define MB_CONTROL_TYPE_PORT_DISCONNECTED     0x05
 #define MB_CONTROL_TYPE_SLAVE_POWER           0x06
 #define MB_CONTROL_TYPE_GET_ROOT_VER          0x07
+#define MB_CONTROL_TYPE_RTC_SYNC              0x08
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -92,6 +93,9 @@
 
 #define MB_CONTROL_SUPPORT_GET_ROOT_VER_MAJOR         0x00
 #define MB_CONTROL_SUPPORT_GET_ROOT_VER_MINOR         0x02
+
+#define MB_CONTROL_SUPPORT_RTC_SYNC_MAJOR             0x00
+#define MB_CONTROL_SUPPORT_RTC_SYNC_MINOR             0x03
 
 /* Version Support Macros */
 #define MB_CONTROL_SUPPORTS(mods_dev, name) \
@@ -139,5 +143,10 @@ struct mb_control_root_ver_response {
 	__u8      version;
 } __packed;
 
-#endif /* __MODS_PROTOCOLS_H */
+/* Control protocol RTC sync request */
+struct mb_control_rtc_sync_request {
+	__le64    nsec;
+} __packed;
+/* Control protocol RTC sync has no response */
 
+#endif /* __MODS_PROTOCOLS_H */
