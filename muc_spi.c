@@ -19,15 +19,15 @@
 #include <linux/log2.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
-#include <linux/of_gpio.h>
 #include <linux/of_irq.h>
 #include <linux/spi/spi.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
 #include "crc.h"
-#include "muc_attach.h"
 #include "mods_nw.h"
+#include "muc.h"
+#include "muc_attach.h"
 #include "muc_svc.h"
 
 /* Default payload size of a SPI packet (in bytes) */
@@ -78,9 +78,6 @@ struct muc_spi_data {
 	struct mutex tx_mutex;
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
-
-	int gpio_wake_n;
-	int gpio_rdy_n;
 
 	size_t pkt_size;                   /* Size of hdr + pl + CRC in bytes */
 	__u8 *tx_pkt;                      /* Buffer for transmit packets */
@@ -271,9 +268,9 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	int ret;
 
 	/* Check if WAKE is not asserted */
-	if (gpio_get_value(dd->gpio_wake_n)) {
+	if (muc_gpio_get_wake_n()) {
 		/* Assert WAKE */
-		gpio_set_value(dd->gpio_wake_n, 0);
+		muc_gpio_set_wake_n(0);
 
 		/* Wait for ADC enable (if neccessary) */
 		if (dd->wake_delay)
@@ -282,12 +279,12 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 
 	/* Wait for RDY to be asserted */
 	rdy_timeout = jiffies + RDY_TIMEOUT_JIFFIES;
-	while ((ret = gpio_get_value(dd->gpio_rdy_n)) &&
+	while ((ret = muc_gpio_get_ready_n()) &&
 	       (jiffies <= rdy_timeout) && dd->present);
 
 	/* Deassert WAKE if no longer requested OR on timeout OR removal */
 	if (!keep_wake || ret != 0 || !dd->present)
-		gpio_set_value(dd->gpio_wake_n, 1);
+		muc_gpio_set_wake_n(1);
 
 	/*
 	 * Check that RDY successfully was asserted after wake deassert to ensure
@@ -388,7 +385,7 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	 * so the delay can be accurately timed in the ISR thread.
 	 */
 	if (!dd->wake_delay)
-		gpio_set_value(dd->gpio_wake_n, 0);
+		muc_gpio_set_wake_n(0);
 
 	return IRQ_WAKE_THREAD;
 }
@@ -536,28 +533,6 @@ static struct mods_dl_driver muc_spi_dl_driver = {
 	.message_send		= muc_spi_message_send,
 };
 
-static int muc_spi_gpio_init(struct muc_spi_data *dd)
-{
-	struct device_node *np = dd->spi->dev.of_node;
-	int ret;
-
-	dd->gpio_wake_n = of_get_gpio(np, 0);
-	dd->gpio_rdy_n = of_get_gpio(np, 1);
-
-	ret = gpio_request_one(dd->gpio_wake_n, GPIOF_OUT_INIT_HIGH,
-			       "muc_wake_n");
-	if (ret)
-		return ret;
-	gpio_export(dd->gpio_wake_n, false);
-
-	ret = gpio_request_one(dd->gpio_rdy_n, GPIOF_IN, "muc_rdy_n");
-	if (ret)
-		return ret;
-	gpio_export(dd->gpio_rdy_n, false);
-
-	return 0;
-}
-
 static void muc_spi_quirks_init(struct muc_spi_data *dd)
 {
 	struct device_node *np = dd->spi->dev.of_node;
@@ -606,7 +581,6 @@ static int muc_spi_probe(struct spi_device *spi)
 	if (ret)
 		goto remove_dl_device;
 
-	muc_spi_gpio_init(dd);
 	muc_spi_quirks_init(dd);
 	mutex_init(&dd->mutex);
 	mutex_init(&dd->tx_mutex);
@@ -640,9 +614,6 @@ static int muc_spi_remove(struct spi_device *spi)
 	 * is passed to the probe on the next module insertion.
 	 */
 	set_bus_speed(dd, dd->default_speed_hz);
-
-	gpio_free(dd->gpio_wake_n);
-	gpio_free(dd->gpio_rdy_n);
 
 	unregister_muc_attach_notifier(&dd->attach_nb);
 	mods_remove_dl_device(dd->dld);
