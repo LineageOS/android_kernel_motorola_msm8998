@@ -1726,16 +1726,23 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 			uint8_t *payload, size_t size)
 {
 	struct device *dev = &svc_dd->pdev->dev;
-	int empty;
+	struct mods_dl_device *mods_dev;
+	bool slave_present;
 
 	dev_info(dev, "[%d] Firmware flashing complete\n",
 		orig_dev->intf_id);
 
 	/* HACK: Remove once user-space takes on the reset responsibility. */
-	mutex_lock(&slave_lock);
-	empty = list_empty(&svc_dd->slave_drv);
-	mutex_unlock(&slave_lock);
-	if (empty) {
+	slave_present = false;
+	mutex_lock(&svc_list_lock);
+	list_for_each_entry(mods_dev, &svc_dd->ext_intf, list)
+		if (mods_dev->slave_mask) {
+			slave_present = true;
+			break;
+	}
+	mutex_unlock(&svc_list_lock);
+
+	if (!slave_present) {
 		dev_info(dev, "[%d] Force a reboot\n", orig_dev->intf_id);
 		muc_reset(svc_dd->mod_root_ver, false);
 		return 0;
