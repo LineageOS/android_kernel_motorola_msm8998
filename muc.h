@@ -14,12 +14,16 @@
 #ifndef __MUC_H__
 #define __MUC_H__
 
+#include <linux/gpio.h>
 #include <linux/pinctrl/consumer.h>
 
 enum {
 	MUC_GPIO_DET_N    = 0,
 	MUC_GPIO_BPLUS_EN = 1,
-	MUC_GPIO_FORCE_FLASH = 2,
+	MUC_GPIO_INT_N = 2,
+	MUC_GPIO_WAKE_N = 3,
+	MUC_GPIO_READY_N = 4,
+	MUC_GPIO_FORCE_FLASH = 5,
 	MUC_MAX_GPIOS
 };
 
@@ -134,6 +138,22 @@ static inline void muc_reset(u8 root_ver, bool force_flash)
 	/* If the device can't detect a reset, simulate one */
 	if (!muc_can_detect_reset(root_ver))
 		muc_simulate_reset();
+}
+
+/* Shared GPIO APIs */
+static inline int muc_gpio_get_wake_n(void)
+{
+	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_WAKE_N]);
+}
+
+static inline void muc_gpio_set_wake_n(int value)
+{
+	gpio_set_value(muc_misc_data->gpios[MUC_GPIO_WAKE_N], value);
+}
+
+static inline int muc_gpio_get_ready_n(void)
+{
+	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_READY_N]);
 }
 #endif  /* __MUC_H__ */
 
