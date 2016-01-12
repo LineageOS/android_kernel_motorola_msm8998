@@ -1259,7 +1259,7 @@ muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 	if (err) {
 		dev_err(dev, "[%d] Failed VERSION on CONTROL\n",
 			mods_dev->intf_id);
-		return PTR_ERR(msg);
+		return err;
 	}
 
 	/* GET_SIZE has no payload */
