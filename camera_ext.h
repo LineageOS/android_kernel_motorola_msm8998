@@ -41,7 +41,7 @@
 struct camera_ext {
 	struct gb_connection *connection;
 	struct v4l2_device v4l2_dev;
-	struct video_device vdev_mod;
+	struct video_device *vdev_mod;
 	struct v4l2_ctrl_handler hdl_ctrls;
 };
 

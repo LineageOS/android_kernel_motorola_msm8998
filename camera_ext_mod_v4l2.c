@@ -332,14 +332,20 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_ctrl_process;
 	}
 
-	cam_dev->vdev_mod.ctrl_handler = &cam_dev->hdl_ctrls;
-	cam_dev->vdev_mod.v4l2_dev = &cam_dev->v4l2_dev;
-	cam_dev->vdev_mod.release = video_device_release;
-	cam_dev->vdev_mod.fops = &camera_ext_mod_v4l2_fops;
-	cam_dev->vdev_mod.ioctl_ops = &camera_ext_v4l2_ioctl_ops;
-	cam_dev->vdev_mod.vfl_type = VFL_TYPE_GRABBER;
+	cam_dev->vdev_mod = video_device_alloc();
+	if (cam_dev->vdev_mod == NULL) {
+		pr_err("failed to allocate video_device\n");
+		goto error_alloc_vdev;
+	}
 
-	retval = video_register_device(&cam_dev->vdev_mod,
+	cam_dev->vdev_mod->ctrl_handler = &cam_dev->hdl_ctrls;
+	cam_dev->vdev_mod->v4l2_dev = &cam_dev->v4l2_dev;
+	cam_dev->vdev_mod->release = video_device_release;
+	cam_dev->vdev_mod->fops = &camera_ext_mod_v4l2_fops;
+	cam_dev->vdev_mod->ioctl_ops = &camera_ext_v4l2_ioctl_ops;
+	cam_dev->vdev_mod->vfl_type = VFL_TYPE_GRABBER;
+
+	retval = video_register_device(cam_dev->vdev_mod,
 				VFL_TYPE_GRABBER, -1);
 	if (retval) {
 		pr_err("%s: failed to register video device. rc %d\n",
@@ -347,10 +353,13 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_reg_vdev;
 	}
 
-	video_set_drvdata(&cam_dev->vdev_mod, conn);
+	video_set_drvdata(cam_dev->vdev_mod, conn);
+
 	return retval;
 
 error_reg_vdev:
+	video_device_release(cam_dev->vdev_mod);
+error_alloc_vdev:
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
 error_ctrl_process:
 	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
@@ -359,7 +368,7 @@ error_ctrl_process:
 
 void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev)
 {
-	video_unregister_device(&cam_dev->vdev_mod);
+	video_unregister_device(cam_dev->vdev_mod);
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
 	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
 }
