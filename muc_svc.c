@@ -1980,8 +1980,29 @@ static ssize_t flashmode_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(flashmode);
 
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val != 1) {
+		dev_err(dev, "Invalid reset value\n");
+		return -EINVAL;
+	}
+
+	dev_info(dev, "Reset via userspace\n");
+	muc_reset(svc_dd->mod_root_ver, false);
+
+	return count;
+}
+static DEVICE_ATTR_WO(reset);
+
 static struct attribute *muc_svc_base_attrs[] = {
 	&dev_attr_flashmode.attr,
+	&dev_attr_reset.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(muc_svc_base);
