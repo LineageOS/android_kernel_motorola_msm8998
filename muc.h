@@ -47,6 +47,7 @@ enum bplus_state {
 	MUC_BPLUS_DISABLED = 0,
 	MUC_BPLUS_ENABLING,
 	MUC_BPLUS_ENABLED,
+	MUC_BPLUS_SHORTED,
 };
 
 struct muc_data {
@@ -84,6 +85,9 @@ struct muc_data {
 	struct pinctrl_state *pins_spi_con;
 
 	bool need_det_output;
+
+	/* Mod short detection */
+	int short_count;
 };
 
 /* Global functions */

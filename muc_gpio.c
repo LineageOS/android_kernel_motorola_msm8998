@@ -91,10 +91,92 @@ static void muc_seq(struct muc_data *cdata, u32 seq[], size_t seq_len)
 	}
 }
 
+static bool muc_short_detected(struct muc_data *cdata)
+{
+	bool shortdet = false;
+
+	/* De-assert wake_n */
+	gpio_set_value(cdata->gpios[MUC_GPIO_WAKE_N], 1);
+
+	pr_debug("%s: wake: %d int: %d ready: %d\n", __func__,
+		gpio_get_value(cdata->gpios[MUC_GPIO_WAKE_N]),
+		gpio_get_value(cdata->gpios[MUC_GPIO_INT_N]),
+		gpio_get_value(cdata->gpios[MUC_GPIO_READY_N]));
+
+	/* Read INT_N, if not asserted no short */
+	if (gpio_get_value(cdata->gpios[MUC_GPIO_INT_N]))
+		return false;
+
+	/* Assert wake_n, sleep for 1ms */
+	gpio_set_value(cdata->gpios[MUC_GPIO_WAKE_N], 0);
+	usleep_range(1000, 1010);
+
+	pr_debug("%s: after assert: wake: %d int: %d ready: %d\n", __func__,
+		gpio_get_value(cdata->gpios[MUC_GPIO_WAKE_N]),
+		gpio_get_value(cdata->gpios[MUC_GPIO_INT_N]),
+		gpio_get_value(cdata->gpios[MUC_GPIO_READY_N]));
+
+	/* If READY or INT are de-asserted, there is no short */
+	if (gpio_get_value(cdata->gpios[MUC_GPIO_READY_N]))
+		goto clear_wake;
+	if (gpio_get_value(cdata->gpios[MUC_GPIO_INT_N]))
+		goto clear_wake;
+
+	shortdet = true;
+	pr_debug("%s: READY and INT asserted, short detected!\n", __func__);
+
+clear_wake:
+	gpio_set_value(cdata->gpios[MUC_GPIO_WAKE_N], 1);
+
+	return shortdet;
+}
+
+#define MUC_SHORT_MAX_RETRIES 8
+static void muc_handle_short(struct muc_data *cdata)
+{
+	int err;
+
+	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+	cdata->bplus_state = MUC_BPLUS_DISABLED;
+
+	if (pinctrl_select_state(cdata->pinctrl, cdata->pins_discon))
+		pr_warn("%s: select disconnected pinctrl failed\n", __func__);
+
+	/* Force a removal if we were previously detected */
+	if (cdata->muc_detected) {
+		err = muc_attach_notifier_call_chain(0);
+		if (err)
+			pr_warn("%s: force notify fail: %d\n", __func__, err);
+	}
+
+	if (cdata->short_count == 0)
+		pr_err("%s: Short detected, disabled BPLUS from state: %s\n",
+			__func__, cdata->muc_detected ?
+			"attached" : "detached");
+
+	cdata->force_removal = false;
+	cdata->muc_detected = false;
+
+	/* Queue another detection if we haven't exceeded max short retries */
+	if (cdata->short_count++ < MUC_SHORT_MAX_RETRIES)
+		queue_delayed_work(cdata->attach_wq,
+					&cdata->attach_work,
+					cdata->det_hysteresis);
+	else
+		pr_err("%s: Too many sequential shorts detected\n", __func__);
+}
+
 static void muc_handle_detection(struct muc_data *cdata)
 {
 	bool detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 	int err;
+
+	/* If detected, immediately check for a short */
+	if (detected && muc_short_detected(cdata)) {
+		muc_handle_short(cdata);
+		return;
+	}
+	cdata->short_count = 0;
 
 	pr_debug("%s: detected: %d previous state: %d\n",
 			__func__, detected, cdata->muc_detected);
