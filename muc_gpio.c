@@ -196,6 +196,13 @@ static void muc_handle_detection(struct muc_data *cdata)
 		if (detected) {
 			cdata->force_removal = false;
 			cdata->muc_detected = false;
+
+			/* Disable BPLUS on force removal to guarantee the
+			 * attached mod sees the BPLUS removal.
+			 */
+			muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+			cdata->bplus_state = MUC_BPLUS_DISABLED;
+
 			queue_delayed_work(cdata->attach_wq,
 						&cdata->attach_work,
 						cdata->det_hysteresis);
