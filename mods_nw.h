@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Motorola Mobility LLC
+ * Copyright (C) 2015-2016 Motorola Mobility LLC
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -41,6 +41,7 @@ struct mods_slave_ctrl_driver {
 	struct list_head list;
 };
 
+#define FW_VER_STR_SZ           32
 struct mods_dl_device {
 	struct list_head	list;
 	struct device		*dev;
@@ -63,6 +64,7 @@ struct mods_dl_device {
 	__le64 uid_low;
 	__le64 uid_high;
 	__le32 fw_version;
+	char fw_version_str[FW_VER_STR_SZ];
 	__le32 slave_mask;
 };
 

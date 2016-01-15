@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Motorola Mobility, Inc.
+ * Copyright (C) 2015-2016 Motorola Mobility, Inc.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -102,6 +102,11 @@ static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 static ssize_t fw_version_show(struct mods_dl_device *dev, char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "0x%08X", dev->fw_version);
+}
+
+static ssize_t fw_version_str_show(struct mods_dl_device *dev, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%s", dev->fw_version_str);
 }
 
 static ssize_t serial_show(struct mods_dl_device *dev, char *buf)
@@ -225,6 +230,7 @@ static MUC_SVC_ATTR(unipro_pid, 0444, unipro_pid_show, NULL);
 static MUC_SVC_ATTR(serial, 0444, serial_show, NULL);
 static MUC_SVC_ATTR(uevent, 0200, NULL, uevent_store);
 static MUC_SVC_ATTR(fw_version, 0444, fw_version_show, NULL);
+static MUC_SVC_ATTR(fw_version_str, 0444, fw_version_str_show, NULL);
 static MUC_SVC_ATTR(blank, 0200, NULL, blank_store);
 
 #define to_muc_svc_attr(a) \
@@ -269,6 +275,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_serial.attr,
 	&muc_svc_attr_uevent.attr,
 	&muc_svc_attr_fw_version.attr,
+	&muc_svc_attr_fw_version_str.attr,
 	&muc_svc_attr_blank.attr,
 	NULL,
 };
@@ -1090,6 +1097,9 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	mods_dev->uid_high = le64_to_cpu(ids->uid_high);
 	mods_dev->fw_version = le32_to_cpu(ids->fw_version);
 
+	memcpy(mods_dev->fw_version_str, ids->fw_version_str, FW_VER_STR_SZ);
+	mods_dev->fw_version_str[FW_VER_STR_SZ - 1] = 0;
+
 	dev_info(&dd->pdev->dev, "[%d] UNIPRO_IDS: %x:%x ARA_IDS: %x:%x\n",
 		mods_dev->intf_id, hotplug->data.unipro_mfg_id,
 		hotplug->data.unipro_prod_id, hotplug->data.ara_vend_id,
@@ -1098,6 +1108,9 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 		mods_dev->intf_id, mods_dev->uid_high, mods_dev->uid_low);
 	dev_info(&dd->pdev->dev, "[%d] MOD FW_VER: 0x%08X\n",
 		mods_dev->intf_id, mods_dev->fw_version);
+	if (mods_dev->fw_version_str[0])
+		dev_info(&dd->pdev->dev, "[%d] MOD FW_STR: %s\n",
+			mods_dev->intf_id, mods_dev->fw_version_str);
 
 	mods_dev->slave_mask = le32_to_cpu(ids->slave_mask);
 	muc_svc_broadcast_slave_present(mods_dev);
