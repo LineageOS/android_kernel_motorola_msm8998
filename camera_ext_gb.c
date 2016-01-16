@@ -39,6 +39,9 @@
 #define GB_CAMERA_EXT_VERSION_MAJOR 0x00
 #define GB_CAMERA_EXT_VERSION_MINOR 0x01
 
+/* Used to indicate enum index is not found */
+#define GB_CAMERA_EXT_INVALID_INDEX cpu_to_le32(0xFFFFFFFF)
+
 /* Greybus camera request types */
 #define GB_CAMERA_EXT_TYPE_INVALID		0x00
 #define GB_CAMERA_EXT_TYPE_PROTOCOL_VERSION	0x01
@@ -126,6 +129,9 @@ int gb_camera_ext_input_enum(struct gb_connection *conn, struct v4l2_input *inp)
 				&input,
 				sizeof(input));
 	if (retval == 0) {
+		if (input.index == GB_CAMERA_EXT_INVALID_INDEX)
+			return -EFAULT;
+
 		memcpy(inp->name, input.name, sizeof(inp->name));
 		inp->type = le32_to_cpu(input.type);
 		inp->status = le32_to_cpu(input.status);
@@ -177,6 +183,9 @@ int gb_camera_ext_format_enum(struct gb_connection *conn, struct v4l2_fmtdesc *f
 				&fmtdesc,
 				sizeof(fmtdesc));
 	if (retval == 0) {
+		if (fmtdesc.index == GB_CAMERA_EXT_INVALID_INDEX)
+			return -EFAULT;
+
 		memcpy(fmt->description, fmtdesc.name,
 			sizeof(fmt->description));
 		fmt->pixelformat = le32_to_cpu(fmtdesc.fourcc);
@@ -237,6 +246,9 @@ int gb_camera_ext_frmsize_enum(struct gb_connection *conn,
 				&mod_frmsize,
 				sizeof(mod_frmsize));
 	if (retval == 0) {
+		if (mod_frmsize.index == GB_CAMERA_EXT_INVALID_INDEX)
+			return -EFAULT;
+
 		frmsize->type = le32_to_cpu(mod_frmsize.type);
 		switch (frmsize->type) {
 		case V4L2_FRMSIZE_TYPE_DISCRETE:
@@ -288,6 +300,9 @@ int gb_camera_ext_frmival_enum(struct gb_connection *conn,
 				&mod_frmival,
 				sizeof(mod_frmival));
 	if (retval == 0) {
+		if (mod_frmival.index == GB_CAMERA_EXT_INVALID_INDEX)
+			return -EFAULT;
+
 		frmival->type = le32_to_cpu(mod_frmival.type);
 		switch (frmival->type) {
 		case V4L2_FRMIVAL_TYPE_DISCRETE:
@@ -404,7 +419,7 @@ int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 				&mod_cfg,
 				sizeof(mod_cfg));
 
-		if (retval != 0) {
+		if (retval != 0 || mod_cfg.id == GB_CAMERA_EXT_INVALID_INDEX) {
 			/* enumeration is done */
 			retval = 0;
 			break;
