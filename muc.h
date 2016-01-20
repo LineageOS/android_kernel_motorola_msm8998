@@ -93,6 +93,7 @@ struct muc_data {
 /* Global functions */
 void muc_hard_reset(u8 root_ver);
 void muc_force_flash(u8 root_ver);
+void muc_poweroff(void);
 int muc_gpio_init(struct device *dev, struct muc_data *cdata);
 void muc_gpio_exit(struct device *dev, struct muc_data *cdata);
 int muc_intr_setup(struct muc_data *cdata, struct device *dev);

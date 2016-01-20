@@ -667,3 +667,18 @@ void muc_hard_reset(u8 root_ver)
 	__muc_ff_reset(root_ver, true);
 }
 
+void muc_poweroff(void)
+{
+	struct muc_data *cd = muc_misc_data;
+
+	pr_info("%s: requested poweroff\n", __func__);
+
+	muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
+	cd->bplus_state = MUC_BPLUS_DISABLED;
+
+	if (pinctrl_select_state(cd->pinctrl, cd->pins_discon))
+		pr_warn("%s: select disconnected pinctrl failed\n", __func__);
+
+	cd->force_removal = false;
+	cd->muc_detected = false;
+}
