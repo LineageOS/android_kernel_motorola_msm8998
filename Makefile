@@ -50,6 +50,7 @@ gb-camera-y := camera.o
 gb-vendor-moto-y := vendor_moto.o
 gb-ptp-y := ptp.o
 gb-camera_ext-y := camera_ext_gb.o camera_ext_mod_v4l2.o camera_ext_ctrls.o
+gb-display-y := display.o
 
 obj-m += greybus.o
 obj-m += gb-phy.o
@@ -67,6 +68,7 @@ obj-m += gb-mods.o
 obj-m += gb-vendor-moto.o
 obj-m += gb-ptp.o
 obj-m += gb-camera_ext.o
+obj-m += gb-display.o
 
 KERNELVER		?= $(shell uname -r)
 KERNELDIR 		?= /lib/modules/$(KERNELVER)/build
