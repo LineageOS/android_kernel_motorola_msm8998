@@ -280,7 +280,7 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 	/* Wait for RDY to be asserted */
 	rdy_timeout = jiffies + RDY_TIMEOUT_JIFFIES;
 	while ((ret = muc_gpio_get_ready_n()) &&
-	       (jiffies <= rdy_timeout) && dd->present);
+	       (time_before_eq(jiffies, rdy_timeout)) && dd->present);
 
 	/* Deassert WAKE if no longer requested OR on timeout OR removal */
 	if (!keep_wake || ret != 0 || !dd->present)
