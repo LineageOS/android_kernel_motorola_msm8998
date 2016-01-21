@@ -36,7 +36,7 @@ struct gb_battery {
 
 };
 
-static int get_tech(struct gb_battery *gb)
+static int get_tech(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_technology_response tech_response;
 	u32 technology;
@@ -78,10 +78,11 @@ static int get_tech(struct gb_battery *gb)
 		technology = POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
 		break;
 	}
-	return technology;
+	*val = (int)technology;
+	return 0;
 }
 
-static int get_status(struct gb_battery *gb)
+static int get_status(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_status_response status_response;
 	u16 battery_status;
@@ -117,13 +118,13 @@ static int get_status(struct gb_battery *gb)
 		battery_status = POWER_SUPPLY_STATUS_UNKNOWN;
 		break;
 	}
-	return battery_status;
+	*val = (int)battery_status;
+	return 0;
 }
 
-static int get_max_voltage(struct gb_battery *gb)
+static int get_max_voltage(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_max_voltage_response volt_response;
-	u32 max_voltage;
 	int retval;
 
 	retval = gb_operation_sync(gb->connection, GB_BATTERY_TYPE_MAX_VOLTAGE,
@@ -132,14 +133,13 @@ static int get_max_voltage(struct gb_battery *gb)
 	if (retval)
 		return retval;
 
-	max_voltage = le32_to_cpu(volt_response.max_voltage);
-	return max_voltage;
+	*val = (int)le32_to_cpu(volt_response.max_voltage);
+	return 0;
 }
 
-static int get_percent_capacity(struct gb_battery *gb)
+static int get_percent_capacity(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_capacity_response capacity_response;
-	u32 capacity;
 	int retval;
 
 	retval = gb_operation_sync(gb->connection,
@@ -149,14 +149,13 @@ static int get_percent_capacity(struct gb_battery *gb)
 	if (retval)
 		return retval;
 
-	capacity = le32_to_cpu(capacity_response.capacity);
-	return capacity;
+	*val = (int)le32_to_cpu(capacity_response.capacity);
+	return 0;
 }
 
-static int get_temp(struct gb_battery *gb)
+static int get_temp(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_temperature_response temp_response;
-	u32 temperature;
 	int retval;
 
 	retval = gb_operation_sync(gb->connection, GB_BATTERY_TYPE_TEMPERATURE,
@@ -165,14 +164,13 @@ static int get_temp(struct gb_battery *gb)
 	if (retval)
 		return retval;
 
-	temperature = le32_to_cpu(temp_response.temperature);
-	return temperature;
+	*val = (int)le32_to_cpu(temp_response.temperature);
+	return 0;
 }
 
-static int get_voltage(struct gb_battery *gb)
+static int get_voltage(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_voltage_response voltage_response;
-	u32 voltage;
 	int retval;
 
 	retval = gb_operation_sync(gb->connection, GB_BATTERY_TYPE_VOLTAGE,
@@ -181,14 +179,13 @@ static int get_voltage(struct gb_battery *gb)
 	if (retval)
 		return retval;
 
-	voltage = le32_to_cpu(voltage_response.voltage);
-	return voltage;
+	*val = (int)le32_to_cpu(voltage_response.voltage);
+	return 0;
 }
 
-static int get_capacity(struct gb_battery *gb)
+static int get_capacity(struct gb_battery *gb, int *val)
 {
 	struct gb_battery_full_capacity_response full_capacity_response;
-	u32 full_capacity;
 	int retval;
 
 	retval = gb_operation_sync(gb->connection,
@@ -198,14 +195,16 @@ static int get_capacity(struct gb_battery *gb)
 	if (retval)
 		return retval;
 
-	full_capacity = le32_to_cpu(full_capacity_response.full_capacity);
-	return full_capacity;
+	*val = (int)le32_to_cpu(full_capacity_response.full_capacity);
+	return 0;
 }
 
 static int get_property(struct power_supply *b,
 			enum power_supply_property psp,
 			union power_supply_propval *val)
 {
+	int retval;
+
 	struct gb_battery *gb = to_gb_battery(b);
 
 	mutex_lock(&gb->conn_lock);
@@ -217,39 +216,39 @@ static int get_property(struct power_supply *b,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
-		val->intval = get_tech(gb);
+		retval = get_tech(gb, &val->intval);
 		break;
 
 	case POWER_SUPPLY_PROP_STATUS:
-		val->intval = get_status(gb);
+		retval = get_status(gb, &val->intval);
 		break;
 
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
-		val->intval = get_max_voltage(gb);
+		retval = get_max_voltage(gb, &val->intval);
 		break;
 
 	case POWER_SUPPLY_PROP_CAPACITY:
-		val->intval = get_percent_capacity(gb);
+		retval = get_percent_capacity(gb, &val->intval);
 		break;
 
 	case POWER_SUPPLY_PROP_TEMP:
-		val->intval = get_temp(gb);
+		retval = get_temp(gb, &val->intval);
 		break;
 
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = get_voltage(gb);
+		retval = get_voltage(gb, &val->intval);
 		break;
 
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		val->intval = get_capacity(gb);
+		retval = get_capacity(gb, &val->intval);
 		break;
 
 	default:
-		val->intval = -EINVAL;
+		retval = -EINVAL;
 	}
 	mutex_unlock(&gb->conn_lock);
 
-	return (val->intval < 0) ? val->intval : 0;
+	return retval;
 }
 
 // FIXME - verify this list, odds are some can be removed and others added.
