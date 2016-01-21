@@ -199,6 +199,22 @@ static int get_capacity(struct gb_battery *gb, int *val)
 	return 0;
 }
 
+static int get_current_now(struct gb_battery *gb, int *val)
+{
+	struct gb_battery_current_now_response current_now_response;
+	int retval;
+
+	retval = gb_operation_sync(gb->connection,
+				   GB_BATTERY_TYPE_CURRENT,
+				   NULL, 0, &current_now_response,
+				   sizeof(current_now_response));
+	if (retval)
+		return retval;
+
+	*val = (int)le32_to_cpu(current_now_response.current_now);
+	return 0;
+}
+
 static int get_property(struct power_supply *b,
 			enum power_supply_property psp,
 			union power_supply_propval *val)
@@ -243,6 +259,10 @@ static int get_property(struct power_supply *b,
 		retval = get_capacity(gb, &val->intval);
 		break;
 
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		retval = get_current_now(gb, &val->intval);
+		break;
+
 	default:
 		retval = -EINVAL;
 	}
@@ -259,6 +279,7 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 };
 

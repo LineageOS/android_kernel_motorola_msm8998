@@ -266,6 +266,10 @@ struct gb_battery_full_capacity_response {
 	__le32	full_capacity;
 } __packed;
 
+struct gb_battery_current_now_response {
+	__le32	current_now;
+} __packed;
+
 
 /* HID */
 
