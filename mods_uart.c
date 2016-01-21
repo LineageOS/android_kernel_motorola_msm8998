@@ -61,6 +61,7 @@ struct mods_uart_data {
 	struct mods_uart_err_stats stats;
 	struct mutex tx_mutex;
 	void *mods_uart_pm_data;
+	speed_t default_baud;
 };
 
 enum {
@@ -196,24 +197,34 @@ int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len, int flag)
 	return mods_uart_send_internal(mud, MODS_UART_DL_APBA, buf, len, flag);
 }
 
+int mods_uart_get_baud(void *uart_data)
+{
+	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
+	speed_t speed;
+
+	if (!mud || !mud->tty) {
+		pr_err("%s: no tty\n", __func__);
+		return -ENODEV;
+	}
+
+	down_read(&mud->tty->termios_rwsem);
+	speed = mud->tty->termios.c_ispeed;
+	up_read(&mud->tty->termios_rwsem);
+
+	return (int)speed;
+}
+
 static struct mods_dl_driver mods_uart_dl_driver = {
 	.message_send		= mods_uart_message_send,
 };
 
-static int config_tty(struct mods_uart_data *mud)
+static int config_tty(struct mods_uart_data *mud, speed_t speed)
 {
-	struct device *dev = &mud->pdev->dev;
-	struct device_node *np = dev->of_node;
 	struct ktermios kt;
-	speed_t speed;
-	int ret;
 
-	ret = of_property_read_u32(np, "mmi,tty_speed", &speed);
-	if (ret) {
-		dev_err(dev, "%s: TTY speed not populated\n", __func__);
-		return -EINVAL;
-	}
-	dev_info(dev, "%s: speed=%d\n", __func__, speed);
+	if (!speed)
+		speed = mud->default_baud;
+	dev_info(&mud->pdev->dev, "%s: speed=%d\n", __func__, speed);
 
 	/* Use one stop bit (CSTOPB not set) and no parity (PARENB not set) */
 	kt.c_cflag = 0;
@@ -230,6 +241,17 @@ static int config_tty(struct mods_uart_data *mud)
 	tty_termios_encode_baud_rate(&kt, speed, speed);
 
 	return tty_set_termios(mud->tty, &kt);
+}
+
+int mods_uart_update_baud(void *uart_data, uint32_t baud)
+{
+	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
+	int ret = -ENODEV;
+
+	if (mud && mud->tty)
+		ret = config_tty(mud, (speed_t)baud);
+
+	return ret;
 }
 
 /**
@@ -332,6 +354,7 @@ static int mods_uart_probe(struct platform_device *pdev)
 {
 	struct mods_uart_data *mud;
 	struct tty_driver *driver;
+	speed_t speed;
 	int tty_line = 0;
 	int ret;
 	struct device_node *np = pdev->dev.of_node;
@@ -399,7 +422,14 @@ static int mods_uart_probe(struct platform_device *pdev)
 		goto release_tty;
 	}
 
-	ret = config_tty(mud);
+	ret = of_property_read_u32(np, "mmi,tty_speed", &speed);
+	if (ret) {
+		dev_err(&pdev->dev, "%s: TTY speed not populated\n", __func__);
+		goto close_tty_locked;
+	}
+	mud->default_baud = speed;
+
+	ret = config_tty(mud, speed);
 	if (ret) {
 		dev_err(&pdev->dev, "%s: Failed to config tty\n", __func__);
 		goto close_tty_locked;

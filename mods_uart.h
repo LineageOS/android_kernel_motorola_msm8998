@@ -22,6 +22,8 @@ void mod_attach(void *uart_data, unsigned long now_present);
 void mods_uart_lock_tx(void *uart_data, bool lock);
 int mods_uart_do_pm(void *uart_data, bool on);
 void *mods_uart_get_pm_data(void *uart_data);
+int mods_uart_get_baud(void *uart_data);
+int mods_uart_update_baud(void *uart_data, uint32_t baud);
 
 /* Driver Initializations */
 int mods_uart_init(void);

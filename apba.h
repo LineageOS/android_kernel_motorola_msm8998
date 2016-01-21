@@ -33,6 +33,8 @@ enum {
 	APBA_CTRL_LOG_IND,
 	APBA_CTRL_LOG_REQUEST,
 	APBA_CTRL_MODE_REQUEST,
+	APBA_CTRL_BAUD_REQUEST,
+	APBA_CTRL_BAUD_ACK,
 };
 
 int apba_uart_register(void *mods_uart);

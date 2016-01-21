@@ -71,6 +71,7 @@ struct apba_ctrl {
 	int desired_on;
 	struct mutex log_mutex;
 	struct completion comp;
+	struct completion baud_comp;
 	struct completion mode_comp;
 	uint8_t master_intf;
 	uint8_t mode;
@@ -92,6 +93,23 @@ struct apba_mode_req {
 };
 #pragma pack(pop)
 
+/* message to APBA for UART baud update request */
+#pragma pack(push, 1)
+struct apba_baud_req {
+	struct apba_ctrl_msg_hdr hdr;
+	__le32 baud;
+};
+#pragma pack(pop)
+
+/* message from APBA acknowledging UART baud update */
+#pragma pack(push, 1)
+struct apba_baud_ack {
+	struct apba_ctrl_msg_hdr hdr;
+	__le32 baud;
+	uint8_t accepted;
+};
+#pragma pack(pop)
+
 enum {
 	APBA_INT_REASON_NONE,
 	APBA_INT_APBE_ON,
@@ -108,6 +126,7 @@ static char fifo_overflow[APBA_MSG_SIZE_MAX];
 
 #define APBA_LOG_REQ_TIMEOUT	1000 /* ms */
 #define APBA_MODE_REQ_TIMEOUT	1000 /* ms */
+#define APBA_BAUD_REQ_TIMEOUT	1000 /* ms */
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
@@ -225,8 +244,12 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 
 	mods_ext_bus_vote(on);
 
-	if (on)
+	if (on) {
+		if (ctrl->mods_uart)
+			mods_uart_update_baud(ctrl->mods_uart,
+					      0 /* default */);
 		apba_seq(ctrl, &ctrl->enable_seq);
+	}
 	else {
 		ctrl->mode = 0;
 		apba_seq(ctrl, &ctrl->disable_seq);
@@ -500,7 +523,7 @@ static ssize_t apba_mode_store(struct device *dev,
 	unsigned long val;
 	struct apba_mode_req msg;
 
-	if (!g_ctrl)
+	if (!g_ctrl || !g_ctrl->mods_uart)
 		return 0;
 
 	if (kstrtoul(buf, 10, &val) < 0)
@@ -529,6 +552,55 @@ static ssize_t apba_mode_store(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(apba_mode);
+
+static ssize_t apba_baud_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl || !g_ctrl->mods_uart)
+		return 0;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", mods_uart_get_baud(g_ctrl->mods_uart));
+}
+
+static ssize_t apba_baud_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val;
+	struct apba_baud_req msg;
+
+	if (!g_ctrl || !g_ctrl->mods_uart)
+		return -ENODEV;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	msg.hdr.type = cpu_to_le16(APBA_CTRL_BAUD_REQUEST);
+	msg.hdr.size = cpu_to_le16(sizeof(msg.baud));
+	msg.baud = cpu_to_le32(val);
+
+	if (mods_uart_apba_send(g_ctrl->mods_uart,
+				(uint8_t *)&msg, sizeof(msg), 0) != 0) {
+		pr_err("%s: failed to send BAUD\n", __func__);
+		return -EIO;
+	}
+
+	/* Prevent further transmissions until we receive the baud
+	 * change ACK and change the baud rate.
+	 */
+	mods_uart_lock_tx(g_ctrl->mods_uart, true);
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->baud_comp,
+		    msecs_to_jiffies(APBA_BAUD_REQ_TIMEOUT))) {
+		pr_err("%s: timeout for BAUD\n", __func__);
+		mods_uart_lock_tx(g_ctrl->mods_uart, false);
+		return -EAGAIN;
+	}
+	mods_uart_lock_tx(g_ctrl->mods_uart, false);
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(apba_baud);
 
 static ssize_t apba_log_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -568,6 +640,7 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
 	&dev_attr_flash_partition.attr,
 	&dev_attr_apba_enable.attr,
+	&dev_attr_apba_baud.attr,
 	&dev_attr_apba_log.attr,
 	&dev_attr_apba_mode.attr,
 	NULL,
@@ -827,8 +900,10 @@ static void apba_action_on_int_reason(uint16_t reason)
 void apba_handle_message(uint8_t *payload, size_t len)
 {
 	int of;
+	int ret;
 
 	struct apba_ctrl_msg_hdr *msg;
+	struct apba_baud_ack *baud_ack;
 
 	if (!g_ctrl)
 		return;
@@ -869,6 +944,21 @@ void apba_handle_message(uint8_t *payload, size_t len)
 		break;
 	case APBA_CTRL_LOG_REQUEST:
 		complete(&g_ctrl->comp);
+		break;
+	case APBA_CTRL_BAUD_ACK:
+		baud_ack = (struct apba_baud_ack *)payload;
+
+		pr_debug("%s: got baud ack %d %d\n", __func__,
+			 le32_to_cpu(baud_ack->baud), baud_ack->accepted);
+
+		if (baud_ack->accepted) {
+			ret = mods_uart_update_baud(g_ctrl->mods_uart,
+						    le32_to_cpu(baud_ack->baud));
+			if (ret)
+				pr_err("%s: baud update failed: %d\n",
+					__func__, ret);
+		}
+		complete(&g_ctrl->baud_comp);
 		break;
 	case APBA_CTRL_MODE_REQUEST:
 		complete(&g_ctrl->mode_comp);
@@ -1010,6 +1100,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	mutex_init(&ctrl->log_mutex);
 	init_completion(&ctrl->comp);
+	init_completion(&ctrl->baud_comp);
 	init_completion(&ctrl->mode_comp);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, apba_groups);
