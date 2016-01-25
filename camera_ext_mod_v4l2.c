@@ -62,108 +62,104 @@ static int query_cap(struct file *file, void *fh, struct v4l2_capability *cap)
 
 static int input_enum(struct file *file, void *fh, struct v4l2_input *inp)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_input_enum(conn, inp);
+	return gb_camera_ext_input_enum(cam_dev->connection, inp);
 }
 
 static int input_get(struct file *file, void *fh, unsigned int *i)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_input_get(conn, i);
+	return gb_camera_ext_input_get(cam_dev->connection, i);
 }
 
-static int input_set(struct file *file, void *fh,
-			unsigned int i)
+static int input_set(struct file *file, void *fh, unsigned int i)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_input_set(conn, i);
+	return gb_camera_ext_input_set(cam_dev->connection, i);
 }
 
-static int fmt_enum(struct file *file, void *fh,
-			struct v4l2_fmtdesc *fmt)
+static int fmt_enum(struct file *file, void *fh, struct v4l2_fmtdesc *fmt)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_format_enum(conn, fmt);
+	return gb_camera_ext_format_enum(cam_dev->connection, fmt);
 }
 
-static int fmt_get(struct file *file, void *fh,
-			struct v4l2_format *fmt)
+static int fmt_get(struct file *file, void *fh,	struct v4l2_format *fmt)
 {
-	struct gb_connection *conn;
+	struct camera_ext *cam_dev;
 
 	if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
 		pr_err("%s: unsupport buffer type %d\n", __func__, fmt->type);
 		return -EINVAL;
 	}
 
-	conn = video_drvdata(file);
-	return gb_camera_ext_format_get(conn, fmt);
+	cam_dev = video_drvdata(file);
+	return gb_camera_ext_format_get(cam_dev->connection, fmt);
 }
 
-static int fmt_set(struct file *file, void *fh,
-			struct v4l2_format *fmt)
+static int fmt_set(struct file *file, void *fh,	struct v4l2_format *fmt)
 {
-	struct gb_connection *conn;
+	struct camera_ext *cam_dev;
 
 	if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
 		pr_err("%s: unsupport buffer type %d\n", __func__, fmt->type);
 		return -EINVAL;
 	}
 
-	conn = video_drvdata(file);
-	return gb_camera_ext_format_set(conn, fmt);
+	cam_dev = video_drvdata(file);
+	return gb_camera_ext_format_set(cam_dev->connection, fmt);
 }
 
 static int frmsize_enum(struct file *file, void *fh,
 			struct v4l2_frmsizeenum *frmsize)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_frmsize_enum(conn, frmsize);
+	return gb_camera_ext_frmsize_enum(cam_dev->connection, frmsize);
 }
 
 static int frmival_enum(struct file *file, void *fh,
 			struct v4l2_frmivalenum *frmival)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_frmival_enum(conn, frmival);
+	return gb_camera_ext_frmival_enum(cam_dev->connection, frmival);
 }
 
 static int stream_on(struct file *file, void *fh,
 			enum v4l2_buf_type buf_type)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_stream_on(conn);
+	return gb_camera_ext_stream_on(cam_dev->connection);
 }
 
 static int stream_off(struct file *file, void *fh,
 			enum v4l2_buf_type buf_type)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_stream_off(conn);
+	return gb_camera_ext_stream_off(cam_dev->connection);
 }
 
 static int stream_parm_get(struct file *file, void *fh,
 			struct v4l2_streamparm *parm)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_stream_parm_get(conn, parm);
+	return gb_camera_ext_stream_parm_get(cam_dev->connection, parm);
 }
 
 static int stream_parm_set(struct file *file, void *fh,
 			struct v4l2_streamparm *parm)
 {
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	return gb_camera_ext_stream_parm_set(conn, parm);
+	return gb_camera_ext_stream_parm_set(cam_dev->connection, parm);
 }
 
 /* This device is used to query mod capabilities and config mod stream.
@@ -205,25 +201,30 @@ static int mod_v4l2_reg_control(bool on)
 static int mod_v4l2_open(struct file *file)
 {
 	int rc;
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
 	rc = mod_v4l2_reg_control(true);
 	if (rc < 0)
 		return rc;
 
-	rc = gb_camera_ext_power_on(conn);
+	rc = gb_camera_ext_power_on(cam_dev->connection);
 	if (rc < 0)
 		mod_v4l2_reg_control(false);
-
+	else {
+		/* reset all none readonly controls */
+		rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
+		if (rc != 0)
+			pr_err("failed to apply contrl default value\n");
+	}
 	return rc;
 }
 
 static int mod_v4l2_close(struct file *file)
 {
 	int ret;
-	struct gb_connection *conn = video_drvdata(file);
+	struct camera_ext *cam_dev = video_drvdata(file);
 
-	ret = gb_camera_ext_power_off(conn);
+	ret = gb_camera_ext_power_off(cam_dev->connection);
 
 	mod_v4l2_reg_control(false);
 
@@ -379,14 +380,6 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_ctrl_process;
 	}
 
-	/* set default value to all none readonly controls */
-	retval = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
-
-	if (retval != 0) {
-		pr_err("failed to apply contrl default value\n");
-		goto error_ctrl_process;
-	}
-
 	snprintf(cam_dev->v4l2_dev.name, sizeof(cam_dev->v4l2_dev.name),
 				"%s", CAMERA_EXT_DEV_NAME);
 	retval = v4l2_device_register(NULL, &cam_dev->v4l2_dev);
@@ -416,7 +409,7 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_reg_vdev;
 	}
 
-	video_set_drvdata(cam_dev->vdev_mod, conn);
+	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 
 	return retval;
 
