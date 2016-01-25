@@ -536,6 +536,8 @@ struct gb_pwm_disable_request {
 #define GB_I2S_MGMT_TYPE_ACTIVATE_CPORT			0x07
 #define GB_I2S_MGMT_TYPE_DEACTIVATE_CPORT		0x08
 #define GB_I2S_MGMT_TYPE_REPORT_EVENT			0x09
+#define GB_I2S_MGMT_TYPE_ACTIVATE_PORT		0x0a
+#define GB_I2S_MGMT_TYPE_DEACTIVATE_PORT		0x0b
 
 #define GB_I2S_MGMT_BYTE_ORDER_NA			BIT(0)
 #define GB_I2S_MGMT_BYTE_ORDER_BE			BIT(1)
@@ -593,6 +595,10 @@ struct gb_pwm_disable_request {
 #define GB_I2S_MGMT_EVENT_OVERRUN			0x8
 #define GB_I2S_MGMT_EVENT_CLOCKING			0x9
 #define GB_I2S_MGMT_EVENT_DATA_LEN			0xa
+
+#define GB_I2S_MGMT_PORT_TYPE_RECEIVER		0x1
+#define GB_I2S_MGMT_PORT_TYPE_TRANSMITTER	0x2
+
 
 struct gb_i2s_mgmt_configuration {
 	__le32	sample_frequency;
@@ -653,6 +659,16 @@ struct gb_i2s_mgmt_report_event_request {
 	__u8	event;
 } __packed;
 /* report event response has no payload */
+
+struct gb_i2s_mgmt_activate_port_request {
+	__u8	port_type;
+} __packed;
+/* activate port response has no payload */
+
+struct gb_i2s_mgmt_deactivate_port_request {
+	__u8	port_type;
+} __packed;
+/* deactivate port response has no payload */
 
 #define GB_I2S_DATA_TYPE_SEND_DATA			0x02
 

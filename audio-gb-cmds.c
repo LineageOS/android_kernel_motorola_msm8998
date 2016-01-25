@@ -39,6 +39,30 @@ int gb_i2s_mgmt_deactivate_cport(struct gb_connection *connection,
 				 &request, sizeof(request), NULL, 0);
 }
 
+int gb_i2s_mgmt_activate_port(struct gb_connection *connection,
+				      uint8_t port_type)
+{
+	struct gb_i2s_mgmt_activate_port_request request;
+
+	memset(&request, 0, sizeof(request));
+	request.port_type = port_type;
+
+	return gb_operation_sync(connection, GB_I2S_MGMT_TYPE_ACTIVATE_PORT,
+				 &request, sizeof(request), NULL, 0);
+}
+
+int gb_i2s_mgmt_deactivate_port(struct gb_connection *connection,
+					uint8_t port_type)
+{
+	struct gb_i2s_mgmt_deactivate_port_request request;
+
+	memset(&request, 0, sizeof(request));
+	request.port_type = port_type;
+
+	return gb_operation_sync(connection, GB_I2S_MGMT_TYPE_DEACTIVATE_PORT,
+				 &request, sizeof(request), NULL, 0);
+}
+
 int gb_i2s_mgmt_get_supported_configurations(
 	struct gb_connection *connection,
 	struct gb_i2s_mgmt_get_supported_configurations_response *get_cfg,
@@ -70,7 +94,7 @@ int gb_i2s_mgmt_set_samples_per_message(
 				 &request, sizeof(request), NULL, 0);
 }
 
-int gb_i2s_mgmt_get_cfgs(struct gb_snd *snd_dev,
+int gb_i2s_mgmt_get_cfgs(struct gb_snd_codec *snd_codec,
 			 struct gb_connection *connection)
 {
 	struct gb_i2s_mgmt_get_supported_configurations_response *get_cfg;
@@ -91,7 +115,7 @@ int gb_i2s_mgmt_get_cfgs(struct gb_snd *snd_dev,
 		goto err_free_get_cfg;
 	}
 
-	snd_dev->i2s_configs = get_cfg;
+	snd_codec->i2s_configs = get_cfg;
 
 	return 0;
 
@@ -100,13 +124,13 @@ err_free_get_cfg:
 	return ret;
 }
 
-void gb_i2s_mgmt_free_cfgs(struct gb_snd *snd_dev)
+void gb_i2s_mgmt_free_cfgs(struct gb_snd_codec *snd_codec)
 {
-	kfree(snd_dev->i2s_configs);
-	snd_dev->i2s_configs = NULL;
+	kfree(snd_codec->i2s_configs);
+	snd_codec->i2s_configs = NULL;
 }
 
-int gb_i2s_mgmt_set_cfg(struct gb_snd *snd_dev, int rate, int chans,
+int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, int rate, int chans,
 			int bytes_per_chan, int is_le)
 {
 	struct gb_i2s_mgmt_set_configuration_request set_cfg;
@@ -121,7 +145,7 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd *snd_dev, int rate, int chans,
 			byte_order = GB_I2S_MGMT_BYTE_ORDER_BE;
 	}
 
-	for (i = 0, cfg = snd_dev->i2s_configs->config;
+	for (i = 0, cfg = snd_codec->i2s_configs->config;
 	     i < CONFIG_COUNT_MAX;
 	     i++, cfg++) {
 		if ((cfg->sample_frequency == cpu_to_le32(rate)) &&
@@ -157,33 +181,10 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd *snd_dev, int rate, int chans,
 	set_cfg.config.ll_wclk_tx_edge = GB_I2S_MGMT_EDGE_RISING;
 	set_cfg.config.ll_wclk_rx_edge = GB_I2S_MGMT_EDGE_FALLING;
 
-	ret = gb_i2s_mgmt_set_configuration(snd_dev->mgmt_connection, &set_cfg);
+	ret = gb_i2s_mgmt_set_configuration(snd_codec->mgmt_connection, &set_cfg);
 	if (ret)
 		pr_err("set_configuration failed: %d\n", ret);
 
-	return ret;
-}
-
-int gb_i2s_send_data(struct gb_connection *connection,
-					void *req_buf, void *source_addr,
-					size_t len, int sample_num)
-{
-	struct gb_i2s_send_data_request *gb_req;
-	int ret;
-
-	gb_req = req_buf;
-	gb_req->sample_number = cpu_to_le32(sample_num);
-
-	memcpy((void *)&gb_req->data[0], source_addr, len);
-
-	if (len < MAX_SEND_DATA_LEN)
-		for (; len < MAX_SEND_DATA_LEN; len++)
-			gb_req->data[len] = gb_req->data[len - SAMPLE_SIZE];
-
-	gb_req->size = cpu_to_le32(len);
-
-	ret = gb_operation_sync(connection, GB_I2S_DATA_TYPE_SEND_DATA,
-				(void *) gb_req, SEND_DATA_BUF_LEN, NULL, 0);
 	return ret;
 }
 

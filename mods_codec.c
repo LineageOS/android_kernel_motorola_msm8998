@@ -22,7 +22,8 @@
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
 	struct mods_codec_device *m_dev;
-	atomic_t pcm_triggered;
+	atomic_t playback_pcm_triggered;
+	atomic_t capture_pcm_triggered;
 	int is_params_set;
 	struct workqueue_struct	*workqueue;
 	struct work_struct work;
@@ -33,6 +34,8 @@ struct mods_codec_dai {
 	uint32_t capture_use_case;
 	int sys_vol_step;
 	struct gb_aud_devices enabled_devices;
+	bool tx_active;
+	bool rx_active;
 };
 
 /* declare 0 to -127.5 vol range with step 0.5 db */
@@ -117,51 +120,52 @@ static void mods_codec_work(struct work_struct *work)
 	struct mods_codec_dai *priv =
 			container_of(work, struct mods_codec_dai, work);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	struct gb_snd *snd_dev;
 	int err;
-	int port;
+	bool *port_active;
+	int pcm_triggered;
+	uint16_t port_type;
 
 	if (!priv->is_params_set) {
 		pr_err("%s: params not set returning\n", __func__);
 		return;
 	}
 
-	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
+	if (!gb_codec || !gb_codec->mgmt_connection)
+		return;
 
-		if (!snd_dev || !snd_dev->mgmt_connection)
-			continue;
-		if (!snd_dev->i2s_rx_connection && !snd_dev->i2s_tx_connection)
-			continue;
+	if (priv->substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		port_active = &priv->rx_active;
+		pcm_triggered = atomic_read(&priv->playback_pcm_triggered);
+		port_type = GB_I2S_MGMT_PORT_TYPE_RECEIVER;
+	} else if (priv->substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		port_active = &priv->tx_active;
+		pcm_triggered = atomic_read(&priv->capture_pcm_triggered);
+		port_type = GB_I2S_MGMT_PORT_TYPE_TRANSMITTER;
+	} else
+		return;
 
-		if (priv->substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-			port = snd_dev->i2s_tx_connection->intf_cport_id;
+	if (!(*port_active) && pcm_triggered) {
+		pr_debug("%s(): activate snd dev i2s port: %d\n",
+				__func__, port_type);
+		err = gb_i2s_mgmt_activate_port(gb_codec->mgmt_connection,
+				port_type);
+		if (err)
+			pr_err("%s() failed to activate I2S port %d\n",
+				__func__, port_type);
 		else
-			port = snd_dev->i2s_rx_connection->intf_cport_id;
-
-		if (!snd_dev->cport_active &&
-			atomic_read(&priv->pcm_triggered)) {
-			pr_debug("%s(): activate snd dev i2s port: %d\n",
-					__func__, port);
-			err = gb_i2s_mgmt_activate_cport(snd_dev->mgmt_connection,
-					port);
-			if (err)
-				pr_err("%s() failed to activate I2S port %d\n",
-					__func__, port);
-			else
-				snd_dev->cport_active = true;
-		} else if (snd_dev->cport_active &&
-				!atomic_read(&priv->pcm_triggered)) {
-			pr_debug("%s(): deactivate snd dev i2s port: %d\n",
-					__func__, port);
-			err = gb_i2s_mgmt_deactivate_cport(snd_dev->mgmt_connection,
-						port);
-			if (err)
-				pr_err("%s() failed to deactivate I2S port %d\n",
-					__func__, port);
-			else
-				snd_dev->cport_active = false;
-		}
+			*port_active = true;
+	} else if ((*port_active) && !pcm_triggered) {
+		pr_debug("%s(): deactivate snd dev i2s port: %d\n",
+				__func__, port_type);
+		err = gb_i2s_mgmt_deactivate_port(gb_codec->mgmt_connection,
+					port_type);
+		if (err)
+			pr_err("%s() failed to deactivate I2S port %d\n",
+				__func__, port_type);
+		else
+			*port_active = false;
 	}
+
 }
 
 static int mods_codec_get_usecase(struct snd_kcontrol *kcontrol,
@@ -409,22 +413,22 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 {
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	struct gb_snd *snd_dev;
 	int rate, chans, bytes_per_chan, is_le;
 	int err;
-
+	if (priv->is_params_set == 1) {
+		pr_debug("%s: params already set \n", __func__);
+		return 0;
+	}
 	rate = params_rate(params);
 	chans = params_channels(params);
 	bytes_per_chan = snd_pcm_format_width(params_format(params)) / 8;
 	is_le = snd_pcm_format_little_endian(params_format(params));
 
-	list_for_each_entry(snd_dev, gb_codec->gb_snd_devs, list) {
-		if (snd_dev && snd_dev->mgmt_connection) {
-			err = gb_i2s_mgmt_set_cfg(snd_dev, rate, chans,
-							bytes_per_chan, is_le);
-			if (!err)
-				priv->is_params_set = true;
-		}
+	if (gb_codec && gb_codec->mgmt_connection) {
+		err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans,
+						bytes_per_chan, is_le);
+		if (!err)
+			priv->is_params_set = true;
 	}
 
 	return 0;
@@ -439,11 +443,17 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		atomic_set(&priv->pcm_triggered, 1);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			atomic_set(&priv->playback_pcm_triggered, 1);
+		else
+			atomic_set(&priv->capture_pcm_triggered, 1);
 		queue_work(priv->workqueue, &priv->work);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
-		atomic_set(&priv->pcm_triggered, 0);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			atomic_set(&priv->playback_pcm_triggered, 0);
+		else
+			atomic_set(&priv->capture_pcm_triggered, 0);
 		queue_work(priv->workqueue, &priv->work);
 		break;
 	case SNDRV_PCM_TRIGGER_RESUME:

@@ -20,8 +20,6 @@ gb-phy-y :=	gpbridge.o	\
 		spi.o	\
 		usb.o	\
 		audio.o		\
-		audio-pcm.o	\
-		audio-dai.o	\
 		audio-gb-cmds.o \
 		mods_codec.o
 
