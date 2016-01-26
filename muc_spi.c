@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Motorola Mobility, Inc.
+ * Copyright (C) 2015-2016 Motorola Mobility, Inc.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -30,14 +30,35 @@
 #include "muc_attach.h"
 #include "muc_svc.h"
 
-/* Default payload size of a SPI packet (in bytes) */
-#define DEFAULT_PAYLOAD_SZ  (32)
+/*
+ * Maximum allowed datagram size (in bytes). A datagram may be split into
+ * multiple packets.
+ */
+#define MAX_DATAGRAM_SZ     (64 * 1024)
+
+/*
+ * Default size of a SPI packet (in bytes). This can be negotiated to be
+ * larger, all the way up to the maximum size of a datagram.
+ */
+#define DEFAULT_PKT_SZ      PKT_SIZE(32)
+
+/*
+ * The maximum number of packets allowed for one datagram. For example, if
+ * the packet size is the default size (32 bytes), the maximum supported
+ * datagram size would be 2048 bytes (32 bytes x 64 packets). To transmit
+ * larger datagrams, a larger packet size would need to be negotiated.
+ *
+ * This limit exists because there are only 6 bits in the SPI packet header
+ * to indicate how many packets are remaining to complete the datagram.
+ */
+#define MAX_PKTS_PER_DG     (64)
 
 /* SPI packet header bit definitions */
 #define HDR_BIT_VALID  (0x01 << 7)  /* 1 = valid packet, 0 = dummy packet */
 #define HDR_BIT_TYPE   (0x01 << 6)  /* SPI message type */
 #define HDR_BIT_PKTS   (0x3F << 0)  /* How many additional packets to expect */
 
+/* Possible values for HDR_BIT_TYPE */
 #define MSG_TYPE_DL    (0 << 6)     /* Packet for/from data link layer */
 #define MSG_TYPE_NW    (1 << 6)     /* Packet for/from network layer */
 
@@ -74,8 +95,8 @@ struct muc_spi_data {
 	bool present;                      /* MuC is physically present */
 	bool attached;                     /* MuC attach is reported to SVC */
 	struct notifier_block attach_nb;   /* attach/detach notifications */
-	struct mutex mutex;
-	struct mutex tx_mutex;
+	struct mutex mutex;                /* Used to serialize SPI transfers */
+	struct mutex tx_mutex;             /* Used to serialize send requests */
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
 
@@ -83,20 +104,16 @@ struct muc_spi_data {
 	__u8 *tx_pkt;                      /* Buffer for transmit packets */
 	__u8 *rx_pkt;                      /* Buffer for received packets */
 
-	/*
-	 * Buffer to hold incoming payload (which could be spread across
-	 * multiple packets)
-	 */
-	__u8 rcvd_payload[MUC_MSG_SIZE_MAX];
-	int rcvd_payload_idx;
+	__u8 *rx_datagram;                 /* Buffer used to assemble datagram */
+	int rx_datagram_ndx;               /* Index into datagram buffer for new data */
 
 	/* Quirks below */
 	bool wake_delay;                   /* Delay after wake assert is req'd */
 };
 
 struct spi_msg_hdr {
-	__u8 bits;
-	__u8 rsvd;
+	__u8 bits;                         /* See HDR_BIT_* defines for values */
+	__u8 rsvd;                         /* Reserved */
 } __packed;
 
 struct spi_dl_msg_bus_config_req {
@@ -150,47 +167,20 @@ static void set_bus_speed(struct muc_spi_data *dd, __u32 max_speed_hz)
 
 static int set_packet_size(struct muc_spi_data *dd, size_t pkt_size)
 {
+	struct device *dev = &dd->spi->dev;
 	size_t pl_size = PL_SIZE(pkt_size);
-	__u8 *tx_pkt_new;
-	__u8 *rx_pkt_new;
-
-	/* Immediately return if packet size is not changing */
-	if (pkt_size == dd->pkt_size)
-		return 0;
 
 	/*
-	 * Verify new packet size is valid. The payload must be no smaller than
-	 * the default packet size and must be a power of two.
+	 * Verify new packet size is valid. The new size must be no smaller
+	 * than the default packet size and payload must be a power of two.
 	 */
-	if (!is_power_of_2(pl_size) || (pl_size < DEFAULT_PAYLOAD_SZ))
+	if (!is_power_of_2(pl_size) || (pkt_size < DEFAULT_PKT_SZ))
 		return -EINVAL;
 
-	/* Allocate new TX packet buffer */
-	tx_pkt_new = devm_kzalloc(&dd->spi->dev, pkt_size, GFP_KERNEL);
-	if (!tx_pkt_new)
-		return -ENOMEM;
-
-	/* Allocate new RX packet buffer */
-	rx_pkt_new = devm_kzalloc(&dd->spi->dev, pkt_size, GFP_KERNEL);
-	if (!rx_pkt_new) {
-		devm_kfree(&dd->spi->dev, tx_pkt_new);
-		return -ENOMEM;
-	}
-
-	/* Save new packet size */
+	/* Save the new packet size */
 	dd->pkt_size = pkt_size;
 
-	/* Free existing packet buffers (if any) */
-	if (dd->tx_pkt)
-		devm_kfree(&dd->spi->dev, dd->tx_pkt);
-	if (dd->rx_pkt)
-		devm_kfree(&dd->spi->dev, dd->rx_pkt);
-
-	/* Save pointers to new packet buffers */
-	dd->tx_pkt = tx_pkt_new;
-	dd->rx_pkt = rx_pkt_new;
-
-	dev_info(&dd->spi->dev, "Packet size is %zu bytes\n", pkt_size);
+	dev_info(dev, "Packet size is %zu bytes\n", pkt_size);
 
 	return 0;
 }
@@ -201,7 +191,7 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 	struct device *dev = &dd->spi->dev;
 	struct spi_dl_msg *resp = (struct spi_dl_msg *)msg;
 	uint32_t max_speed;
-	uint16_t pl_size;
+	size_t pl_size;
 	int ret;
 
 	if (sizeof(*resp) > len) {
@@ -224,6 +214,13 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 
 	/* Ignore payload size if zero and continue to use default size */
 	if (pl_size > 0) {
+		/*
+		 * Workaround for the size field in the message being only
+		 * 16 bits. Need to add one to get even number.
+		 */
+		if (pl_size == U16_MAX)
+			pl_size++;
+
 		ret = set_packet_size(dd, PKT_SIZE(pl_size));
 		if (ret) {
 			dev_err(dev, "Error (%d) setting new packet size\n", ret);
@@ -343,17 +340,17 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 		handler = dl_recv;
 
 	/* Check if un-packetizing is required */
-	if (MUC_MSG_SIZE_MAX != pl_size) {
-		if (unlikely(dd->rcvd_payload_idx >= MUC_MSG_SIZE_MAX)) {
+	if (MAX_DATAGRAM_SZ != pl_size) {
+		if (unlikely(dd->rx_datagram_ndx >= MAX_DATAGRAM_SZ)) {
 			dev_err(&spi->dev, "Too many packets received!\n");
-			dd->rcvd_payload_idx = 0;
+			dd->rx_datagram_ndx = 0;
 			return;
 		}
 
-		memcpy(&dd->rcvd_payload[dd->rcvd_payload_idx],
+		memcpy(&dd->rx_datagram[dd->rx_datagram_ndx],
 		       &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
 		       pl_size);
-		dd->rcvd_payload_idx += pl_size;
+		dd->rx_datagram_ndx += pl_size;
 
 		if (hdr->bits & HDR_BIT_PKTS) {
 			/* Need additional packets */
@@ -362,8 +359,8 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 			return;
 		}
 
-		handler(dd->dld, dd->rcvd_payload, dd->rcvd_payload_idx);
-		dd->rcvd_payload_idx = 0;
+		handler(dd->dld, dd->rx_datagram, dd->rx_datagram_ndx);
+		dd->rx_datagram_ndx = 0;
 	} else {
 		/* Un-packetizing not required */
 		handler(dd->dld, &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
@@ -407,7 +404,7 @@ static int _muc_spi_negotiate(struct muc_spi_data *dd)
 	int retries = 0;
 
 	msg.id = DL_MSG_ID_BUS_CFG_REQ;
-	msg.bus_req.max_pl_size = cpu_to_le16(MUC_MSG_SIZE_MAX);
+	msg.bus_req.max_pl_size = U16_MAX;
 
 	do {
 		err = __muc_spi_message_send(dd, MSG_TYPE_DL, (uint8_t *)&msg,
@@ -460,7 +457,8 @@ static int muc_attach(struct notifier_block *nb,
 
 			/* Reset bus settings to default values */
 			set_bus_speed(dd, dd->default_speed_hz);
-			set_packet_size(dd, PKT_SIZE(DEFAULT_PAYLOAD_SZ));
+			set_packet_size(dd, DEFAULT_PKT_SZ);
+			dd->rx_datagram_ndx = 0;
 		}
 	}
 	return NOTIFY_OK;
@@ -486,8 +484,11 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 	if (!dd->present)
 		return -ENODEV;
 
-	/* Calculate how many packets are required to send whole payload */
+	/* Calculate how many packets are required to send whole datagram */
 	packets = (remaining + pl_size - 1) / pl_size;
+
+	if ((len > MAX_DATAGRAM_SZ) || (packets > MAX_PKTS_PER_DG))
+		return -E2BIG;
 
 	mutex_lock(&dd->tx_mutex);
 	hdr = (struct spi_msg_hdr *)dd->tx_pkt;
@@ -533,6 +534,25 @@ static struct mods_dl_driver muc_spi_dl_driver = {
 	.message_send		= muc_spi_message_send,
 };
 
+static int allocate_buffers(struct muc_spi_data *dd)
+{
+	struct device *dev = &dd->spi->dev;
+
+	dd->tx_pkt = devm_kzalloc(dev, PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
+	if (!dd->tx_pkt)
+		return -ENOMEM;
+
+	dd->rx_pkt = devm_kzalloc(dev, PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
+	if (!dd->rx_pkt)
+		return -ENOMEM;
+
+	dd->rx_datagram = devm_kzalloc(dev, MAX_DATAGRAM_SZ, GFP_KERNEL);
+	if (!dd->rx_datagram)
+		return -ENOMEM;
+
+	return 0;
+}
+
 static void muc_spi_quirks_init(struct muc_spi_data *dd)
 {
 	struct device_node *np = dd->spi->dev.of_node;
@@ -577,7 +597,11 @@ static int muc_spi_probe(struct spi_device *spi)
 	dd->attach_nb.notifier_call = muc_attach;
 	INIT_WORK(&dd->attach_work, attach_worker);
 
-	ret = set_packet_size(dd, PKT_SIZE(DEFAULT_PAYLOAD_SZ));
+	ret = allocate_buffers(dd);
+	if (ret)
+		goto remove_dl_device;
+
+	ret = set_packet_size(dd, DEFAULT_PKT_SZ);
 	if (ret)
 		goto remove_dl_device;
 
