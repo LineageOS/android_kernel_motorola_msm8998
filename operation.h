@@ -12,6 +12,8 @@
 
 #include <linux/completion.h>
 
+#include "hd.h"
+
 struct gb_operation;
 
 /* The default amount of time a request is given to complete */
