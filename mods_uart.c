@@ -41,7 +41,7 @@ struct uart_msg_hdr {
 };
 #pragma pack(pop)
 
-#define MODS_UART_MAX_SIZE (MUC_MSG_SIZE_MAX + sizeof(struct uart_msg_hdr))
+#define MODS_UART_MAX_SIZE (APBA_MSG_SIZE_MAX + sizeof(struct uart_msg_hdr))
 
 struct mods_uart_err_stats {
 	uint32_t tx_failure;
@@ -126,6 +126,11 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	size_t pkt_size;
 	struct uart_msg_hdr *hdr;
 	__le16 crc16;
+
+	if (len > APBA_MSG_SIZE_MAX) {
+		mud->stats.tx_failure++;
+		return -E2BIG;
+	}
 
 	pkt_size = sizeof(struct uart_msg_hdr) + len;
 	pkt = kmalloc(pkt_size, GFP_KERNEL);

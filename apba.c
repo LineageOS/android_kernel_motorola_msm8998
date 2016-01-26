@@ -103,7 +103,7 @@ enum {
 static DEFINE_KFIFO(apba_log_fifo, char, APBA_LOG_SIZE);
 
 /* used as temporary buffer to pop out content from FIFO */
-static char fifo_overflow[MUC_MSG_SIZE_MAX];
+static char fifo_overflow[APBA_MSG_SIZE_MAX];
 
 #define APBA_LOG_REQ_TIMEOUT	1000 /* ms */
 #define APBA_MODE_REQ_TIMEOUT	1000 /* ms */
@@ -858,7 +858,7 @@ void apba_handle_message(uint8_t *payload, size_t len)
 		if (of > 0) {
 			/* pop out from older content if buffer is full */
 			of = kfifo_out(&apba_log_fifo, fifo_overflow,
-				       MIN(of, MUC_MSG_SIZE_MAX));
+				       MIN(of, APBA_MSG_SIZE_MAX));
 		}
 		kfifo_in(&apba_log_fifo,
 			 payload + sizeof(*msg), msg->size);

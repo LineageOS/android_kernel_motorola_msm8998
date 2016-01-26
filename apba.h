@@ -14,6 +14,8 @@
 #ifndef __APBA_H__
 #define __APBA_H__
 
+#define APBA_MSG_SIZE_MAX  (0x800)
+
 /* message from APBA Ctrl driver in kernel */
 #pragma pack(push, 1)
 struct apba_ctrl_msg_hdr {
