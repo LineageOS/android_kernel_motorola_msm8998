@@ -14,6 +14,8 @@
 #ifndef _MODS_NW_H__
 #define _MODS_NW_H__
 
+#include "operation.h"
+
 struct mods_dl_device;
 
 #pragma pack(push, 1)
@@ -27,8 +29,8 @@ struct muc_msg {
 };
 #pragma pack(pop)
 
-#define MUC_MSG_SIZE_MAX        (0x800)
-#define PAYLOAD_MAX_SIZE        (MUC_MSG_SIZE_MAX - sizeof(struct muc_msg))
+#define PAYLOAD_MAX_SIZE \
+	(GB_OPERATION_MESSAGE_SIZE_MAX - sizeof(struct muc_msg))
 
 struct mods_dl_driver {
 	int (*message_send)(struct mods_dl_device *nd, uint8_t *payload,
