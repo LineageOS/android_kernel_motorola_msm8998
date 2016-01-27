@@ -14,6 +14,7 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
+#include "gballoc.h"
 #include "greybus.h"
 #include "greybus_trace.h"
 
@@ -339,7 +340,7 @@ gb_operation_message_alloc(struct gb_host_device *hd, u8 type,
 	if (!message)
 		return NULL;
 
-	message->buffer = kzalloc(message_size, gfp_flags);
+	message->buffer = gballoc(message_size, gfp_flags);
 	if (!message->buffer)
 		goto err_free_message;
 
@@ -356,7 +357,7 @@ err_free_message:
 
 static void gb_operation_message_free(struct gb_message *message)
 {
-	kfree(message->buffer);
+	gbfree(message->buffer);
 	kmem_cache_free(gb_message_cache, message);
 }
 
