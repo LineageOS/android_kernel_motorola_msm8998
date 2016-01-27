@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 
+#include "gballoc.h"
 #include "greybus.h"
 
 #include "mods_nw.h"
@@ -87,7 +88,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 	buffer_size = sizeof(*message->header) + message->payload_size;
 
 	msg_size = buffer_size + sizeof(struct muc_msg_hdr);
-	msg = kzalloc(msg_size, gfp_mask);
+	msg = gballoc(msg_size, gfp_mask);
 	if (!msg)
 		return -ENOMEM;
 
@@ -102,7 +103,7 @@ static int mods_ap_msg_send(struct gb_host_device *hd,
 	 */
 	greybus_message_sent(hd, message, rv);
 
-	kfree(msg);
+	gbfree(msg);
 
 	return 0;
 }
