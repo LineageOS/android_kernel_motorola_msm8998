@@ -479,15 +479,7 @@ static struct v4l2_ctrl_config sensor_info_physical_size = {
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 	.dims = {2},
-	/*TODO: Does read only have to be volatile? If it's not volatile,
-	 * v4l2 framework always read cached ctrl value. It's OK for none
-	 * array control. For array control, all items are init as def value.
-	 * So MOD can not set a real default array value.
-	 * We may need to call get_ctrl for all array ctrl to refresh the
-	 * cache inside v4l2 ctrl framework
-	 */
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-		| V4L2_CTRL_FLAG_VOLATILE
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
 		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 };
@@ -582,7 +574,7 @@ static struct v4l2_ctrl_config sync_max_latency = {
 };
 
 static const s64 control_ae_precapture_trigger_items[] = {
-	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_IDEL,
+	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_IDLE,
 	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_START,
 	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_CANCEL,
 };
@@ -839,7 +831,7 @@ static struct v4l2_ctrl_config sensor_frame_duration = {
 	.id = CAM_EXT_CID_SENSOR_FRAME_DURATION,
 	.type = V4L2_CTRL_TYPE_INTEGER64,
 	.name = "sensor frame duration",
-	.max = 0x7FFFFFFFFFFFFFFFL,
+	.max = CTRL_MAX_INT64,
 	.step = 1,
 	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MAX
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
@@ -1009,6 +1001,8 @@ static struct v4l2_ctrl_config hot_pixel_mode = {
 	.name = "hot pixel mode",
 	.max = CAM_EXT_HOT_PIXEL_MODE_MAX,
 	.qmenu_int = hot_pixel_mode_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 /* float[5] f_x, f_y, c_x, c_y, s */
@@ -1018,7 +1012,8 @@ static struct v4l2_ctrl_config lens_intrinsic_calibration = {
 	.name = "lens intrinsic calibration",
 	.dims = {5},
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 };
@@ -1033,8 +1028,8 @@ static struct v4l2_ctrl_config lens_pos_rotation = {
 	 * But for array data, need extra work to init control.
 	 */
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_NEED_DEF
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 };
@@ -1047,7 +1042,8 @@ static struct v4l2_ctrl_config lens_pos_translation = {
 	.dims = {3},
 	.step = 1,
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 };
 
@@ -1058,7 +1054,8 @@ static struct v4l2_ctrl_config lens_radial_distortion = {
 	.name = "lens radial distortion",
 	.dims = {6},
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.step = 1,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 };
@@ -1096,8 +1093,9 @@ static struct v4l2_ctrl_config sensor_black_level_pattern = {
 	.name = "sensor black level pattern",
 	.max = CTRL_MAX_INT,
 	.step = 1,
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
 	.dims = {4},
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 /* float [3][3] */
@@ -1106,7 +1104,8 @@ static struct v4l2_ctrl_config sensor_calibration_transform1 = {
 	.type = V4L2_CTRL_TYPE_STRING,
 	.name = "sensor calibration transform1",
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.step = 1,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.dims = {3, 3},
@@ -1118,7 +1117,8 @@ static struct v4l2_ctrl_config sensor_calibration_transform2 = {
 	.type = V4L2_CTRL_TYPE_STRING,
 	.name = "sensor calibration transform2",
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 	.dims = {3, 3},
@@ -1130,7 +1130,8 @@ static struct v4l2_ctrl_config sensor_color_transform1 = {
 	.type = V4L2_CTRL_TYPE_STRING,
 	.name = "sensor color transform1",
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 	.dims = {3, 3},
@@ -1142,7 +1143,8 @@ static struct v4l2_ctrl_config sensor_color_transform2 = {
 	.type = V4L2_CTRL_TYPE_STRING,
 	.name = "sensor color transform2",
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 	.dims = {3, 3},
@@ -1154,7 +1156,8 @@ static struct v4l2_ctrl_config sensor_forward_matrix1 = {
 	.type = V4L2_CTRL_TYPE_STRING,
 	.name = "sensor forward matrix1",
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 	.dims = {3, 3},
@@ -1166,7 +1169,8 @@ static struct v4l2_ctrl_config sensor_forward_matrix2 = {
 	.type = V4L2_CTRL_TYPE_STRING,
 	.name = "sensor forward matrix2",
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
 	.step = 1,
 	.dims = {3, 3},
@@ -1176,7 +1180,8 @@ static struct v4l2_ctrl_config sensor_info_lens_shading_applied = {
 	.id = CAM_EXT_CID_SENSOR_INFO_LENS_SHADING_APPLIED,
 	.type = V4L2_CTRL_TYPE_BOOLEAN,
 	.name = "sensor info lens shading applied",
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 	.min = 0,
 	.max = 1,
 	.step = 1,
@@ -1188,7 +1193,8 @@ static struct v4l2_ctrl_config sensor_info_white_level = {
 	.max = CTRL_MAX_INT,
 	.step = 1,
 	.name = "sensor info white level",
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 static struct v4l2_ctrl_config sensor_preference_illuminant1 = {
@@ -1197,7 +1203,8 @@ static struct v4l2_ctrl_config sensor_preference_illuminant1 = {
 	.max = CTRL_MAX_INT,
 	.step = 1,
 	.name = "sensor preference illuminant1",
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 static struct v4l2_ctrl_config sensor_preference_illuminant2 = {
@@ -1206,7 +1213,8 @@ static struct v4l2_ctrl_config sensor_preference_illuminant2 = {
 	.max = CTRL_MAX_INT,
 	.step = 1,
 	.name = "sensor preference illuminant2",
-	.flags = V4L2_CTRL_FLAG_READ_ONLY,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 static struct v4l2_ctrl_config statistics_hot_pixel_map_mode = {
@@ -1216,6 +1224,7 @@ static struct v4l2_ctrl_config statistics_hot_pixel_map_mode = {
 	.min = 0,
 	.max = 1,
 	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 static struct v4l2_ctrl_config hot_pixel_map = {
@@ -1226,7 +1235,7 @@ static struct v4l2_ctrl_config hot_pixel_map = {
 	.name = "hot pixel map",
 	/* MOD should have the dims {2, NUM_HOT_PIXELS} */
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
-		| V4L2_CTRL_FLAG_VOLATILE
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
 		| CAMERA_EXT_CTRL_FLAG_NEED_DIMS,
 };
 
