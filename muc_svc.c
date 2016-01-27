@@ -20,6 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/workqueue.h>
 
+#include "cust_kernel_ver.h"
 #include "greybus.h"
 
 #include "mods_protocols.h"
@@ -79,6 +80,9 @@ static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 
 #define MUC_SVC_FAILURE_WINDOW (60 * 5 * HZ) /* 5 minute window */
 #define MUC_SVC_WATCHDOG_MAX_RETRIES 5
+#define MUC_SVC_ATTACH_ERROR "MOD_ATTACH_FAILURE"
+#define MUC_SVC_RECOVERY_FAILED "MOD_RECOVERY_FAILED"
+#define MUC_SVC_RECOVERY_SUCCESS "MOD_RECOVERY_SUCCESS"
 static void muc_svc_recovery(void)
 {
 	unsigned long end_time;
@@ -98,10 +102,15 @@ static void muc_svc_recovery(void)
 		svc_dd->first_fail = jiffies;
 	}
 
+	/* Create an error event on first recovery case */
+	if (!svc_dd->fail_count)
+		mods_queue_error_event_empty(MUC_SVC_ATTACH_ERROR);
+
 	/* Too many failures within the window, shut her down */
 	if (++svc_dd->fail_count > MUC_SVC_WATCHDOG_MAX_RETRIES) {
 		dev_err(&svc_dd->pdev->dev,
 				"Too many failures; shutting down\n");
+		mods_queue_error_event_empty(MUC_SVC_RECOVERY_FAILED);
 		muc_poweroff();
 		svc_dd->fail_count = 0;
 	} else {
@@ -118,7 +127,20 @@ static void muc_svc_wdog(struct work_struct *work)
 
 static void muc_svc_clear_wdog(void)
 {
+	char retrystring[16];
+	int count;
+
 	cancel_delayed_work_sync(&svc_dd->wdog_work);
+
+	if (!svc_dd->fail_count)
+		return;
+
+	count = scnprintf(retrystring, sizeof(retrystring), "retries: %2d\n",
+				svc_dd->fail_count);
+
+	mods_queue_error_event_text(MUC_SVC_RECOVERY_SUCCESS,
+					retrystring, count);
+
 	svc_dd->fail_count = 0;
 }
 
