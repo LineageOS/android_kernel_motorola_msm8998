@@ -537,6 +537,61 @@ static inline int get_camera_ext_ctrl_floats(uint8_t **p, size_t *size,
 	return 0;
 }
 
+/* Save default value point. NOTE: greybus message must not be released before
+ * the default value is consumed.
+ */
+static inline int get_def(uint8_t **p, size_t *size, void **q, size_t length,
+			uint32_t type)
+{
+	size_t i;
+	uint8_t *num;
+
+	if (*size < length) {
+		pr_err("%s: expect %ld bytes from %ld bytes\n", __func__,
+			length, *size);
+		return -EINVAL;
+	}
+
+	if (type != V4L2_CTRL_TYPE_STRING) {
+		/* in place edian conversion for number */
+		i = 0;
+		num = *p;
+
+		switch (type) {
+		case V4L2_CTRL_TYPE_INTEGER:
+		case V4L2_CTRL_TYPE_BOOLEAN:
+		case V4L2_CTRL_TYPE_INTEGER_MENU:
+		case V4L2_CTRL_TYPE_MENU:
+			while (i < length) {
+				*(uint32_t *)num = le32_to_cpu(*(__le32 *)num);
+				num += sizeof(uint32_t);
+				i += sizeof(uint32_t);
+			}
+			break;
+		case V4L2_CTRL_TYPE_INTEGER64:
+			while (i < length) {
+				*(uint64_t *)num = le64_to_cpu(*(__le64 *)num);
+				num += sizeof(uint64_t);
+				i += sizeof(uint64_t);
+			}
+			break;
+		default:
+			pr_err("%s: unknown type %d\n", __func__, type);
+			return -EINVAL;
+		}
+		if (i != length) {
+			pr_err("%s: wrong value bytes: %ld\n", __func__, i);
+			return -EINVAL;
+		}
+	} /* note: if use 4/8 bytes pass float/double, conversion is needed */
+
+	*q = *p;
+	*p += length;
+	*size -= length;
+
+	return 0;
+}
+
 /* Read a field from stream p and fill to cam_ext_v4l2_cfg.
  * This field is described by mod_flag_tag (CAMERA_EXT_CTRL_FLAG_NEED_XXX)
  *
@@ -552,6 +607,7 @@ static int camera_ext_ctrl_process_one_field(
 		uint8_t **p,
 		size_t *remain_size,
 		uint32_t array_size,
+		uint32_t val_size,
 		struct camera_ext_predefined_ctrl_v4l2_cfg *cam_ext_v4l2_cfg)
 {
 	int retval = 0;
@@ -567,31 +623,10 @@ static int camera_ext_ctrl_process_one_field(
 		retval = get_u64(p, remain_size, &cam_ext_v4l2_cfg->step);
 		break;
 	case CAMERA_EXT_CTRL_FLAG_NEED_DEF:
-		/* def must be 0 for V4L2_CTRL_TYPE_STRING type */
-		if (predef_cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER) {
-			/* get default for float/double */
-			if (predef_cfg->max ==
-				sizeof(camera_ext_ctrl_float) - 1)
-				retval = get_camera_ext_ctrl_float(p,
-					remain_size,
-					&cam_ext_v4l2_cfg->def_f);
-			else if (predef_cfg->max ==
-				sizeof(camera_ext_ctrl_double) - 1)
-				retval = get_camera_ext_ctrl_double(p,
-					remain_size,
-					&cam_ext_v4l2_cfg->def_d);
-			else {
-				pr_err("%s: invalid str as number control.\n",
-					__func__);
-				retval = -EINVAL;
-			}
-		} else if (predef_cfg->type == V4L2_CTRL_TYPE_STRING) {
-			pr_err("%s:def for %x string type\n", __func__,
-				cam_ext_v4l2_cfg->id);
-			retval = -EINVAL;
-		} else
-			retval = get_s64(p, remain_size,
-					&cam_ext_v4l2_cfg->def);
+		retval = get_def(p, remain_size, &cam_ext_v4l2_cfg->p_def,
+				val_size, predef_cfg->type);
+		if (retval == 0)
+			cam_ext_v4l2_cfg->val_size = val_size;
 		break;
 	case CAMERA_EXT_CTRL_FLAG_NEED_DIMS:
 		if (unlikely(array_size > V4L2_CTRL_MAX_DIMS))
@@ -640,6 +675,7 @@ static int camera_ext_ctrl_process_one_field(
  * mod_cfg - mod side control config data
  * mod_cfg_size - size in bytes of mod_cfg
  * array_size - if this config has array data (dim or menu). It's the size.
+ * val_size - if this config has default value. It's the size.
  * register_custom_mod_ctrl - function to register the control to kernel.
  * ctx - parameter of register_custom_mod_ctrl
  */
@@ -648,6 +684,7 @@ static int camera_ext_ctrl_process_one(
 	struct camera_ext_predefined_ctrl_mod_cfg *mod_cfg,
 	uint32_t mod_cfg_size,
 	uint32_t array_size,
+	uint32_t val_size,
 	register_custom_mod_ctrl_func_t register_custom_mod_ctrl,
 	void *ctx)
 {
@@ -687,7 +724,7 @@ static int camera_ext_ctrl_process_one(
 		}
 		retval = camera_ext_ctrl_process_one_field(predef_cfg,
 				mod_flag_tag,
-				&p, &remain_size, array_size,
+				&p, &remain_size, array_size, val_size,
 				&cam_ext_v4l2_cfg);
 	}
 
@@ -706,7 +743,7 @@ static int camera_ext_ctrl_process_one(
 }
 
 static int camera_ext_ctrl_get_cfg_payload_size(size_t *data_size, uint32_t id,
-					uint32_t next_array_size)
+		uint32_t next_array_size, uint32_t next_val_size)
 {
 	struct v4l2_ctrl_config *cfg = camera_ext_get_ctrl_config(id);
 	uint32_t flags;
@@ -728,10 +765,13 @@ static int camera_ext_ctrl_get_cfg_payload_size(size_t *data_size, uint32_t id,
 		*data_size += sizeof(uint32_t) + sizeof(u64);
 
 	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF) {
-		if (flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER)
-			*data_size += sizeof(uint32_t) + (cfg->max + 1);
-		else
-			*data_size += sizeof(uint32_t) + sizeof(s64);
+		if (next_val_size <= CAMERA_EXT_CTRL_MAX_VAL_SIZE)
+			*data_size += sizeof(uint32_t) + next_val_size;
+		else {
+			pr_err("%s: id %x val size exceeds limit\n",
+				__func__, next_val_size);
+			return -EINVAL;
+		}
 	}
 
 	if (flags & CAMERA_EXT_CTRL_FLAG_NEED_DIMS) {
@@ -778,7 +818,7 @@ int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 {
 	int retval = 0;
 	uint32_t idx;
-	size_t data_size, last_array_size;
+	size_t data_size, last_array_size, last_val_size;
 	struct camera_ext_predefined_ctrl_mod_cfg *mod_cfg;
 	struct camera_ext_predefined_ctrl_mod_req req;
 
@@ -788,6 +828,7 @@ int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 	 */
 	data_size = sizeof(*mod_cfg);
 	last_array_size = 0;
+	last_val_size = 0;
 	while (1) {
 		mod_cfg = kmalloc(data_size, GFP_KERNEL);
 		if (mod_cfg == NULL) {
@@ -804,49 +845,53 @@ int gb_camera_ext_ctrl_process_all(struct gb_connection *conn,
 				mod_cfg,
 				data_size);
 		if (retval != 0) {
-			/* enumeration is done */
-			retval = 0;
+			pr_err("%s: get cfg failed\n", __func__);
 			kfree(mod_cfg);
 			break;
 		}
 
 		/* skip if no control for this idx (e.g. -1 index) */
 		if (mod_cfg->id != (uint32_t) -1) {
-			retval = camera_ext_ctrl_process_one(idx, mod_cfg, data_size,
-				last_array_size, register_custom_mod_ctrl, ctx);
-			if (retval != 0)
+			retval = camera_ext_ctrl_process_one(idx, mod_cfg,
+					data_size, last_array_size,
+					last_val_size,
+					register_custom_mod_ctrl, ctx);
+			if (retval != 0) {
 				pr_err("failed to process control %x\n",
 					mod_cfg->id);
-		}
-
-		if (retval == 0) {
-			if (mod_cfg->next_id != (uint32_t) -1) {
-				/* calculate next response size */
-				retval = camera_ext_ctrl_get_cfg_payload_size(
-					&data_size,
-					le32_to_cpu(mod_cfg->next_id),
-					le32_to_cpu(mod_cfg->next_array_size));
-				if (retval == 0) {
-					/* adding header */
-					data_size += sizeof(*mod_cfg);
-					/* save for later use when unpack
-					 * next_id's config.
-					 */
-					last_array_size =
-						mod_cfg->next_array_size;
-				}
-			} else {
-				/* no more controls */
 				kfree(mod_cfg);
 				break;
 			}
 		}
 
-		kfree(mod_cfg);
-
-		if (retval != 0)
+		if (mod_cfg->next.id != (uint32_t) -1) {
+			/* save for later use when unpack
+			 * next_id's config.
+			 */
+			last_array_size =
+				le32_to_cpu(mod_cfg->next.array_size);
+			last_val_size =
+				le32_to_cpu(mod_cfg->next.val_size);
+			/* calculate next response size */
+			retval = camera_ext_ctrl_get_cfg_payload_size(
+				&data_size,
+				le32_to_cpu(mod_cfg->next.id),
+				last_array_size, last_val_size);
+			if (retval == 0)
+				/* adding header */
+				data_size += sizeof(*mod_cfg);
+			else {
+				pr_err("failed to calc next pkt size\n");
+				kfree(mod_cfg);
+				break;
+			}
+		} else {
+			/* no more controls */
+			kfree(mod_cfg);
 			break;
+		}
 
+		kfree(mod_cfg);
 		++idx;
 		/* in case a misbehave mod cause a deadloop here */
 		if (idx > MAX_CTRLS_SUPPORT) {

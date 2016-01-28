@@ -73,12 +73,11 @@ struct camera_ext_predefined_ctrl_v4l2_cfg {
 	s64 min;
 	s64 max;
 	u64 step;
-	union {
-		s64 def;
-		/* TODO: transfer float/double in 4/8 bytes */
-		camera_ext_ctrl_float def_f;
-		camera_ext_ctrl_double def_d;
-	};
+	/* point to default value (inside greybus message which
+	 * should be released after the registration is done)
+	 */
+	void *p_def;
+	size_t val_size; /* size of the default value */
 	u64 menu_skip_mask;
 	union {
 		u32 dims[V4L2_CTRL_MAX_DIMS];

@@ -288,11 +288,22 @@ static int custom_ctrl_register(
 		cfg->max = mod_cfg->max;
 	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_STEP)
 		cfg->step = mod_cfg->step;
-	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF) {
-		if (!(cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER))
-			cfg->def = mod_cfg->def;
-		/* else keep def = 0 for STRING_AS_NUMBER */
-	}
+	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF)
+		switch (cfg->type) {
+		case V4L2_CTRL_TYPE_INTEGER64:
+			cfg->def = *(int64_t *)mod_cfg->p_def;
+			break;
+		case V4L2_CTRL_TYPE_INTEGER:
+		case V4L2_CTRL_TYPE_BOOLEAN:
+		case V4L2_CTRL_TYPE_INTEGER_MENU:
+		case V4L2_CTRL_TYPE_MENU:
+			cfg->def = *(int32_t *)mod_cfg->p_def;
+			break;
+		default:
+			/* keep def as predefined */
+			break;
+		}
+
 	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DIMS)
 		memcpy(cfg->dims, mod_cfg->dims, sizeof(cfg->dims));
 	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK)
@@ -327,31 +338,19 @@ static int custom_ctrl_register(
 	if (ctrl == NULL) {
 		pr_err("register id 0x%x failed\n", mod_cfg->id);
 		return -EINVAL;
-	}
-	if ((cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER)
-		&& (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF)) {
-		/* update default value for string as float */
-		/* TODO: extend v4l2 ctrl with type_ops.init and support to set def
-		 * array data from MOD (currently all array data are set
-		 * with the same value, v4l2 behaviour) */
-		int i;
-		void *def = NULL;
+	} else if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		&& (ctrl->elems > 1
+		|| (cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER))) {
+		/* update default value for array or string control */
+		size_t size = ctrl->elem_size * ctrl->elems;
 
-		if (cfg->max == sizeof(camera_ext_ctrl_float) - 1)
-			def = mod_cfg->def_f;
-		else if (cfg->max == sizeof(camera_ext_ctrl_double) - 1)
-			def = mod_cfg->def_d;
-		else
-			pr_warn("%s: invalid max %lld\n", __func__, cfg->max);
-
-		if (def != NULL) {
-			for (i = 0; i < ctrl->elems; i++) {
-				memcpy(ctrl->p_cur.p_char + i * ctrl->elem_size,
-					def, cfg->max);
-				memcpy(ctrl->p_new.p_char + i * ctrl->elem_size,
-					def, cfg->max);
-			}
+		if (size != mod_cfg->val_size) {
+			pr_err("%s: wrong value size from mod %ld, expected %ld\n",
+				__func__, size, mod_cfg->val_size);
+			return -EINVAL;
 		}
+		memcpy(ctrl->p_cur.p_char, mod_cfg->p_def, size);
+		memcpy(ctrl->p_new.p_char, mod_cfg->p_def, size);
 	}
 	return 0;
 }
