@@ -150,9 +150,7 @@ static void muc_handle_short(struct muc_data *cdata)
 	}
 
 	if (cdata->short_count == 0)
-		pr_err("%s: Short detected, disabled BPLUS from state: %s\n",
-			__func__, cdata->muc_detected ?
-			"attached" : "detached");
+		pr_err("%s: Short detected, disabled BPLUS\n", __func__);
 
 	cdata->force_removal = false;
 	cdata->muc_detected = false;
@@ -172,7 +170,7 @@ static void muc_handle_detection(struct muc_data *cdata)
 	int err;
 
 	/* If detected, immediately check for a short */
-	if (detected && muc_short_detected(cdata)) {
+	if (detected && !cdata->muc_detected && muc_short_detected(cdata)) {
 		muc_handle_short(cdata);
 		return;
 	}
