@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Motorola Mobility LLC
+ * Copyright (C) 2015-2016 Motorola Mobility LLC
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,6 +16,7 @@
 
 #include <linux/gpio.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/workqueue.h>
 
 enum {
 	MUC_GPIO_DET_N    = 0,
@@ -50,18 +51,18 @@ enum bplus_state {
 	MUC_BPLUS_SHORTED,
 };
 
+struct muc_attach_work {
+	struct delayed_work work;
+	bool force_removal;
+};
+
 struct muc_data {
 	struct device *dev;
 	u8 muc_detected;
 
-	/* Reset workqueue */
-	struct workqueue_struct *wq;
-	struct work_struct reset_work;
-
 	/* Attach workqueue / delayed work */
 	struct workqueue_struct *attach_wq;
-	struct delayed_work attach_work;
-	bool force_removal;
+	struct muc_attach_work isr_work; /* Dedicated work for ISR */
 	uint8_t bplus_state;
 
 	/* Configuration */
