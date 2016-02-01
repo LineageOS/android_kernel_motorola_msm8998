@@ -69,11 +69,8 @@ obj-m += gb-mods.o
 obj-m += gb-vendor-moto.o
 obj-m += gb-ptp.o
 obj-m += gb-camera_ext.o
-<<<<<<< HEAD
 obj-m += gb-display.o
-=======
 obj-m += gb-usb_ext.o
->>>>>>> a3c90c6... usb-ext: Add MODS usb-ext interface
 
 KERNELVER		?= $(shell uname -r)
 KERNELDIR 		?= /lib/modules/$(KERNELVER)/build
