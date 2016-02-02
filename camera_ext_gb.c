@@ -72,6 +72,8 @@
 #define GB_CAMERA_EXT_TYPE_CTRL_SET		0x12
 #define GB_CAMERA_EXT_TYPE_CTRL_TRY		0x13
 
+#define GB_CAMERA_EXT_TYPE_EVENT		0x14
+
 int gb_camera_ext_power_on(struct gb_connection *conn)
 {
 	return gb_operation_sync(conn,
@@ -1044,6 +1046,62 @@ int gb_camera_ext_try_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl)
 	return gb_camera_ext_s_or_try_ctrl(conn, ctrl, 1);
 }
 
+static int camera_ext_handle_error_event(struct camera_ext *cam_dev,
+		uint8_t *obj, size_t size)
+{
+	struct camera_ext_event_error *error;
+	uint32_t code;
+
+	if (size != sizeof(*error)) {
+		pr_err("%s: incorrect object size %zu != %zu\n", __func__,
+			size, sizeof(*error));
+		return -EINVAL;
+	}
+
+	error = (struct camera_ext_event_error *)obj;
+	code = le32_to_cpu(error->code);
+	error->desc[CAMERA_EXT_EVENT_ERROR_DESC_LEN - 1] = 0;
+
+	camera_ext_mod_v4l2_error_notify(cam_dev, code, error->desc);
+
+	return 0;
+}
+
+static int gb_camera_ext_event_receive(u8 type, struct gb_operation *op)
+{
+	struct camera_ext_event_hdr *event_hdr;
+	uint32_t ev_type;
+	size_t ev_data_size;
+	struct camera_ext *cam_dev;
+
+	if (type != GB_CAMERA_EXT_TYPE_EVENT) {
+		pr_err("%s: unknown request type %u\n", __func__, type);
+		return -EINVAL;
+	}
+
+	if (op->request->payload_size < sizeof(*event_hdr)) {
+		pr_err("%s: request payload too small (%zu < %zu)\n", __func__,
+			op->request->payload_size, sizeof(*event_hdr));
+		return -EINVAL;
+	}
+
+	cam_dev = op->connection->private;
+	event_hdr = op->request->payload;
+	ev_type = le32_to_cpu(event_hdr->type);
+	ev_data_size = op->request->payload_size - sizeof(*event_hdr);
+
+	switch (ev_type) {
+	case CAMERA_EXT_EV_ERROR:
+		return camera_ext_handle_error_event(cam_dev, event_hdr->data,
+				ev_data_size);
+	default:
+		pr_err("unsupported event type %d\n", ev_type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int gb_camera_ext_connection_init(struct gb_connection *connection)
 {
 	int retval;
@@ -1080,7 +1138,7 @@ static struct gb_protocol camera_ext_protocol = {
 	.minor			= GB_CAMERA_EXT_VERSION_MINOR,
 	.connection_init	= gb_camera_ext_connection_init,
 	.connection_exit	= gb_camera_ext_connection_exit,
-	.request_recv		= NULL, /* no incoming requests */
+	.request_recv		= gb_camera_ext_event_receive,
 };
 
 static int camera_ext_init(void)

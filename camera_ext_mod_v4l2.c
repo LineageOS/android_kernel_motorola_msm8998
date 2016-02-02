@@ -33,7 +33,9 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <media/v4l2-ioctl.h>
+#include <media/v4l2-event.h>
 #include <uapi/video/v4l2_camera_ext_ctrls.h>
+#include <uapi/video/v4l2_camera_ext_events.h>
 #include "camera_ext.h"
 
 #define CAM_EXT_CTRL_NUM_HINT 100
@@ -41,8 +43,17 @@
 #define CAM_DEV_FROM_V4L2_CTRL(ctrl) \
 	container_of(ctrl->handler, struct camera_ext, hdl_ctrls)
 
+#define TO_CAMERA_EXT_FH(file_handle) \
+	container_of(file_handle, struct camera_ext_fh, fh)
+
 struct camera_ext_v4l2 {
 	struct regulator *cdsi_reg;
+	struct mutex mod_mutex;
+	int mod_users; /* number of active driver users */
+};
+
+struct camera_ext_fh {
+	struct v4l2_fh fh;
 };
 
 struct camera_ext_v4l2 *g_v4l2_data;
@@ -162,6 +173,22 @@ static int stream_parm_set(struct file *file, void *fh,
 	return gb_camera_ext_stream_parm_set(cam_dev->connection, parm);
 }
 
+static int subscribe_event(struct v4l2_fh *fh,
+	const struct v4l2_event_subscription *sub)
+{
+	switch (sub->type) {
+	case V4L2_CAMERA_EXT_EVENT_TYPE:
+		return v4l2_event_subscribe(fh, sub, 2, NULL);
+	case V4L2_EVENT_SOURCE_CHANGE:
+		return v4l2_src_change_event_subscribe(fh, sub);
+	case V4L2_EVENT_CTRL:
+		/* TODO: do we have ctrl event to report ? */
+		return v4l2_ctrl_subscribe_event(fh, sub);
+	default:
+		return -EINVAL;
+	}
+}
+
 /* This device is used to query mod capabilities and config mod stream.
  * It does not support video buffer related operations.
  */
@@ -179,6 +206,8 @@ static const struct v4l2_ioctl_ops camera_ext_v4l2_ioctl_ops = {
 	.vidioc_streamoff		= stream_off,
 	.vidioc_g_parm			= stream_parm_get,
 	.vidioc_s_parm			= stream_parm_set,
+	.vidioc_subscribe_event		= subscribe_event,
+	.vidioc_unsubscribe_event	= v4l2_event_unsubscribe,
 };
 
 static int mod_v4l2_reg_control(bool on)
@@ -197,45 +226,114 @@ static int mod_v4l2_reg_control(bool on)
 	return rc;
 }
 
+void camera_ext_mod_v4l2_error_notify(struct camera_ext *cam_dev,
+	uint32_t code, const char *desc)
+{
+	struct v4l2_event ev;
+	struct v4l2_camera_ext_event_error *user_ev;
+
+	ev.type = V4L2_CAMERA_EXT_EVENT_TYPE;
+	ev.id = V4L2_CAMERA_EXT_EVENT_ERROR;
+	user_ev = (struct v4l2_camera_ext_event_error *) ev.u.data;
+	user_ev->code = code;
+	strlcpy(user_ev->desc, desc, V4L2_CAMERA_EXT_EVENT_ERROR_DESC_LEN);
+
+	v4l2_event_queue(cam_dev->vdev_mod, &ev);
+}
 
 static int mod_v4l2_open(struct file *file)
 {
 	int rc;
+	struct camera_ext_fh *camera_fh;
 	struct camera_ext *cam_dev = video_drvdata(file);
 
-	rc = mod_v4l2_reg_control(true);
-	if (rc < 0)
-		return rc;
+	camera_fh = kzalloc(sizeof(*camera_fh), GFP_KERNEL);
+	if (!camera_fh)
+		return -ENOMEM;
 
-	rc = gb_camera_ext_power_on(cam_dev->connection);
-	if (rc < 0)
-		mod_v4l2_reg_control(false);
-	else {
+	v4l2_fh_init(&camera_fh->fh, cam_dev->vdev_mod);
+	v4l2_fh_add(&camera_fh->fh);
+	file->private_data = &camera_fh->fh;
+
+	mutex_lock(&g_v4l2_data->mod_mutex);
+	if (g_v4l2_data->mod_users == 0) {
+		/* init MOD */
+		rc = mod_v4l2_reg_control(true);
+		if (rc < 0)
+			goto err_regulator;
+
+		rc = gb_camera_ext_power_on(cam_dev->connection);
+		if (rc < 0)
+			goto err_power_on;
+
 		/* reset all none readonly controls */
 		rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
-		if (rc != 0)
-			pr_err("failed to apply contrl default value\n");
+		if (rc != 0) {
+			v4l2_err(&cam_dev->v4l2_dev,
+				"failed to apply contrl default value\n");
+			goto err_set_ctrl_def;
+		}
 	}
+
+	++g_v4l2_data->mod_users;
+	mutex_unlock(&g_v4l2_data->mod_mutex);
+
+	return 0;
+
+err_set_ctrl_def:
+	gb_camera_ext_power_off(cam_dev->connection);
+err_power_on:
+	mod_v4l2_reg_control(false);
+err_regulator:
+	mutex_unlock(&g_v4l2_data->mod_mutex);
+	v4l2_fh_del(&camera_fh->fh);
+	v4l2_fh_exit(&camera_fh->fh);
+	kfree(camera_fh);
 	return rc;
 }
 
 static int mod_v4l2_close(struct file *file)
 {
-	int ret;
+	int ret = 0;
+	struct camera_ext_fh *camera_fh;
 	struct camera_ext *cam_dev = video_drvdata(file);
 
-	ret = gb_camera_ext_power_off(cam_dev->connection);
+	camera_fh = TO_CAMERA_EXT_FH(file->private_data);
+	file->private_data = NULL;
+	v4l2_fh_del(&camera_fh->fh);
+	v4l2_fh_exit(&camera_fh->fh);
+	kfree(camera_fh);
 
-	mod_v4l2_reg_control(false);
+	mutex_lock(&g_v4l2_data->mod_mutex);
+	--g_v4l2_data->mod_users;
+	if (g_v4l2_data->mod_users == 0) {
+		mod_v4l2_reg_control(false);
+		ret = gb_camera_ext_power_off(cam_dev->connection);
+	}
+	mutex_unlock(&g_v4l2_data->mod_mutex);
+
+	return ret;
+}
+
+static unsigned int mod_v4l2_poll(struct file *file,
+		struct poll_table_struct *pll_table)
+{
+	int ret = 0;
+	struct v4l2_fh *fh = file->private_data;
+
+	poll_wait(file, &fh->wait, pll_table);
+	if (v4l2_event_pending(fh))
+		ret = POLLIN | POLLRDNORM;
 
 	return ret;
 }
 
 static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
-	.owner	 = THIS_MODULE,
-	.open	 = mod_v4l2_open,
-	.ioctl	 = video_ioctl2,
-	.release = mod_v4l2_close,
+	.owner		= THIS_MODULE,
+	.open		= mod_v4l2_open,
+	.ioctl		= video_ioctl2,
+	.release	= mod_v4l2_close,
+	.poll		= mod_v4l2_poll,
 };
 
 static int mod_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
@@ -449,6 +547,7 @@ static int camera_ext_v4l2_probe(struct platform_device *pdev)
 		return PTR_ERR(data->cdsi_reg);
 	}
 
+	mutex_init(&data->mod_mutex);
 	g_v4l2_data = data;
 
 	return 0;
