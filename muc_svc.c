@@ -939,7 +939,9 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	/* Send to NW Routing Layer */
 	ret = svc_route_msg(dld, cport, msg);
 	if (ret) {
-		dev_err(&dd->pdev->dev, "failed sending svc msg: %d\n", ret);
+		dev_err(&dd->pdev->dev,
+				"failed sending svc msg -> ret: %d type: %d\n",
+				ret, type);
 		goto remove_op;
 	}
 
@@ -954,7 +956,9 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	ret = wait_for_completion_interruptible_timeout(&op->completion,
 					msecs_to_jiffies(timeout));
 	if (ret <= 0) {
-		dev_err(&dd->pdev->dev, "svc msg response timeout\n");
+		dev_err(&dd->pdev->dev,
+				"svc msg timeout -> ret: %d type: %d\n",
+				ret, type);
 		if (!ret)
 			ret = -ETIMEDOUT;
 		goto remove_op;
@@ -1453,8 +1457,12 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
 				&mods_dev->mb_ctrl_major,
 				&mods_dev->mb_ctrl_minor);
-	if (ret)
+	if (ret) {
+		dev_err(&svc_dd->pdev->dev,
+			"[%d] Failed VERSION on VENDOR CONTROL\n",
+			mods_dev->intf_id);
 		goto free_route;
+	}
 
 	/* If supported, sync RTC clocks early so the time is correct if a
 	 * failure occurs later in the initialization sequence. This will
