@@ -168,7 +168,7 @@ static void muc_handle_short(struct muc_data *cdata)
 		pr_err("%s: Too many sequential shorts detected\n", __func__);
 }
 
-static void muc_handle_detection(bool force_removal)
+static void muc_handle_detection(bool force_removal, bool flashmode)
 {
 	struct muc_data *cdata = muc_misc_data;
 	bool detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
@@ -204,8 +204,11 @@ static void muc_handle_detection(bool force_removal)
 			/* Disable BPLUS on force removal to guarantee the
 			 * attached mod sees the BPLUS removal.
 			 */
-			muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
-			cdata->bplus_state = MUC_BPLUS_DISABLED;
+			if (!flashmode) {
+				muc_seq(cdata, cdata->dis_seq,
+						cdata->dis_seq_len);
+				cdata->bplus_state = MUC_BPLUS_DISABLED;
+			}
 
 			/* Perform a normal/isr detection */
 			queue_delayed_work(cdata->attach_wq,
@@ -265,7 +268,7 @@ static void attach_work(struct work_struct *work)
 
 	pr_debug("%s: force: %s\n", __func__, force ? "yes" : "no");
 
-	muc_handle_detection(force);
+	muc_handle_detection(force, false);
 }
 
 static irqreturn_t muc_isr(int irq, void *data)
@@ -596,7 +599,7 @@ static void do_muc_reset(struct work_struct *work)
 	 */
 	cancel_delayed_work_sync(&muc_misc_data->isr_work.work);
 
-	muc_handle_detection(false);
+	muc_handle_detection(false, false);
 
 	kfree(dwork);
 
@@ -669,7 +672,7 @@ static void do_muc_ff_reset(struct work_struct *work)
 	} else
 		cd->bplus_state = MUC_BPLUS_ENABLED;
 
-	muc_handle_detection(true);
+	muc_handle_detection(true, !rw->do_reset);
 
 	kfree(dwork);
 }
