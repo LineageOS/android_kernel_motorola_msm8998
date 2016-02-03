@@ -1584,6 +1584,7 @@ EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 {
 	int err;
+	struct mods_dl_device *existing;
 
 	if (mods_dev->intf_id == MODS_INTF_AP) {
 		/* Special case for AP, we'll setup the routes right away */
@@ -1601,6 +1602,21 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 
 		return 0;
 	}
+
+	/* Make sure the interface doesn't already exist */
+	mutex_lock(&svc_list_lock);
+
+	list_for_each_entry(existing, &svc_dd->ext_intf, list)
+		if (existing->intf_id == mods_dev->intf_id) {
+			dev_err(&svc_dd->pdev->dev,
+				"[%d] Interface already exists\n",
+				mods_dev->intf_id);
+			mutex_unlock(&svc_list_lock);
+			return -EEXIST;
+		}
+
+	list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
+	mutex_unlock(&svc_list_lock);
 
 	/* Got external interface notification, can cancel wdog */
 	muc_svc_clear_wdog();
@@ -1620,10 +1636,6 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 	if (err)
 		goto free_ext_ctrl;
 
-	mutex_lock(&svc_list_lock);
-	list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
-	mutex_unlock(&svc_list_lock);
-
 	return 0;
 
 free_ext_ctrl:
@@ -1632,6 +1644,10 @@ free_ext_ctrl:
 			VENDOR_CTRL_DEST_CPORT);
 recovery:
 	muc_svc_recovery();
+
+	mutex_lock(&svc_list_lock);
+	list_del(&mods_dev->list);
+	mutex_unlock(&svc_list_lock);
 
 	return err;
 
