@@ -124,7 +124,7 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 	struct gb_vendor_moto *gb;
 	struct device *dev;
 	int retval;
-	struct gb_vendor_moto_get_dmesg_size_resp *rsp = NULL;
+	struct gb_vendor_moto_get_dmesg_size_resp *rsp;
 
 	gb = kzalloc(sizeof(*gb), GFP_KERNEL);
 	if (!gb)
@@ -143,10 +143,14 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 		retval = gb_operation_sync(gb->connection,
 					   GB_VENDOR_MOTO_TYPE_GET_DMESG_SIZE,
 					   NULL, 0, rsp, sizeof(*rsp));
-		if (retval)
-			goto err_rsp_free;
+		if (retval) {
+			kfree(rsp);
+			goto error;
+		}
 
 		gb->dmesg_size = le16_to_cpu(rsp->size);
+
+		kfree(rsp);
 	}
 
 	dev_info(&connection->bundle->dev, "module_minor=%d, dmesg_size=%d\n",
@@ -156,7 +160,7 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 	gb->minor = ida_simple_get(&minors, 0, 0, GFP_KERNEL);
 	if (gb->minor < 0) {
 		retval = gb->minor;
-		goto err_rsp_free;
+		goto error;
 	}
 	dev = device_create(&vendor_class, &connection->bundle->dev,
 				MKDEV(0, 0), gb, "mod%d", gb->minor);
@@ -170,8 +174,6 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 
 err_ida_remove:
 	ida_simple_remove(&minors, gb->minor);
-err_rsp_free:
-	kfree(rsp);
 error:
 	kfree(gb);
 	return retval;
