@@ -78,6 +78,20 @@ struct muc_svc_hotplug_work {
 
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 
+static void muc_svc_send_uevent(const char *event)
+{
+	struct kobj_uevent_env *env;
+
+	env = kzalloc(sizeof(*env), GFP_KERNEL);
+	if (!env)
+		return;
+
+	add_uevent_var(env, event);
+
+	kobject_uevent_env(&svc_dd->pdev->dev.kobj, KOBJ_CHANGE, env->envp);
+	kfree(env);
+}
+
 #define MUC_SVC_FAILURE_WINDOW (60 * 5 * HZ) /* 5 minute window */
 #define MUC_SVC_WATCHDOG_MAX_RETRIES 5
 #define MUC_SVC_ATTACH_ERROR "MOD_ATTACH_FAILURE"
@@ -111,10 +125,13 @@ static void muc_svc_recovery(void)
 		dev_err(&svc_dd->pdev->dev,
 				"Too many failures; shutting down\n");
 		mods_queue_error_event_empty(MUC_SVC_RECOVERY_FAILED);
+		muc_svc_send_uevent("MOD_ERROR=RECOVERY_FAILED");
+
 		muc_poweroff();
 		svc_dd->fail_count = 0;
 	} else {
 		dev_err(&svc_dd->pdev->dev, "Performing hard-reset recovery\n");
+		muc_svc_send_uevent("MOD_ERROR=RECOVERY_ATTEMPT");
 		muc_reset(svc_dd->mod_root_ver, false);
 	}
 }
@@ -138,6 +155,7 @@ static void muc_svc_clear_wdog(void)
 	count = scnprintf(retrystring, sizeof(retrystring), "retries: %2d\n",
 				svc_dd->fail_count);
 
+	muc_svc_send_uevent("MOD_EVENT=RECOVERY_SUCCESS");
 	mods_queue_error_event_text(MUC_SVC_RECOVERY_SUCCESS,
 					retrystring, count);
 
@@ -151,9 +169,11 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 	if (state) {
 		queue_delayed_work(svc_dd->wdog_wq, &svc_dd->wdog_work,
 				MUC_SVC_WATCHDOG_ATTACH_TIMEOUT);
+		muc_svc_send_uevent("MOD_EVENT=ATTACHED");
 	} else {
 		cancel_delayed_work_sync(&svc_dd->wdog_work);
 		svc_dd->mod_root_ver = MB_CONTROL_ROOT_VER_INVALID;
+		muc_svc_send_uevent("MOD_EVENT=DETACHED");
 	}
 
 	return 0;
@@ -165,6 +185,7 @@ void muc_svc_communication_reset(void)
 	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
 	muc_reset(svc_dd->mod_root_ver, false);
 	mods_queue_error_event_empty(MUC_SVC_COMMUNICATION_RESET);
+	muc_svc_send_uevent("MOD_ERROR=COMMUNICATION_RESET");
 }
 
 static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
