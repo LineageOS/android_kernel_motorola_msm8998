@@ -75,4 +75,6 @@ void gb_connection_latency_tag_disable(struct gb_connection *connection);
 struct gb_connection *gb_connection_hd_find(struct gb_host_device *hd,
 					u16 cport_id);
 
+void gb_connection_error_accounting(struct gb_connection *connection, int ret);
+
 #endif /* __CONNECTION_H */

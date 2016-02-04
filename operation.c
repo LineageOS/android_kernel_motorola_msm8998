@@ -1046,6 +1046,8 @@ int gb_operation_sync_timeout(struct gb_connection *connection, int type,
 		}
 	}
 
+	gb_connection_error_accounting(connection, ret);
+
 	gb_operation_put(operation);
 
 	return ret;

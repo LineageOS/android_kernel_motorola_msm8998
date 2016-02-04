@@ -23,6 +23,8 @@ struct gb_hd_driver {
 	void (*message_cancel)(struct gb_message *message);
 	int (*latency_tag_enable)(struct gb_host_device *hd, u16 cport_id);
 	int (*latency_tag_disable)(struct gb_host_device *hd, u16 cport_id);
+
+	void (*recovery)(void);
 };
 
 struct gb_host_device {
@@ -39,6 +41,10 @@ struct gb_host_device {
 
 	/* Host device buffer constraints */
 	size_t buffer_size_max;
+
+	/* Communication accounting */
+	atomic_t timeout_counter;
+	unsigned int max_timeouts;
 
 	struct gb_svc *svc;
 	/* Private data for the host driver */

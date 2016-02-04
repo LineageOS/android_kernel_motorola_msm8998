@@ -543,3 +543,28 @@ static void gb_connection_unbind_protocol(struct gb_connection *connection)
 
 	connection->protocol = NULL;
 }
+
+void gb_connection_error_accounting(struct gb_connection *connection, int ret)
+{
+	struct gb_host_device *hd = connection->hd;
+
+	/* If no recovery support, nothing to really account */
+	if (!hd->driver->recovery || !hd->max_timeouts)
+		return;
+
+	/* Anything other than timeout means we got a response */
+	if (ret != -ETIMEDOUT) {
+		atomic_set(&hd->timeout_counter, 0);
+		return;
+	}
+
+	if (atomic_inc_return(&hd->timeout_counter) < hd->max_timeouts)
+		return;
+
+	dev_err(&hd->dev,
+		"Maximum number of sequential timeouts: %d; recovering\n",
+		hd->max_timeouts);
+
+	hd->driver->recovery();
+	atomic_set(&hd->timeout_counter, 0);
+}

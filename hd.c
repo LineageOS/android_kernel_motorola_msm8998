@@ -14,6 +14,7 @@
 
 #include "greybus.h"
 
+#define GB_HD_MAX_SEQUENTIAL_TIMEOUTS  30
 
 static struct ida gb_hd_bus_id_map;
 
@@ -87,6 +88,8 @@ struct gb_host_device *gb_hd_create(struct gb_hd_driver *driver,
 	ida_init(&hd->cport_id_map);
 	hd->buffer_size_max = buffer_size_max;
 	hd->num_cports = num_cports;
+
+	hd->max_timeouts = GB_HD_MAX_SEQUENTIAL_TIMEOUTS;
 
 	hd->dev.parent = parent;
 	hd->dev.bus = &greybus_bus_type;
