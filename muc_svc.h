@@ -13,4 +13,5 @@ extern struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 extern void mods_remove_dl_device(struct mods_dl_device *mods_dev);
 extern int mods_dl_dev_attached(struct mods_dl_device *mods_dev);
 extern void mods_dl_dev_detached(struct mods_dl_device *mods_dev);
+extern void muc_svc_communication_reset(void);
 #endif

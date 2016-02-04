@@ -159,6 +159,13 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 	return 0;
 }
 
+#define MUC_SVC_COMMUNICATION_RESET "MOD_COMM_RESET"
+void muc_svc_communication_reset(void)
+{
+	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
+	muc_reset(svc_dd->mod_root_ver, false);
+	mods_queue_error_event_empty(MUC_SVC_COMMUNICATION_RESET);
+}
 
 static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
 				struct bin_attribute *attr, char *buf,

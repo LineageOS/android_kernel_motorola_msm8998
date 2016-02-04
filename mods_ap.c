@@ -113,10 +113,16 @@ static void mods_ap_msg_cancel(struct gb_message *message)
 	/* nothing currently */
 }
 
+static void mods_ap_recovery(void)
+{
+	muc_svc_communication_reset();
+}
+
 static struct gb_hd_driver mods_ap_host_driver = {
 	.hd_priv_size		= sizeof(struct mods_ap_data),
 	.message_send		= mods_ap_msg_send,
 	.message_cancel		= mods_ap_msg_cancel,
+	.recovery		= mods_ap_recovery,
 };
 
 static int mods_ap_probe(struct platform_device *pdev)
