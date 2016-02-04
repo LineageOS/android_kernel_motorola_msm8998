@@ -223,8 +223,6 @@ static void muc_handle_detection(bool force_removal, bool flashmode)
 		return;
 	}
 
-	cdata->muc_detected = detected;
-
 	/* Send enable sequence when detected and in disabled. */
 	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED) {
 		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con))
@@ -238,6 +236,8 @@ static void muc_handle_detection(bool force_removal, bool flashmode)
 		/* Re-read state after BPLUS settle time */
 		detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 	}
+
+	cdata->muc_detected = detected;
 
 	err = muc_attach_notifier_call_chain(detected);
 	if (err)
