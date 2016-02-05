@@ -1035,7 +1035,11 @@ int gb_operation_sync_timeout(struct gb_connection *connection, int type,
 		memcpy(operation->request->payload, request, request_size);
 
 	ret = gb_operation_request_send_sync_timeout(operation, timeout);
-	if (ret) {
+	if (ret == -ENOTCONN) {
+		dev_dbg(&connection->hd->dev,
+			"%s: synchronous operation of type 0x%02x failed: %d\n",
+			connection->name, type, ret);
+	} else if (ret) {
 		dev_err(&connection->hd->dev,
 			"%s: synchronous operation of type 0x%02x failed: %d\n",
 			connection->name, type, ret);
