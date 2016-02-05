@@ -136,6 +136,20 @@ clear_wake:
 	return shortdet;
 }
 
+static void muc_send_uevent(const char *error)
+{
+	struct kobj_uevent_env *env;
+
+	env = kzalloc(sizeof(*env), GFP_KERNEL);
+	if (!env)
+		return;
+
+	add_uevent_var(env, error);
+	kobject_uevent_env(&muc_misc_data->dev->kobj, KOBJ_CHANGE, env->envp);
+	kfree(env);
+}
+
+
 #define MUC_SHORT_MAX_RETRIES 8
 static void muc_handle_short(struct muc_data *cdata)
 {
@@ -154,8 +168,10 @@ static void muc_handle_short(struct muc_data *cdata)
 			pr_warn("%s: force notify fail: %d\n", __func__, err);
 	}
 
-	if (cdata->short_count == 0)
+	if (cdata->short_count == 0) {
 		pr_err("%s: Short detected, disabled BPLUS\n", __func__);
+		muc_send_uevent("MOD_ERROR=SHORT_DETECTED");
+	}
 
 	cdata->muc_detected = false;
 
@@ -164,8 +180,10 @@ static void muc_handle_short(struct muc_data *cdata)
 		queue_delayed_work(cdata->attach_wq,
 					&cdata->isr_work.work,
 					cdata->det_hysteresis);
-	else
+	else {
 		pr_err("%s: Too many sequential shorts detected\n", __func__);
+		muc_send_uevent("MOD_ERROR=SHORT_RECOVERY_FAIL");
+	}
 }
 
 static void muc_handle_detection(bool force_removal, bool flashmode)
