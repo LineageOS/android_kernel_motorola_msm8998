@@ -101,6 +101,16 @@ static void muc_svc_recovery(void)
 {
 	unsigned long end_time;
 
+	/* If at least one interface has been successful, we will
+	 * not perform the reset.
+	 */
+	mutex_lock(&svc_list_lock);
+	if (!list_empty(&svc_dd->ext_intf)) {
+		mutex_unlock(&svc_list_lock);
+		return;
+	}
+	mutex_unlock(&svc_list_lock);
+
 	/* If this is first failure event, save the timestamp */
 	if (!svc_dd->fail_count)
 		svc_dd->first_fail = jiffies;
