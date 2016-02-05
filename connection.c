@@ -360,7 +360,7 @@ gb_connection_control_disconnected(struct gb_connection *connection)
 
 	ret = gb_control_disconnected_operation(control, cport_id);
 	if (ret) {
-		dev_warn(&connection->bundle->dev,
+		dev_dbg(&connection->bundle->dev,
 			 "failed to disconnect cport: %d\n", ret);
 	}
 }
