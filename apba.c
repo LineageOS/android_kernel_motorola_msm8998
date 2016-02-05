@@ -31,6 +31,7 @@
 
 #include "apba.h"
 #include "kernel_ver.h"
+#include "cust_kernel_ver.h"
 #include "mods_nw.h"
 #include "mods_protocols.h"
 #include "mods_uart.h"
@@ -221,6 +222,8 @@ static void apba_seq(struct apba_ctrl *ctrl, struct apba_seq *seq)
 static void apba_on(struct apba_ctrl *ctrl, bool on)
 {
 	pr_info("%s: %s\n", __func__, on ? "on" : "off");
+
+	mods_ext_bus_vote(on);
 
 	if (on)
 		apba_seq(ctrl, &ctrl->enable_seq);

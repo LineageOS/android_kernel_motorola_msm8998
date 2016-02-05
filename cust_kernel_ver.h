@@ -37,4 +37,20 @@ mods_queue_error_event_text(char *name, void *data, size_t size) {}
 static inline void
 mods_queue_error_event_empty(char *name) {}
 #endif
+
+#ifdef CONFIG_MODS_MODBUS_EXT
+#include <linux/mods/modbus_ext.h>
+
+static inline void mods_ext_bus_vote(bool enable)
+{
+	struct modbus_ext_status modbus_status;
+
+	modbus_status.proto = MODBUS_PROTO_MPHY;
+	modbus_status.active = enable;
+	modbus_ext_set_state(&modbus_status);
+}
+#else
+static inline void mods_ext_bus_vote(bool enable) {}
+#endif
+
 #endif /* __GREYBUS_CUST_KERNEL_VER_H */
