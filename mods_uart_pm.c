@@ -281,11 +281,14 @@ void mods_uart_pm_on(void *uart_data, bool on)
 
 	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
 
-	data->pm_state_local = false;
-	atomic_set(&data->pm_state_remote, 0);
-	del_timer(&data->idle_timer);
+	/* pm data may be null if uart is not open */
+	if (data) {
+		data->pm_state_local = false;
+		atomic_set(&data->pm_state_remote, 0);
+		del_timer(&data->idle_timer);
 
-	data->on = on;
+		data->on = on;
+	}
 }
 
 void *mods_uart_pm_initialize(void *uart_data)

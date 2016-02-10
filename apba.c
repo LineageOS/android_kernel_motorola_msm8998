@@ -246,17 +246,18 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 
 	if (on) {
 		if (ctrl->mods_uart)
-			mods_uart_update_baud(ctrl->mods_uart,
-					      0 /* default */);
+			mods_uart_open(ctrl->mods_uart);
 		apba_seq(ctrl, &ctrl->enable_seq);
-	}
-	else {
+		if (ctrl->mods_uart)
+			mods_uart_pm_on(ctrl->mods_uart, true);
+	} else {
 		ctrl->mode = 0;
 		apba_seq(ctrl, &ctrl->disable_seq);
+		if (ctrl->mods_uart) {
+			mods_uart_pm_on(ctrl->mods_uart, false);
+			mods_uart_close(ctrl->mods_uart);
+		}
 	}
-
-	if (ctrl->mods_uart)
-		mods_uart_pm_on(ctrl->mods_uart, on);
 }
 
 static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
@@ -994,6 +995,11 @@ void apba_handle_message(uint8_t *payload, size_t len)
 	}
 }
 
+/*
+ * muc is informing us through this callback that it has a slave present,
+ * likely APBE. If it is an APBE, we should enable the APBA so that the two
+ * can communicate.
+ */
 static void apba_slave_present(uint8_t master_intf, uint32_t slave_mask)
 {
 	if (!g_ctrl)

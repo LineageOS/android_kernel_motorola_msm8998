@@ -16,6 +16,9 @@
 
 #define MODS_UART_FLAG_NO_TXWAKE	(1 << 0)
 
+int mods_uart_open(void *uart_data);
+int mods_uart_close(void *uart_data);
+
 int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len, int flag);
 void mod_attach(void *uart_data, unsigned long now_present);
 

@@ -61,6 +61,8 @@ struct mods_uart_data {
 	struct mods_uart_err_stats stats;
 	struct mutex tx_mutex;
 	void *mods_uart_pm_data;
+	const char *tty_name;
+	uint8_t intf_id;
 	speed_t default_baud;
 };
 
@@ -88,8 +90,10 @@ static ssize_t ldisc_rel_store(struct device *dev,
 	 * Set the line discipline to the default ldisc. This will allow this
 	 * driver module to be removed from the system.
 	 */
-	if (tty_set_ldisc(mud->tty, N_TTY))
-		dev_err(dev, "%s: Failed to set ldisc\n", __func__);
+	if (mud->tty) {
+		if (tty_set_ldisc(mud->tty, N_TTY))
+			dev_err(dev, "%s: Failed to set ldisc\n", __func__);
+	}
 
 	return count;
 }
@@ -350,57 +354,26 @@ void *mods_uart_get_pm_data(void *uart_data)
 	return mud->mods_uart_pm_data;
 }
 
-static int mods_uart_probe(struct platform_device *pdev)
+int mods_uart_open(void *uart_data)
 {
-	struct mods_uart_data *mud;
+	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
 	struct tty_driver *driver;
-	speed_t speed;
 	int tty_line = 0;
 	int ret;
-	struct device_node *np = pdev->dev.of_node;
-	const char *tty_name = NULL;
-	u8 intf_id;
 
-	mud = devm_kzalloc(&pdev->dev, sizeof(*mud), GFP_KERNEL);
-	if (!mud)
-		return -ENOMEM;
-
-	ret = of_property_read_u8(np, "mmi,intf-id", &intf_id);
-	if (ret) {
-		dev_err(&pdev->dev, "%s: Couldn't read intf-id\n", __func__);
-		return ret;
+	if (mud->tty) {
+		dev_warn(&mud->pdev->dev, "%s: already open\n", __func__);
+		return -EEXIST;
 	}
 
-	/* apba_ctrl must be probed and initialized */
-	if (apba_uart_register(mud))
-		return -EPROBE_DEFER;
-
-	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
-					intf_id);
-	if (IS_ERR(mud->dld)) {
-		dev_err(&pdev->dev, "%s: Unable to create data link device\n",
-			__func__);
-		ret = PTR_ERR(mud->dld);
-		goto unreg_apba;
-	}
-
-	mud->dld->dl_priv = (void *)mud;
-	mud->pdev = pdev;
-
-	/* Retrieve the name of the tty from the device tree */
-	ret = of_property_read_string(np, "mmi,tty", &tty_name);
-	if (ret) {
-		dev_err(&pdev->dev, "%s: TTY name not populated\n", __func__);
-		goto free_dld;
-	}
-	dev_info(&pdev->dev, "%s: Using %s\n", __func__, tty_name);
+	dev_dbg(&mud->pdev->dev, "%s: opening uart\n", __func__);
 
 	/* Find the driver for the specified tty */
-	driver = find_tty_driver((char *)tty_name, &tty_line);
+	driver = find_tty_driver((char *)mud->tty_name, &tty_line);
 	if (!driver || !driver->ttys) {
-		dev_err(&pdev->dev, "%s: Did not find tty driver\n", __func__);
+		dev_err(&mud->pdev->dev, "%s: Did not find tty driver\n", __func__);
 		ret = -ENODEV;
-		goto free_dld;
+		goto open_fail;
 	}
 
 	/* Use existing tty if present */
@@ -412,26 +385,19 @@ static int mods_uart_probe(struct platform_device *pdev)
 
 	if (IS_ERR(mud->tty)) {
 		ret = PTR_ERR(mud->tty);
-		goto free_dld;
+		mud->tty = NULL;
+		goto open_fail;
 	}
 
-	/* For now, have the tty always open */
 	ret = mud->tty->ops->open(mud->tty, NULL);
 	if (ret) {
-		dev_err(&pdev->dev, "%s: Failed to open tty\n", __func__);
+		dev_err(&mud->pdev->dev, "%s: Failed to open tty\n", __func__);
 		goto release_tty;
 	}
 
-	ret = of_property_read_u32(np, "mmi,tty_speed", &speed);
+	ret = config_tty(mud, 0 /* default speed */);
 	if (ret) {
-		dev_err(&pdev->dev, "%s: TTY speed not populated\n", __func__);
-		goto close_tty_locked;
-	}
-	mud->default_baud = speed;
-
-	ret = config_tty(mud, speed);
-	if (ret) {
-		dev_err(&pdev->dev, "%s: Failed to config tty\n", __func__);
+		dev_err(&mud->pdev->dev, "%s: Failed to config tty\n", __func__);
 		goto close_tty_locked;
 	}
 
@@ -447,31 +413,21 @@ static int mods_uart_probe(struct platform_device *pdev)
 	 */
 	ret = tty_set_ldisc(mud->tty, N_MODS_UART);
 	if (ret) {
-		dev_err(&pdev->dev, "%s: Failed to set ldisc\n", __func__);
+		dev_err(&mud->pdev->dev, "%s: Failed to set ldisc\n", __func__);
 		goto close_tty_unlocked;
 	}
-
-	ret = sysfs_create_groups(&pdev->dev.kobj, uart_groups);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to create sysfs attributes\n");
-		goto set_ldisc_tty;
-	}
+	mud->tty->disc_data = mud;
 
 	mud->mods_uart_pm_data = mods_uart_pm_initialize(mud);
 	if (!mud->mods_uart_pm_data) {
-		dev_err(&pdev->dev, "Failed to initialize uart pm\n");
-		goto remove_sysfs;
+		dev_err(&mud->pdev->dev, "Failed to initialize uart pm\n");
+		goto set_ldisc_tty;
 	}
 
-	mutex_init(&mud->tx_mutex);
-
-	mud->tty->disc_data = mud;
-	platform_set_drvdata(pdev, mud);
+	/* Reset sysfs stat entries */
+	memset((void *)&mud->stats, 0, sizeof(struct mods_uart_err_stats));
 
 	return 0;
-
-remove_sysfs:
-	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
 
 set_ldisc_tty:
 	tty_set_ldisc(mud->tty, N_TTY);
@@ -489,31 +445,33 @@ release_tty:
 	mutex_lock(&tty_mutex);
 	release_tty(mud->tty, mud->tty->index);
 	mutex_unlock(&tty_mutex);
+	mud->tty = NULL;
 
-free_dld:
-	mods_remove_dl_device(mud->dld);
-
-unreg_apba:
-	apba_uart_register(NULL);
-
+open_fail:
 	return ret;
 }
 
-static int mods_uart_remove(struct platform_device *pdev)
+int mods_uart_close(void *uart_data)
 {
-	struct mods_uart_data *mud = platform_get_drvdata(pdev);
+	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
 	struct tty_struct *tty = mud->tty;
 
-	if (mud->present)
+	if (!tty) {
+		dev_warn(&mud->pdev->dev, "%s: already closed\n", __func__);
+		return -ENODEV;
+	}
+
+	dev_dbg(&mud->pdev->dev, "%s: closing uart\n", __func__);
+
+	if (mud->present) {
 		mods_dl_dev_detached(mud->dld);
+		mud->present = 0;
+	}
 
-	mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
-
-	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
-
-	apba_uart_register(NULL);
-
-	mods_remove_dl_device(mud->dld);
+	if (mud->mods_uart_pm_data) {
+		mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
+		mud->mods_uart_pm_data = NULL;
+	}
 
 	/* TTY must be locked to close the connection */
 	tty_lock(tty);
@@ -524,7 +482,89 @@ static int mods_uart_remove(struct platform_device *pdev)
 	mutex_lock(&tty_mutex);
 	release_tty(tty, tty->index);
 	mutex_unlock(&tty_mutex);
+	mud->tty = NULL;
 
+	return 0;
+}
+
+static int mods_uart_probe(struct platform_device *pdev)
+{
+	struct mods_uart_data *mud;
+	speed_t speed;
+	int ret;
+
+	struct device_node *np = pdev->dev.of_node;
+
+	mud = devm_kzalloc(&pdev->dev, sizeof(*mud), GFP_KERNEL);
+	if (!mud)
+		return -ENOMEM;
+
+	ret = of_property_read_u8(np, "mmi,intf-id", &mud->intf_id);
+	if (ret) {
+		dev_err(&pdev->dev, "%s: Couldn't read intf-id\n", __func__);
+		return ret;
+	}
+
+	ret = of_property_read_u32(np, "mmi,tty_speed", &speed);
+	if (ret) {
+		dev_err(&pdev->dev, "%s: TTY speed not populated\n", __func__);
+		return ret;
+	}
+	mud->default_baud = speed;
+
+	mud->pdev = pdev;
+	platform_set_drvdata(pdev, mud);
+
+	/* Retrieve the name of the tty from the device tree */
+	ret = of_property_read_string(np, "mmi,tty", &mud->tty_name);
+	if (ret) {
+		dev_err(&pdev->dev, "%s: TTY name not populated\n", __func__);
+		return ret;
+	}
+	dev_info(&pdev->dev, "%s: Using %s\n", __func__, mud->tty_name);
+
+	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
+					mud->intf_id);
+	if (IS_ERR(mud->dld)) {
+		dev_err(&pdev->dev, "%s: Unable to create data link device\n",
+			__func__);
+		return PTR_ERR(mud->dld);
+	}
+	mud->dld->dl_priv = (void *)mud;
+
+	mutex_init(&mud->tx_mutex);
+
+	ret = sysfs_create_groups(&pdev->dev.kobj, uart_groups);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to create sysfs attributes\n");
+		goto remove_dld;
+	}
+
+	/* apba_ctrl must be probed and initialized */
+	if (apba_uart_register(mud)) {
+		ret = -EPROBE_DEFER;
+		goto remove_sysfs;
+	}
+
+	return 0;
+
+remove_sysfs:
+	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
+
+remove_dld:
+	mods_remove_dl_device(mud->dld);
+
+	return ret;
+}
+
+static int mods_uart_remove(struct platform_device *pdev)
+{
+	struct mods_uart_data *mud = platform_get_drvdata(pdev);
+
+	apba_uart_register(NULL);
+	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
+	mods_uart_close(mud);
+	mods_remove_dl_device(mud->dld);
 	platform_set_drvdata(pdev, NULL);
 
 	return 0;
