@@ -450,10 +450,10 @@ static void gb_ptp_connection_exit(struct gb_connection *connection)
 {
 	struct gb_ptp *ptp = connection->private;
 
-	power_supply_unregister(&ptp->psy);
 	mutex_lock(&ptp->conn_lock);
 	ptp->connection = NULL;
 	mutex_unlock(&ptp->conn_lock);
+	power_supply_unregister(&ptp->psy);
 }
 
 static struct gb_protocol ptp_protocol = {
