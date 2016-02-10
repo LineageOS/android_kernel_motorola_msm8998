@@ -368,10 +368,10 @@ static void gb_battery_connection_exit(struct gb_connection *connection)
 	struct gb_battery *gb = connection->private;
 
 #ifdef DRIVER_OWNS_PSY_STRUCT
-	power_supply_unregister(&gb->bat);
 	mutex_lock(&gb->conn_lock);
 	gb->connection = NULL;
 	mutex_unlock(&gb->conn_lock);
+	power_supply_unregister(&gb->bat);
 #else
 	power_supply_unregister(gb->bat);
 	kfree(gb);
