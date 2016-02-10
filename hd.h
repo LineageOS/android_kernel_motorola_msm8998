@@ -42,6 +42,9 @@ struct gb_host_device {
 	/* Host device buffer constraints */
 	size_t buffer_size_max;
 
+	/* Power Management Tracking */
+	int out_count;
+
 	/* Communication accounting */
 	atomic_t timeout_counter;
 	unsigned int max_timeouts;

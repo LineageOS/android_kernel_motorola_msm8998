@@ -36,6 +36,11 @@ static int gb_operation_response_send(struct gb_operation *operation,
 					int errno);
 
 /*
+ * Protects power management counters.
+ */
+static DEFINE_SPINLOCK(gb_operations_outbound);
+
+/*
  * Increment operation active count and add to connection list unless the
  * connection is going away.
  *
@@ -1020,6 +1025,7 @@ int gb_operation_sync_timeout(struct gb_connection *connection, int type,
 {
 	struct gb_operation *operation;
 	int ret;
+	unsigned long flags;
 
 	if ((response_size && !response) ||
 	    (request_size && !request))
@@ -1033,6 +1039,11 @@ int gb_operation_sync_timeout(struct gb_connection *connection, int type,
 
 	if (request_size)
 		memcpy(operation->request->payload, request, request_size);
+
+	spin_lock_irqsave(&gb_operations_outbound, flags);
+	if (!connection->hd->out_count++)
+		pm_stay_awake(&connection->hd->dev);
+	spin_unlock_irqrestore(&gb_operations_outbound, flags);
 
 	ret = gb_operation_request_send_sync_timeout(operation, timeout);
 	if (ret == -ENOTCONN) {
@@ -1049,6 +1060,12 @@ int gb_operation_sync_timeout(struct gb_connection *connection, int type,
 			       response_size);
 		}
 	}
+
+	spin_lock_irqsave(&gb_operations_outbound, flags);
+	if (--connection->hd->out_count == 0)
+		pm_relax(&connection->hd->dev);
+	spin_unlock_irqrestore(&gb_operations_outbound, flags);
+
 
 	gb_connection_error_accounting(connection, ret);
 

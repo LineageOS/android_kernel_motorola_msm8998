@@ -26,6 +26,7 @@ static void gb_hd_release(struct device *dev)
 		gb_svc_put(hd->svc);
 	ida_simple_remove(&gb_hd_bus_id_map, hd->bus_id);
 	ida_destroy(&hd->cport_id_map);
+	device_wakeup_disable(dev);
 	kfree(hd);
 }
 
@@ -97,6 +98,11 @@ struct gb_host_device *gb_hd_create(struct gb_hd_driver *driver,
 	hd->dev.dma_mask = hd->dev.parent->dma_mask;
 	device_initialize(&hd->dev);
 	dev_set_name(&hd->dev, "greybus%d", hd->bus_id);
+
+	device_set_wakeup_capable(&hd->dev, true);
+	ret = device_wakeup_enable(&hd->dev);
+	if (ret)
+		dev_warn(&hd->dev, "failed to enable wakeup\n");
 
 	hd->svc = gb_svc_create(hd);
 	if (!hd->svc) {
