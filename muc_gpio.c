@@ -192,11 +192,12 @@ static void muc_handle_detection(bool force_removal, bool flashmode)
 	bool detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 	int err;
 
-	/* If detected, immediately check for a short */
-	if (detected && !cdata->muc_detected && muc_short_detected(cdata)) {
-		muc_handle_short(cdata);
-		return;
-	}
+	/* If detected, check for short whenever BPLUS is disabled */
+	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED)
+		if (muc_short_detected(cdata)) {
+			muc_handle_short(cdata);
+			return;
+		}
 	cdata->short_count = 0;
 
 	pr_debug("%s: detected: %d previous state: %d\n",
