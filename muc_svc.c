@@ -50,6 +50,7 @@ struct muc_svc_data {
 	u8 fail_count;
 
 	u8 mod_root_ver;
+	u8 default_root_ver;
 };
 struct muc_svc_data *svc_dd;
 
@@ -182,7 +183,7 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 		muc_svc_send_uevent("MOD_EVENT=ATTACHED");
 	} else {
 		cancel_delayed_work_sync(&svc_dd->wdog_work);
-		svc_dd->mod_root_ver = MB_CONTROL_ROOT_VER_INVALID;
+		svc_dd->mod_root_ver = svc_dd->default_root_ver;
 		muc_svc_send_uevent("MOD_EVENT=DETACHED");
 	}
 
@@ -1268,15 +1269,14 @@ static int muc_svc_get_root_version(struct mods_dl_device *dld,
 	if (ver->version == MB_CONTROL_ROOT_VER_NOT_APPLICABLE)
 		goto free_msg;
 
-	if (dd->mod_root_ver == MB_CONTROL_ROOT_VER_INVALID) {
-		dd->mod_root_ver = ver->version;
-		dev_info(&dd->pdev->dev, "[%d] ROOT_VER: %d\n",
-				mods_dev->intf_id, ver->version);
-	} else if (dd->mod_root_ver != ver->version) {
-		dev_err(&dd->pdev->dev,
-			"[%d] Got ROOT_VER: %d but already had: %d\n",
-			mods_dev->intf_id, ver->version, dd->mod_root_ver);
-		ret = -EINVAL;
+	dd->mod_root_ver = ver->version;
+	dev_info(&dd->pdev->dev, "[%d] ROOT_VER: %d\n",
+			mods_dev->intf_id, ver->version);
+
+	if (ver->version < dd->default_root_ver) {
+		dev_warn(&dd->pdev->dev,
+			"[%d] Got ROOT_VER: %d lower than default: %d\n",
+			mods_dev->intf_id, ver->version, dd->default_root_ver);
 	}
 
 free_msg:
@@ -2069,6 +2069,12 @@ static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
 		return ret;
 	}
 	dd->endo_mask = (u16)val;
+
+	dd->default_root_ver = MB_CONTROL_ROOT_VER_INVALID;
+	ret = of_property_read_u8(np, "mmi,default-root-ver",
+			&dd->default_root_ver);
+	if (ret)
+		dev_warn(dev, "No default-root-ver present...\n");
 
 	return 0;
 }
