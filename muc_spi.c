@@ -205,6 +205,11 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 		return -EINVAL;
 	}
 
+	if (dd->attached) {
+		dev_warn(&dd->spi->dev, "Trying to reconfigure bus!\n");
+		return -EINVAL;
+	}
+
 	max_speed = le32_to_cpu(resp->bus_resp.max_speed);
 	pl_size = le16_to_cpu(resp->bus_resp.pl_size);
 
