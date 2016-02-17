@@ -986,8 +986,10 @@ static int gb_lights_light_config(struct gb_lights *glights, u8 id)
 
 	if (light->has_flash) {
 		ret = gb_lights_light_v4l2_register(light);
-		if (ret < 0)
+		if (ret < 0) {
+			light->has_flash = false;
 			return ret;
+		}
 	}
 
 	return 0;
