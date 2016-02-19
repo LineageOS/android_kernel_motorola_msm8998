@@ -33,42 +33,53 @@ struct v4l2_misc_command {
 	size_t size;
 	void *data;
 	struct file *ionfile;
+	wait_queue_head_t wait;
+	struct completion comp;
+	struct mutex lock;
 };
 
 struct v4l2_misc_data {
 	struct miscdevice misc_dev;
-	bool in_use;
 	void *v4l2_hal_data;
-	wait_queue_head_t wait;
-	struct v4l2_misc_command command;
-	struct mutex lock;
-	struct completion comp;
+	/* the last one is for monitor */
+	struct v4l2_misc_command command[V4L2_HAL_MAX_STREAMS + 1];
 	bool compat;
+	unsigned int users; /* active users */
+	struct mutex users_lock;
 };
 
 static struct v4l2_misc_data *g_data;
 
-#define V4L2_MISC_IOCTL_TIMEOUT	2000 /* ms */
+/* change to a smaller value after fix the timeout issue stopping axi stream */
+#define V4L2_MISC_IOCTL_TIMEOUT	8000 /* ms */
+
+static inline void set_cmd_queue_to_file(struct file *filp,
+		unsigned int idx)
+{
+	if (idx <= V4L2_HAL_MAX_STREAMS)
+		filp->private_data = &g_data->command[idx];
+}
+
+static inline struct v4l2_misc_command *get_cmd_queue_from_file(struct file *filp)
+{
+	return filp->private_data;
+}
 
 static int misc_dev_open(struct inode *inode, struct file *filp)
 {
 	int ret = 0;
-
-	mutex_lock(&g_data->lock);
-
-	if (g_data->in_use) {
-		pr_err("%s: device already in use\n", __func__);
-		ret = -EACCES;
-	} else
-		g_data->in_use = true;
-
-	mutex_unlock(&g_data->lock);
 
 	if (is_compat_task())
 		g_data->compat = true;
 	else
 		g_data->compat = false;
 
+	/* a client is monitor as default until call VIOC_SET_HANDLER */
+	mutex_lock(&g_data->users_lock);
+	++g_data->users;
+	if (g_data->users == 1)
+		set_cmd_queue_to_file(filp, V4L2_HAL_MAX_STREAMS);
+	mutex_unlock(&g_data->users_lock);
 	return ret;
 }
 
@@ -80,14 +91,21 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	struct misc_read_cmd *misc_cmd;
 	struct v4l2_hal_qbuf_data *qb;
 	int tgt_fd;
+	struct v4l2_misc_command *target_cmd;
 
-	if (!atomic_read(&g_data->command.pending_read)) {
+	target_cmd = get_cmd_queue_from_file(filp);
+	if (!target_cmd) {
+		pr_err("%s: unrecoganized client app\n", __func__);
+		return -EFAULT;
+	}
+
+	if (!atomic_read(&target_cmd->pending_read)) {
 		if (filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
 		ret = wait_event_interruptible(
-			g_data->wait,
-			atomic_read(&g_data->command.pending_read));
+			target_cmd->wait,
+			atomic_read(&target_cmd->pending_read));
 
 		if (ret) {
 			if (ret == -ERESTARTSYS)
@@ -97,11 +115,11 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 		}
 	}
 
-	atomic_set(&g_data->command.pending_read, 0);
-	atomic_set(&g_data->command.pending_resp, 1);
+	atomic_set(&target_cmd->pending_read, 0);
+	atomic_set(&target_cmd->pending_resp, 1);
 
 	/* make sure there is enough space to copy */
-	copy_size = sizeof(struct misc_read_cmd) + g_data->command.size;
+	copy_size = sizeof(struct misc_read_cmd) + target_cmd->size;
 	if (copy_size > count) {
 		pr_err("%s: No enough memory to copy data.\n", __func__);
 		ret = -ENOMEM;
@@ -109,16 +127,16 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	}
 
 	misc_cmd = (struct misc_read_cmd *)ubuf;
-	misc_cmd->stream = g_data->command.stream;
-	misc_cmd->cmd = g_data->command.cmd;
-	if (g_data->command.data == NULL)
+	misc_cmd->stream = target_cmd->stream;
+	misc_cmd->cmd = target_cmd->cmd;
+	if (target_cmd->data == NULL)
 		return copy_size;
 
-	if (g_data->command.cmd == VIOC_HAL_STREAM_QBUF &&
-		g_data->command.ionfile) {
-		qb = g_data->command.data;
+	if (target_cmd->cmd == VIOC_HAL_STREAM_QBUF &&
+		target_cmd->ionfile) {
+		qb = target_cmd->data;
 		tgt_fd = v4l2_hal_get_mapped_fd(g_data->v4l2_hal_data,
-						g_data->command.stream,
+						target_cmd->stream,
 						qb->index);
 		if (tgt_fd < 0) {
 			tgt_fd = get_unused_fd_flags(O_CLOEXEC);
@@ -126,9 +144,9 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 			if (tgt_fd < 0)
 				goto errout;
 
-			fd_install(tgt_fd, g_data->command.ionfile);
+			fd_install(tgt_fd, target_cmd->ionfile);
 			v4l2_hal_set_mapped_fd(g_data->v4l2_hal_data,
-						   g_data->command.stream,
+						   target_cmd->stream,
 						   qb->index, tgt_fd);
 		}
 
@@ -136,7 +154,7 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	}
 
 	if (copy_to_user((void __user *)misc_cmd->data,
-			 g_data->command.data, g_data->command.size)) {
+			 target_cmd->data, target_cmd->size)) {
 		ret = -EFAULT;
 		goto errout;
 	}
@@ -145,20 +163,21 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 
 errout:
 	/* unblock video device side */
-	complete(&g_data->comp);
+	complete(&target_cmd->comp);
 
 	return ret;
 }
 
-static int misc_dev_release(struct inode *inodep, struct file *filep)
+static int misc_dev_release(struct inode *inodep, struct file *filp)
 {
-	if (g_data->v4l2_hal_data)
-		v4l2_hal_exit(g_data->v4l2_hal_data);
-	g_data->v4l2_hal_data = NULL;
-
-	mutex_lock(&g_data->lock);
-	g_data->in_use = false;
-	mutex_unlock(&g_data->lock);
+	mutex_lock(&g_data->users_lock);
+	--g_data->users;
+	if (g_data->users == 0) {
+		if (g_data && g_data->v4l2_hal_data)
+			v4l2_hal_exit(g_data->v4l2_hal_data);
+		g_data->v4l2_hal_data = NULL;
+	}
+	mutex_unlock(&g_data->users_lock);
 
 	return 0;
 }
@@ -167,34 +186,40 @@ static unsigned int misc_dev_poll(struct file *filp,
 				   struct poll_table_struct *tbl)
 {
 	unsigned int mask = 0;
+	struct v4l2_misc_command *target_cmd;
 
-	poll_wait(filp, &g_data->wait, tbl);
+	target_cmd = get_cmd_queue_from_file(filp);
+	if (!target_cmd)
+		return 0;
 
-	if (atomic_read(&g_data->command.pending_read))
+	poll_wait(filp, &target_cmd->wait, tbl);
+
+	if (atomic_read(&target_cmd->pending_read))
 		mask |= POLLIN | POLLRDNORM;
 
 	return mask;
 }
 
-static int misc_copy_ioctl(unsigned int cmd, void __user *data)
+static int misc_copy_ioctl(struct v4l2_misc_command *target_cmd,
+		unsigned int cmd, void __user *data)
 {
 	int size = _IOC_SIZE(cmd);
 
 	if (_IOC_DIR(cmd) == _IOC_NONE)
 		return 0;
 
-	if (size != g_data->command.size) {
+	if (size != target_cmd->size) {
 		pr_err("%s: data size mis-match\n", __func__);
 		return -EINVAL;
 	}
 
-	if (copy_from_user(g_data->command.data, data, _IOC_SIZE(cmd)))
+	if (copy_from_user(target_cmd->data, data, _IOC_SIZE(cmd)))
 		return -EFAULT;
 
 	return 0;
 }
 
-static int misc_process_v4l2_ioctl(void *arg)
+static int misc_process_v4l2_ioctl(struct v4l2_misc_command *target_cmd, void *arg)
 {
 	int ret;
 	struct misc_ioctl_resp ioctl_resp;
@@ -208,53 +233,54 @@ static int misc_process_v4l2_ioctl(void *arg)
 	else
 		data_ptr = (void *)ioctl_resp.data;
 
-	if (!atomic_read(&g_data->command.pending_resp)) {
+	if (!atomic_read(&target_cmd->pending_resp)) {
 		pr_err("%s: No ioctl in progress\n", __func__);
 		return -EINVAL;
 	}
 
-	if (g_data->command.stream != ioctl_resp.stream ||
-		g_data->command.cmd != ioctl_resp.cmd) {
+	if (target_cmd->stream != ioctl_resp.stream ||
+		target_cmd->cmd != ioctl_resp.cmd) {
 		pr_err("%s: Invalid ioctl response\n", __func__);
 		return -EINVAL;
 	}
 
 	if (ioctl_resp.result_code == 0) {
-		ret = misc_copy_ioctl(ioctl_resp.cmd, data_ptr);
+		ret = misc_copy_ioctl(target_cmd, ioctl_resp.cmd, data_ptr);
 		if (ret == 0)
-			atomic_set(&g_data->command.result_code, 0);
+			atomic_set(&target_cmd->result_code, 0);
 		else
-			atomic_set(&g_data->command.result_code, -EFAULT);
+			atomic_set(&target_cmd->result_code, -EFAULT);
 	} else {
-		atomic_set(&g_data->command.result_code,
+		atomic_set(&target_cmd->result_code,
 			   ioctl_resp.result_code);
 	}
 
-	complete(&g_data->comp);
+	complete(&target_cmd->comp);
 
 	return 0;
 }
 
-static int misc_process_stream_command(unsigned int cmd, void *arg)
+static int misc_process_stream_command(struct v4l2_misc_command *target_cmd,
+		unsigned int cmd, void *arg)
 {
 	struct misc_stream_resp stream_resp;
 
 	if (copy_from_user(&stream_resp, (void *)arg, sizeof(stream_resp)))
 		return -EFAULT;
 
-	if (!atomic_read(&g_data->command.pending_resp)) {
+	if (!atomic_read(&target_cmd->pending_resp)) {
 		pr_err("%s: No ioctl in progress\n", __func__);
 		return -EINVAL;
 	}
 
-	if (g_data->command.stream != stream_resp.stream ||
-		g_data->command.cmd != cmd) {
+	if (target_cmd->stream != stream_resp.stream ||
+		target_cmd->cmd != cmd) {
 		pr_err("%s: Invalid ioctl response\n", __func__);
 		return -EINVAL;
 	}
 
-	atomic_set(&g_data->command.result_code, 0);
-	complete(&g_data->comp);
+	atomic_set(&target_cmd->result_code, 0);
+	complete(&target_cmd->comp);
 
 	return 0;
 }
@@ -267,19 +293,45 @@ static int misc_process_dequeue_request(void *arg)
 		return -EFAULT;
 
 	return v4l2_hal_buffer_ready(g_data->v4l2_hal_data,
-				     dq_cmd.stream,
-				     dq_cmd.index,
-				     dq_cmd.length);
+					dq_cmd.stream,
+					dq_cmd.index,
+					dq_cmd.length,
+					dq_cmd.state);
+}
+
+static int misc_process_set_handler(struct file *filp, void *arg)
+{
+	struct misc_set_handler set_handler_cmd;
+
+	if (copy_from_user(&set_handler_cmd, (void *)arg,
+		sizeof(set_handler_cmd)))
+		return -EFAULT;
+
+	if (set_handler_cmd.stream >= V4L2_HAL_MAX_STREAMS)
+		return -EFAULT;
+
+	if (v4l2_hal_stream_set_handled(g_data->v4l2_hal_data,
+				set_handler_cmd.stream) != 0)
+		return -EFAULT;
+
+	set_cmd_queue_to_file(filp, set_handler_cmd.stream);
+	return 0;
 }
 
 static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 				unsigned long arg)
 {
 	long ret = 0;
+	struct v4l2_misc_command *target_cmd_queue;
+
+	target_cmd_queue = get_cmd_queue_from_file(filp);
+	if (target_cmd_queue == NULL) {
+		pr_err("%s: unrecoganized client app\n", __func__);
+		return -EFAULT;
+	}
 
 	switch (cmd) {
 	case VIOC_HAL_IFACE_START: {
-		/* enumerate v4l2 video device */
 		void *data = v4l2_hal_init();
 
 		if (data == NULL)
@@ -298,13 +350,17 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 	case VIOC_HAL_STREAM_OFF:
 	case VIOC_HAL_STREAM_REQBUFS:
 	case VIOC_HAL_STREAM_QBUF:
-		ret = misc_process_stream_command(cmd, (void *)arg);
+		ret = misc_process_stream_command(target_cmd_queue, cmd,
+				(void *)arg);
 		break;
 	case VIOC_HAL_STREAM_DQBUF:
 		ret = misc_process_dequeue_request((void *)arg);
 		break;
 	case VIOC_HAL_V4L2_CMD:
-		ret = misc_process_v4l2_ioctl((void *)arg);
+		ret = misc_process_v4l2_ioctl(target_cmd_queue, (void *)arg);
+		break;
+	case VIOC_HAL_SET_STREAM_HANDLER:
+		ret = misc_process_set_handler(filp, (void *)arg);
 		break;
 	default:
 		pr_err("%s: Unknown command %x\n", __func__, cmd);
@@ -333,47 +389,57 @@ bool v4l2_misc_compat_mode(void)
 int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 			      size_t size, void *data)
 {
+	struct v4l2_misc_command *target_cmd_queue;
 	int ret;
 	struct v4l2_hal_qbuf_data *qb;
 
-	/* only allow one command queued at a time */
-	mutex_lock(&g_data->lock);
+	/* OPEN request will be sent to monitor.
+	 * Other stream request will be sent to its handler.
+	 */
+	if (cmd == VIOC_HAL_STREAM_OPENED)
+		target_cmd_queue = &g_data->command[V4L2_HAL_MAX_STREAMS];
+	else
+		target_cmd_queue = &g_data->command[stream];
 
-	g_data->command.stream = stream;
-	g_data->command.cmd = cmd;
-	g_data->command.size = size;
-	g_data->command.data = data;
+	/* each stream only allow one command queued at a time */
+	mutex_lock(&target_cmd_queue->lock);
+
+	target_cmd_queue->stream = stream;
+	target_cmd_queue->cmd = cmd;
+	target_cmd_queue->size = size;
+	target_cmd_queue->data = data;
 
 	if (cmd == VIOC_HAL_STREAM_QBUF) {
 		qb = data;
-		g_data->command.ionfile = fget(qb->fd);
+		target_cmd_queue->ionfile = fget(qb->fd);
 	} else
-		g_data->command.ionfile = NULL;
+		target_cmd_queue->ionfile = NULL;
 
-	atomic_set(&g_data->command.pending_read, 1);
+	atomic_set(&target_cmd_queue->pending_read, 1);
 
-	wake_up(&g_data->wait);
+	wake_up(&target_cmd_queue->wait);
 
-	atomic_set(&g_data->command.result_code, -ETIME);
+	atomic_set(&target_cmd_queue->result_code, -ETIME);
 	/* wait for ioctl command response */
 	if (!wait_for_completion_timeout(
-			&g_data->comp,
+			&target_cmd_queue->comp,
 			msecs_to_jiffies(V4L2_MISC_IOCTL_TIMEOUT))) {
 		pr_err("%s: timeout for ioctl\n", __func__);
 	}
 
-	atomic_set(&g_data->command.pending_read, 0);
-	atomic_set(&g_data->command.pending_resp, 0);
+	atomic_set(&target_cmd_queue->pending_read, 0);
+	atomic_set(&target_cmd_queue->pending_resp, 0);
 
-	ret = atomic_read(&g_data->command.result_code);
+	ret = atomic_read(&target_cmd_queue->result_code);
 
-	mutex_unlock(&g_data->lock);
+	mutex_unlock(&target_cmd_queue->lock);
 
 	return ret;
 }
 
 static int v4l2_hal_probe(struct platform_device *pdev)
 {
+	int i;
 	int ret;
 	struct v4l2_misc_data *data;
 
@@ -381,9 +447,12 @@ static int v4l2_hal_probe(struct platform_device *pdev)
 	if (!data)
 		return -ENOMEM;
 
-	init_waitqueue_head(&data->wait);
-	init_completion(&data->comp);
-	mutex_init(&data->lock);
+	for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
+		init_waitqueue_head(&data->command[i].wait);
+		init_completion(&data->command[i].comp);
+		mutex_init(&data->command[i].lock);
+	}
+	mutex_init(&data->users_lock);
 
 	data->misc_dev.minor = MISC_DYNAMIC_MINOR;
 	data->misc_dev.name = "v4l2-hal-ctrl";
@@ -401,7 +470,10 @@ static int v4l2_hal_probe(struct platform_device *pdev)
 
 static int v4l2_hal_remove(struct platform_device *pdev)
 {
-	complete(&g_data->comp);
+	int i;
+
+	for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
+		complete(&g_data->command[i].comp);
 
 	v4l2_hal_exit(g_data->v4l2_hal_data);
 	g_data->v4l2_hal_data = NULL;

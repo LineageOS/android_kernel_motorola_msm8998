@@ -23,10 +23,16 @@ struct misc_stream_resp {
 	__s32 result_code;
 } __packed;
 
+enum misc_buffer_state {
+	MISC_BUFFER_STATE_DONE,
+	MISC_BUFFER_STATE_ERROR,
+};
+
 struct misc_dequeue_cmd {
 	__u32 stream;
 	__u32 index;
 	__u32 length;
+	enum misc_buffer_state state;
 } __packed;
 
 struct misc_ioctl_resp {
@@ -35,6 +41,11 @@ struct misc_ioctl_resp {
 	__s32 result_code;
 	__u32 pad;
 	__u64 data;
+} __packed;
+
+/* stream handler associates its file with stream id */
+struct misc_set_handler {
+	__u32 stream;
 } __packed;
 
 #define VIOC_HAL_IFACE_START	_IO('H', 0)
@@ -47,8 +58,9 @@ struct misc_ioctl_resp {
 #define VIOC_HAL_STREAM_QBUF	_IOW('H', 7, struct misc_stream_resp)
 #define VIOC_HAL_STREAM_DQBUF	_IOW('H', 8, struct misc_dequeue_cmd)
 #define VIOC_HAL_V4L2_CMD	_IOW('H', 9, struct misc_ioctl_resp)
+#define VIOC_HAL_SET_STREAM_HANDLER _IOW('H', 10, struct misc_set_handler)
 
-#define V4L2_HAL_MAX_STREAMS 6
+#define V4L2_HAL_MAX_STREAMS	6
 
 /* structure used for V4L2_hal -> misc direction */
 struct misc_read_cmd {
@@ -71,11 +83,12 @@ bool v4l2_misc_compat_mode(void);
 int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 			      size_t size, void *data);
 int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream,
-			  int fd, unsigned int length);
+			  int fd, unsigned int length, enum misc_buffer_state state);
 int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index);
 void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream,
 			    int index, int fd);
 
+int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream);
 void *v4l2_hal_init(void);
 void v4l2_hal_exit(void *);
 
