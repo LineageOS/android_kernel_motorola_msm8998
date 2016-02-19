@@ -33,6 +33,7 @@ struct v4l2_buffer_data {
 struct v4l2_stream_data {
 	unsigned int id;
 	bool used;
+	bool handled;
 	struct vb2_queue vb2_q;
 	struct v4l2_buffer_data *bdata;
 };
@@ -373,7 +374,7 @@ int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index)
 }
 
 void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream, int index,
-			    int fd)
+				int fd)
 {
 	struct v4l2_hal_data *data = hal_data;
 	struct v4l2_stream_data *strm;
@@ -382,22 +383,55 @@ void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream, int index,
 	strm->bdata[index].mapped_fd = fd;
 }
 
+int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream)
+{
+	int rc = 0;
+	struct v4l2_hal_data *data = hal_data;
+
+	if (stream >= V4L2_HAL_MAX_STREAMS) {
+		pr_err("%s: invalid stream %u\n", __func__, stream);
+		return -EINVAL;
+	}
+
+	mutex_lock(&data->lock);
+	if (!data->strms[stream].used) {
+		pr_err("%s: stream %u not start\n", __func__, stream);
+		rc = -EINVAL;
+	}
+
+	if(data->strms[stream].handled) {
+		pr_err("%s: stream %u already handled\n", __func__, stream);
+		rc = -EINVAL;
+	}
+
+	data->strms[stream].handled = true;
+	mutex_unlock(&data->lock);
+	return rc;
+}
+
 int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
-			  unsigned int length)
+			  unsigned int length, enum misc_buffer_state state)
 {
 	struct v4l2_hal_data *data = hal_data;
 	struct v4l2_stream_data *strm;
 	struct vb2_buffer *vb;
+	enum vb2_buffer_state buffer_state;
 
 	if (stream >= V4L2_HAL_MAX_STREAMS)
 		return -EINVAL;
 
+	if (state == MISC_BUFFER_STATE_DONE)
+		buffer_state = VB2_BUF_STATE_DONE;
+	else if (state == MISC_BUFFER_STATE_ERROR)
+		buffer_state = VB2_BUF_STATE_ERROR;
+	else
+		return -EINVAL;
 	strm = &data->strms[stream];
 	mutex_lock(&data->lock);
 	if (strm->used) {
 		vb = strm->vb2_q.bufs[index];
 		vb->v4l2_planes[0].bytesused = length;
-		vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
+		vb2_buffer_done(vb, buffer_state);
 	}
 	mutex_unlock(&data->lock);
 
