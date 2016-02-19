@@ -457,7 +457,7 @@ static inline int get_u32s(uint8_t **p, size_t *size, u32 *target, size_t num)
 	int retval = 0;
 	size_t i;
 	if (*size < sizeof(u32) * num) {
-		pr_err("%s: expect %ld u32 from %ld bytes\n", __func__,
+		pr_err("%s: expect %zu u32 from %zu bytes\n", __func__,
 			num, *size);
 		return -EINVAL;
 	}
@@ -492,7 +492,7 @@ static inline int get_camera_ext_ctrl_float(uint8_t **p, size_t *size,
 					camera_ext_ctrl_float *target)
 {
 	if (*size < sizeof(camera_ext_ctrl_float)) {
-		pr_err("%s: invalid camera_ext_ctrl_float size %ld\n",
+		pr_err("%s: invalid camera_ext_ctrl_float size %zu\n",
 			__func__, *size);
 		return -EINVAL;
 	}
@@ -508,7 +508,7 @@ static inline int get_camera_ext_ctrl_double(uint8_t **p, size_t *size,
 					camera_ext_ctrl_double *target)
 {
 	if (*size < sizeof(camera_ext_ctrl_double)) {
-		pr_err("%s: invalid camera_ext_ctrl_double size %ld\n",
+		pr_err("%s: invalid camera_ext_ctrl_double size %zu\n",
 			__func__, *size);
 		return -EINVAL;
 	}
@@ -525,7 +525,7 @@ static inline int get_camera_ext_ctrl_floats(uint8_t **p, size_t *size,
 	camera_ext_ctrl_float *target, size_t num)
 {
 	if (*size < sizeof(camera_ext_ctrl_float) * num) {
-		pr_err("%s: expect %ld floats from %ld bytes\n", __func__,
+		pr_err("%s: expect %zu floats from %zu bytes\n", __func__,
 			num, *size);
 		return -EINVAL;
 	}
@@ -549,7 +549,7 @@ static inline int get_def(uint8_t **p, size_t *size, void **q, size_t length,
 	uint8_t *num;
 
 	if (*size < length) {
-		pr_err("%s: expect %ld bytes from %ld bytes\n", __func__,
+		pr_err("%s: expect %zu bytes from %zu bytes\n", __func__,
 			length, *size);
 		return -EINVAL;
 	}
@@ -582,7 +582,7 @@ static inline int get_def(uint8_t **p, size_t *size, void **q, size_t length,
 			return -EINVAL;
 		}
 		if (i != length) {
-			pr_err("%s: wrong value bytes: %ld\n", __func__, i);
+			pr_err("%s: wrong value bytes: %zu\n", __func__, i);
 			return -EINVAL;
 		}
 	} /* note: if use 4/8 bytes pass float/double, conversion is needed */
@@ -1017,7 +1017,7 @@ static int gb_camera_ext_s_or_try_ctrl(struct gb_connection *conn,
 	mod_ctrl_val_size = sizeof(*req) + data_size;
 	req = kmalloc(mod_ctrl_val_size, GFP_KERNEL);
 	if (req == NULL) {
-		pr_err("%s: failed to allocate %ld bytes\n", __func__,
+		pr_err("%s: failed to allocate %zu bytes\n", __func__,
 			mod_ctrl_val_size);
 		return -ENOMEM;
 	}

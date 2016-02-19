@@ -443,7 +443,7 @@ static int custom_ctrl_register(
 		size_t size = ctrl->elem_size * ctrl->elems;
 
 		if (size != mod_cfg->val_size) {
-			pr_err("%s: wrong value size from mod %ld, expected %ld\n",
+			pr_err("%s: wrong value size from mod %zu, expected %zu\n",
 				__func__, size, mod_cfg->val_size);
 			return -EINVAL;
 		}
