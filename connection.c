@@ -365,6 +365,11 @@ gb_connection_control_disconnected(struct gb_connection *connection)
 	}
 }
 
+/* Number of retries to get the protocol version in even of temporary
+ * communication issue.
+ */
+#define GB_CONN_VERSION_RETRIES 2
+
 /*
  * Request protocol version supported by the module. We don't need to do
  * this for SVC as that is initiated by the SVC.
@@ -373,14 +378,24 @@ static int gb_connection_protocol_get_version(struct gb_connection *connection)
 {
 	struct gb_protocol *protocol = connection->protocol;
 	int ret;
+	int retries = 0;
 
 	if (protocol->flags & GB_PROTOCOL_SKIP_VERSION)
 		return 0;
 
-	ret = gb_protocol_get_version(connection);
+	do {
+		ret = gb_protocol_get_version(connection);
+	} while (ret == -ETIMEDOUT && ++retries <= GB_CONN_VERSION_RETRIES);
+
+	if (!ret && retries)
+		dev_warn(&connection->bundle->dev,
+			"recovered protocol version after %d tries\n",
+			retries);
+
 	if (ret) {
 		dev_err(&connection->bundle->dev,
-			"failed to get protocol version: %d\n", ret);
+			"failed to get protocol version: %d retries: %d\n",
+			ret, retries);
 		return ret;
 	}
 
