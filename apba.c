@@ -636,6 +636,30 @@ static ssize_t apba_log_show(struct device *dev,
 
 static DEVICE_ATTR_RO(apba_log);
 
+static ssize_t apbe_power_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (!g_ctrl)
+		return -EINVAL;
+
+	if (!g_ctrl->master_intf)
+		return -EINVAL;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+	else if (val != 0 && val != 1)
+		return -EINVAL;
+
+	mods_slave_ctrl_power(g_ctrl->master_intf, val,
+		MB_CONTROL_SLAVE_MASK_APBE);
+
+	return count;
+}
+
+static DEVICE_ATTR_WO(apbe_power);
+
 static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
 	&dev_attr_flash_partition.attr,
@@ -643,6 +667,7 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_apba_baud.attr,
 	&dev_attr_apba_log.attr,
 	&dev_attr_apba_mode.attr,
+	&dev_attr_apbe_power.attr,
 	NULL,
 };
 
