@@ -1681,11 +1681,11 @@ free_ext_ctrl:
 			SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
 			VENDOR_CTRL_DEST_CPORT);
 recovery:
-	muc_svc_recovery();
-
 	mutex_lock(&svc_list_lock);
 	list_del(&mods_dev->list);
 	mutex_unlock(&svc_list_lock);
+
+	muc_svc_recovery();
 
 	return err;
 
