@@ -277,8 +277,6 @@ static int v4l2_hal_queue_setup(struct vb2_queue *q,
 	int i;
 
 	*num_planes = 1;
-	/* The blow sets large enough number to get around of length check
-	   during qbuf */
 	sizes[0] = 0;
 
 	data.count = *num_buffers;
@@ -463,14 +461,16 @@ static int v4l2_hal_close(struct file *file)
 {
 	struct v4l2_hal_data *data = video_drvdata(file);
 	struct v4l2_stream_data *strm = file->private_data;
+	unsigned int id = strm->id;
 
 	v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_CLOSED, 0, NULL);
 
 	vb2_queue_release(&strm->vb2_q);
 
 	mutex_lock(&data->lock);
-	strm->used = false;
 	kfree(strm->bdata);
+	memset(strm, 0, sizeof(*strm));
+	strm->id = id;
 	mutex_unlock(&data->lock);
 
 	file->private_data = NULL;
