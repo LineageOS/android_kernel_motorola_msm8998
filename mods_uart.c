@@ -20,6 +20,7 @@
 #include <linux/mutex.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
+#include <linux/pinctrl/pinctrl.h>
 #include <linux/platform_device.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
@@ -54,6 +55,9 @@ struct mods_uart_data {
 	struct platform_device *pdev;
 	struct tty_struct *tty;
 	struct mods_dl_device *dld;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pinctrl_state_default;
+	struct pinctrl_state *pinctrl_state_active;
 	bool present;
 	char rx_data[MODS_UART_MAX_SIZE];
 	size_t rx_len;
@@ -368,6 +372,12 @@ int mods_uart_open(void *uart_data)
 
 	dev_dbg(&mud->pdev->dev, "%s: opening uart\n", __func__);
 
+	ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_active);
+	if (ret) {
+		dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
+		goto open_fail;
+	}
+
 	/* Find the driver for the specified tty */
 	driver = find_tty_driver((char *)mud->tty_name, &tty_line);
 	if (!driver || !driver->ttys) {
@@ -455,6 +465,7 @@ int mods_uart_close(void *uart_data)
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
 	struct tty_struct *tty = mud->tty;
+	int ret;
 
 	if (!tty) {
 		dev_warn(&mud->pdev->dev, "%s: already closed\n", __func__);
@@ -484,7 +495,11 @@ int mods_uart_close(void *uart_data)
 	mutex_unlock(&tty_mutex);
 	mud->tty = NULL;
 
-	return 0;
+	ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_default);
+	if (ret)
+		dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
+
+	return ret;
 }
 
 static int mods_uart_probe(struct platform_device *pdev)
@@ -522,6 +537,26 @@ static int mods_uart_probe(struct platform_device *pdev)
 		return ret;
 	}
 	dev_info(&pdev->dev, "%s: Using %s\n", __func__, mud->tty_name);
+
+	mud->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(mud->pinctrl)) {
+		dev_err(&pdev->dev, "Pinctrl not defined\n");
+		return PTR_ERR(mud->pinctrl);
+	}
+
+	mud->pinctrl_state_default = pinctrl_lookup_state(mud->pinctrl,
+							  PINCTRL_STATE_DEFAULT);
+	if (IS_ERR(mud->pinctrl_state_default)) {
+		dev_err(&pdev->dev, "Pinctrl lookup failed for default\n");
+		return PTR_ERR(mud->pinctrl_state_default);
+	}
+
+	mud->pinctrl_state_active = pinctrl_lookup_state(mud->pinctrl,
+							 "active");
+	if (IS_ERR(mud->pinctrl_state_active)) {
+		dev_err(&pdev->dev, "Pinctrl lookup failed for active\n");
+		return PTR_ERR(mud->pinctrl_state_active);
+	}
 
 	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
 					mud->intf_id);
