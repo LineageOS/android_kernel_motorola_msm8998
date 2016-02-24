@@ -108,6 +108,8 @@ static void muc_svc_recovery(void)
 	mutex_lock(&svc_list_lock);
 	if (!list_empty(&svc_dd->ext_intf)) {
 		mutex_unlock(&svc_list_lock);
+		dev_warn(&svc_dd->pdev->dev,
+			"An interface is present; skipping reset\n");
 		return;
 	}
 	mutex_unlock(&svc_list_lock);
