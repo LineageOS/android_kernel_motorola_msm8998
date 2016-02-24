@@ -112,8 +112,7 @@ struct muc_spi_data {
 };
 
 struct spi_msg_hdr {
-	__u8 bits;                         /* See HDR_BIT_* defines for values */
-	__u8 rsvd;                         /* Reserved */
+	__le16 bitmask;                    /* See HDR_BIT_* defines for values */
 } __packed;
 
 struct spi_dl_msg_bus_config_req {
@@ -322,13 +321,14 @@ static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 static void parse_rx_pkt(struct muc_spi_data *dd)
 {
 	struct spi_msg_hdr *hdr = (struct spi_msg_hdr *)dd->rx_pkt;
+	uint16_t bitmask = le16_to_cpu(hdr->bitmask);
 	struct spi_device *spi = dd->spi;
 	uint16_t *rcvcrc_p;
 	uint16_t calcrc;
 	size_t pl_size = PL_SIZE(dd->pkt_size);
 	handler_t handler = mods_nw_switch;
 
-	if (!(hdr->bits & HDR_BIT_VALID)) {
+	if (!(bitmask & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
 		return;
 	}
@@ -341,7 +341,7 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 		return;
 	}
 
-	if (unlikely((hdr->bits & HDR_BIT_TYPE) == MSG_TYPE_DL))
+	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL))
 		handler = dl_recv;
 
 	/* Check if un-packetizing is required */
@@ -357,10 +357,10 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 		       pl_size);
 		dd->rx_datagram_ndx += pl_size;
 
-		if (hdr->bits & HDR_BIT_PKTS) {
+		if (bitmask & HDR_BIT_PKTS) {
 			/* Need additional packets */
 			muc_spi_transfer_locked(dd, NULL,
-					((hdr->bits & HDR_BIT_PKTS) > 1));
+					((bitmask & HDR_BIT_PKTS) > 1));
 			return;
 		}
 
@@ -501,14 +501,16 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 
 	while ((remaining > 0) && (packets > 0)) {
 		int this_pl;
+		uint16_t bitmask;
 
 		/* Determine the payload size of this packet */
 		this_pl = MIN(remaining, pl_size);
 
 		/* Populate the SPI message */
-		hdr->bits = HDR_BIT_VALID;
-		hdr->bits |= (msg_type & HDR_BIT_TYPE);
-		hdr->bits |= (--packets & HDR_BIT_PKTS);
+		bitmask  = HDR_BIT_VALID;
+		bitmask |= (msg_type & HDR_BIT_TYPE);
+		bitmask |= (--packets & HDR_BIT_PKTS);
+		hdr->bitmask = cpu_to_le16(bitmask);
 		memcpy((dd->tx_pkt + sizeof(*hdr)), buf, this_pl);
 
 		*crc = crc16_calc(0, dd->tx_pkt, CRC_NDX(dd->pkt_size));
