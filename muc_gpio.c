@@ -347,6 +347,7 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
 {
 	disable_irq_wake(cdata->irq);
+	disable_irq(cdata->irq);
 }
 
 static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
