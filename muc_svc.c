@@ -1199,27 +1199,27 @@ static void muc_svc_check_slave_present(struct mods_slave_ctrl_driver *drv)
 {
 	struct mods_dl_device *mods_dev;
 
-	if (!drv->slave_present)
+	if (!drv->slave_notify)
 		return;
 
 	mutex_lock(&svc_list_lock);
 	list_for_each_entry(mods_dev, &svc_dd->ext_intf, list)
 		if (mods_dev->slave_mask)
-			drv->slave_present(mods_dev->intf_id,
-						mods_dev->slave_mask);
+			drv->slave_notify(mods_dev->intf_id,
+				mods_dev->slave_mask, mods_dev->slave_state);
 	mutex_unlock(&svc_list_lock);
 }
 
 /* Notify all Slave Control Drivers of the new slave mask */
-static void muc_svc_broadcast_slave_present(struct mods_dl_device *master)
+static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master)
 {
 	struct mods_slave_ctrl_driver *drv;
 
 	mutex_lock(&slave_lock);
 	list_for_each_entry(drv, &svc_dd->slave_drv, list)
-		if (drv->slave_present)
-			drv->slave_present(master->intf_id,
-						master->slave_mask);
+		if (drv->slave_notify)
+			drv->slave_notify(master->intf_id, master->slave_mask,
+						master->slave_state);
 	mutex_unlock(&slave_lock);
 }
 
@@ -1276,7 +1276,15 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 			mods_dev->intf_id, mods_dev->fw_version_str);
 
 	mods_dev->slave_mask = le32_to_cpu(ids->slave_mask);
-	muc_svc_broadcast_slave_present(mods_dev);
+	/* GET_IDs does not include the slave_state.  For backwards
+	   compatibility, use the presence of the slave_mask to specify
+	   the slave_state.
+	*/
+	if (mods_dev->slave_mask)
+		mods_dev->slave_state = SLAVE_STATE_ENABLED;
+	else
+		mods_dev->slave_state = SLAVE_STATE_DISABLED;
+	muc_svc_broadcast_slave_notification(mods_dev);
 
 	svc_gb_msg_free(msg);
 	kfree(ids);

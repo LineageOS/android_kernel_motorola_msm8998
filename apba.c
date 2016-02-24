@@ -137,6 +137,8 @@ struct apbe_attach_work_struct {
 	int present;
 };
 
+static struct delayed_work apba_disable_work;
+
 static int apba_mtd_erase(struct mtd_info *mtd_info,
 	 unsigned int start, unsigned int len)
 {
@@ -891,6 +893,11 @@ static void apba_apbe_attach_work_func(struct work_struct *work)
 	kfree(apbe);
 }
 
+static void apba_disable_work_func(struct work_struct *work)
+{
+	apba_disable();
+}
+
 static void apba_notify_abpe_attach(int present)
 {
 	struct apbe_attach_work_struct *apbe;
@@ -1019,13 +1026,14 @@ void apba_handle_message(uint8_t *payload, size_t len)
  * likely APBE. If it is an APBE, we should enable the APBA so that the two
  * can communicate.
  */
-static void apba_slave_present(uint8_t master_intf, uint32_t slave_mask)
+static void apba_slave_notify(uint8_t master_intf, uint32_t slave_mask,
+				uint32_t slave_state)
 {
 	if (!g_ctrl)
 		return;
 
-	pr_debug("%s: master_intf=%d, slave_mask=0x%x\n",
-		__func__, master_intf, slave_mask);
+	pr_debug("%s: master_intf=%d, slave_mask=0x%x, slave_state=0x%x\n",
+		__func__, master_intf, slave_mask, slave_state);
 
 	if (slave_mask != MB_CONTROL_SLAVE_MASK_APBE) {
 		pr_debug("%s: ignore\n", __func__);
@@ -1034,11 +1042,25 @@ static void apba_slave_present(uint8_t master_intf, uint32_t slave_mask)
 
 	g_ctrl->master_intf = master_intf;
 
-	apba_enable();
+	switch (slave_state) {
+	case SLAVE_STATE_DISABLED:
+		/* don't call apba_disable() here, causes greybus
+		 * operation failures as we are not done handling
+		 * slave state gb message yet.
+		 */
+		schedule_delayed_work(&apba_disable_work, HZ);
+		break;
+	case SLAVE_STATE_ENABLED:
+		apba_enable();
+		break;
+	default:
+		pr_err("%s: Invalid slave state=%d.\n", __func__, slave_state);
+		break;
+	}
 }
 
 static struct mods_slave_ctrl_driver apbe_ctrl_drv = {
-	.slave_present = apba_slave_present,
+	.slave_notify = apba_slave_notify,
 };
 
 int apba_enable(void)
@@ -1177,6 +1199,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	g_ctrl = ctrl;
 
 	platform_set_drvdata(pdev, ctrl);
+	INIT_DELAYED_WORK(&apba_disable_work, apba_disable_work_func);
 
 	ret = mods_register_slave_ctrl_driver(&apbe_ctrl_drv);
 	if (ret) {

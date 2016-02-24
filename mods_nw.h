@@ -38,8 +38,14 @@ struct mods_dl_driver {
 	int (*get_protocol)(uint16_t cport_id, uint8_t *protocol);
 };
 
+enum {
+	SLAVE_STATE_DISABLED = 0,
+	SLAVE_STATE_ENABLED,
+};
+
 struct mods_slave_ctrl_driver {
-	void (*slave_present)(uint8_t master_intf, uint32_t slave_mask);
+	void (*slave_notify)(uint8_t master_intf, uint32_t slave_mask,
+				uint32_t slave_state);
 	struct list_head list;
 };
 
@@ -67,9 +73,9 @@ struct mods_dl_device {
 	__le64 uid_high;
 	__le32 fw_version;
 	char fw_version_str[FW_VER_STR_SZ];
-	__le32 slave_mask;
-
 	struct kref kref;
+	uint32_t slave_mask;
+	uint32_t slave_state;
 };
 
 struct mods_nw_msg_filter {
