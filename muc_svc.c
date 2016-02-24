@@ -70,6 +70,7 @@ static DEFINE_SPINLOCK(svc_ops_lock);
  */
 #define SVC_VENDOR_CTRL_CPORT_BASE (0x8000)
 #define SVC_VENDOR_CTRL_CPORT(intfid) (SVC_VENDOR_CTRL_CPORT_BASE + intfid)
+#define SVC_VENDOR_CTRL_INTF(cport) (cport - SVC_VENDOR_CTRL_CPORT_BASE)
 
 struct muc_svc_hotplug_work {
 	struct work_struct work;
@@ -85,6 +86,7 @@ struct muc_svc_hotplug_work {
 #define kobj_to_device(k) \
 	container_of(k, struct mods_dl_device, intf_kobj)
 
+static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master);
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 
 static void muc_svc_send_uevent(const char *event)
@@ -931,6 +933,94 @@ free_request:
 	return ret;
 }
 
+static struct mods_dl_device *dev_from_intf(u8 intf_id)
+{
+	struct mods_dl_device *mods_dev;
+
+	list_for_each_entry(mods_dev, &svc_dd->ext_intf, list)
+		if (mods_dev->intf_id == intf_id)
+			return mods_dev;
+
+	return NULL;
+}
+
+static int
+mods_slave_state(struct mods_dl_device *dld, struct gb_message *req,
+			  uint16_t cport)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct mods_dl_device *mods_dev;
+	struct gb_control_slave_state_request *msg = req->payload;
+	u8 intf_id;
+
+	mutex_lock(&svc_list_lock);
+
+	intf_id = SVC_VENDOR_CTRL_INTF(cport);
+	mods_dev = dev_from_intf(intf_id);
+	if (!mods_dev) {
+		dev_err(&dd->pdev->dev, "Interface not found: %d\n", intf_id);
+		mutex_unlock(&svc_list_lock);
+		return -EINVAL;
+	}
+
+	/* Update the mask */
+	mods_dev->slave_mask = le32_to_cpu(msg->slave_mask);
+	mods_dev->slave_state = le32_to_cpu(msg->slave_state);
+	/* Notify listeners */
+	muc_svc_broadcast_slave_notification(mods_dev);
+
+	mutex_unlock(&svc_list_lock);
+
+	return 0;
+}
+
+static int
+muc_svc_handle_mods_request(struct mods_dl_device *dld, uint8_t *data,
+			  size_t msg_size, uint16_t cport)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	size_t payload_size = get_gb_payload_size(msg_size);
+	struct gb_message *req;
+	int ret;
+	struct gb_operation_msg_hdr hdr;
+
+	memcpy(&hdr, data, sizeof(hdr));
+
+	req = svc_gb_msg_alloc(hdr.type, payload_size);
+	if (!req)
+		return -ENOMEM;
+	memcpy(req->header, data, msg_size);
+
+	switch (hdr.type) {
+	case MB_CONTROL_TYPE_SLAVE_STATE:
+		ret = mods_slave_state(dld, req, cport);
+		break;
+	default:
+		dev_err(&dd->pdev->dev, "Unsupported Mods Request type: %d\n",
+					hdr.type);
+		ret = -EINVAL;
+		goto free_request;
+	}
+
+	/* If hdr operation id is non-zero, it expects a response */
+	if (hdr.operation_id) {
+		ret = svc_gb_send_response(dld, cport, req, 0, NULL,
+					gb_operation_errno_map(ret));
+		if (ret) {
+			dev_err(&dd->pdev->dev,
+				"Failed to send mods response for type: %d\n",
+				hdr.type);
+			goto free_request;
+		}
+	}
+
+free_request:
+	/* Done with the request and op */
+	svc_gb_msg_free(req);
+
+	return ret;
+}
+
 /* Handle the incoming greybus message and complete the waiting thread, or
  * process the new incoming request.
  */
@@ -968,6 +1058,9 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 
 		return 0;
 	}
+
+	if (cport >= SVC_VENDOR_CTRL_CPORT_BASE)
+		return muc_svc_handle_mods_request(dld, data, msg_size, cport);
 
 	/* If not a response, process the new request */
 	return muc_svc_handle_ap_request(dld, data, msg_size, cport);

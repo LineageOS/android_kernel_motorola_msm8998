@@ -61,7 +61,7 @@
 
 /* Version of the Greybus control protocol we support */
 #define MB_CONTROL_VERSION_MAJOR              0x00
-#define MB_CONTROL_VERSION_MINOR              0x04
+#define MB_CONTROL_VERSION_MINOR              0x05
 
 /* Greybus control request types */
 #define MB_CONTROL_TYPE_INVALID               0x00
@@ -73,6 +73,7 @@
 #define MB_CONTROL_TYPE_SLAVE_POWER           0x06
 #define MB_CONTROL_TYPE_GET_ROOT_VER          0x07
 #define MB_CONTROL_TYPE_RTC_SYNC              0x08
+#define MB_CONTROL_TYPE_SLAVE_STATE           0x09
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -150,5 +151,12 @@ struct mb_control_rtc_sync_request {
 	__le64    nsec;
 } __packed;
 /* Control protocol RTC sync has no response */
+
+/* Control protocol slave state request */
+struct gb_control_slave_state_request {
+	__le32  slave_mask;
+	__le32  slave_state;
+} __packed;
+/* Control protocol slave state response has no payload */
 
 #endif /* __MODS_PROTOCOLS_H */
