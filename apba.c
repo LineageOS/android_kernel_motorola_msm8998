@@ -33,6 +33,7 @@
 #include "apba.h"
 #include "kernel_ver.h"
 #include "cust_kernel_ver.h"
+#include "mhb_protocol.h"
 #include "mods_nw.h"
 #include "mods_protocols.h"
 #include "mods_uart.h"
@@ -80,63 +81,25 @@ struct apba_ctrl {
 	struct completion comp;
 	struct completion baud_comp;
 	struct completion mode_comp;
+	struct completion unipro_comp;
 	uint8_t master_intf;
 	uint8_t mode;
 	bool flash_dev_populated;
+	uint32_t apbe_status;
+	uint32_t last_unipro_value;
+	uint32_t last_unipro_status;
 } *g_ctrl;
-
-/* message from APBA Ctrl driver in kernel */
-#pragma pack(push, 1)
-struct apba_ctrl_int_reason_resp {
-	struct apba_ctrl_msg_hdr hdr;
-	__le16 reason;
-};
-#pragma pack(pop)
-
-/* message to APBA for mode request */
-#pragma pack(push, 1)
-struct apba_mode_req {
-	struct apba_ctrl_msg_hdr hdr;
-	uint8_t mode;
-};
-#pragma pack(pop)
-
-/* message to APBA for UART baud update request */
-#pragma pack(push, 1)
-struct apba_baud_req {
-	struct apba_ctrl_msg_hdr hdr;
-	__le32 baud;
-};
-#pragma pack(pop)
-
-/* message from APBA acknowledging UART baud update */
-#pragma pack(push, 1)
-struct apba_baud_ack {
-	struct apba_ctrl_msg_hdr hdr;
-	__le32 baud;
-	uint8_t accepted;
-};
-#pragma pack(pop)
-
-enum {
-	APBA_INT_REASON_NONE,
-	APBA_INT_APBE_ON,
-	APBA_INT_APBE_RESET,
-	APBA_INT_APBE_CONNECTED,
-	APBA_INT_APBE_DISCONNECTED,
-};
 
 #define APBA_LOG_SIZE	SZ_16K
 static DEFINE_KFIFO(apba_log_fifo, char, APBA_LOG_SIZE);
 
 /* used as temporary buffer to pop out content from FIFO */
-static char fifo_overflow[APBA_MSG_SIZE_MAX];
+static char fifo_overflow[MHB_MAX_MSG_SIZE];
 
 #define APBA_LOG_REQ_TIMEOUT	1000 /* ms */
 #define APBA_MODE_REQ_TIMEOUT	1000 /* ms */
 #define APBA_BAUD_REQ_TIMEOUT	1000 /* ms */
-
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define APBA_UNIPRO_REQ_TIMEOUT	1000 /* ms */
 
 struct apbe_attach_work_struct {
 	struct work_struct work;
@@ -144,6 +107,425 @@ struct apbe_attach_work_struct {
 };
 
 static struct delayed_work apba_disable_work;
+
+static void apba_handle_pm_status_not(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	struct mhb_pm_status_not *not;
+
+	if (!g_ctrl || !g_ctrl->master_intf)
+		return;
+
+	if (len != sizeof(*not))
+		return;
+
+	not = (struct mhb_pm_status_not *)payload;
+	g_ctrl->apbe_status = le32_to_cpu(not->status);
+
+	switch (g_ctrl->apbe_status) {
+	case MHB_PM_STATUS_PEER_NONE:
+		/* ignore */
+		break;
+	case MHB_PM_STATUS_PEER_ON:
+		pr_info("APBE: on\n");
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
+		break;
+	case MHB_PM_STATUS_PEER_RESET:
+		pr_info("APBE: reset\n");
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
+		msleep(APBE_RESET_DELAY);
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
+		break;
+	case MHB_PM_STATUS_PEER_CONNECTED:
+		pr_info("APBE: connected\n");
+		break;
+	case MHB_PM_STATUS_PEER_DISCONNECTED:
+		pr_info("APBE: disconnected\n");
+		mods_slave_ctrl_power(g_ctrl->master_intf,
+			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
+		break;
+	default:
+		pr_err("%s: Invalid reason=%d.\n", __func__, not->status);
+		break;
+	}
+}
+
+/* PM */
+int apba_send_pm_wake_rsp(void)
+{
+	int ret;
+	struct mhb_hdr rsp_hdr;
+
+	if (!g_ctrl || !g_ctrl->mods_uart)
+		return -ENODEV;
+
+	memset(&rsp_hdr, 0, sizeof(rsp_hdr));
+	rsp_hdr.addr = MHB_ADDR_PM;
+	rsp_hdr.type = MHB_TYPE_PM_WAKE_RSP;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &rsp_hdr, NULL, 0,
+		UART_PM_FLAG_WAKE_ACK);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+int apba_send_pm_sleep_req(void)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+
+	if (!g_ctrl || !g_ctrl->mods_uart)
+		return -ENODEV;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_PM;
+	req_hdr.type = MHB_TYPE_PM_SLEEP_REQ;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr, NULL, 0,
+		UART_PM_FLAG_SLEEP_IND);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+static int apba_send_pm_sleep_rsp(void)
+{
+	int ret;
+	struct mhb_hdr rsp_hdr;
+
+	if (!g_ctrl || !g_ctrl->mods_uart)
+		return -ENODEV;
+
+	memset(&rsp_hdr, 0, sizeof(rsp_hdr));
+	rsp_hdr.addr = MHB_ADDR_PM;
+	rsp_hdr.type = MHB_TYPE_PM_SLEEP_RSP;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &rsp_hdr, NULL, 0,
+		UART_PM_FLAG_SLEEP_ACK);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+static void apba_handle_pm_message(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	switch (hdr->type) {
+	case MHB_TYPE_PM_WAKE_RSP:
+		/* APBA had acknowledged wake interrupt */
+		mods_uart_pm_handle_pm_wake_rsp(g_ctrl->mods_uart);
+		break;
+	case MHB_TYPE_PM_SLEEP_RSP:
+		/* APBA had acknowledged to our sleep indication */
+		break;
+	case MHB_TYPE_PM_SLEEP_REQ:
+		/* APBA is going to sleep */
+		apba_send_pm_sleep_rsp();
+		break;
+	case MHB_TYPE_PM_STATUS_NOT:
+		apba_handle_pm_status_not(hdr, payload, len);
+		break;
+	default:
+		pr_err("%s: Invalid type=0x%02x.\n", __func__, hdr->type);
+		break;
+	}
+}
+
+/* UART */
+static void apba_handle_uart_config_rsp(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	int ret;
+	struct mhb_uart_config_rsp *rsp;
+
+	if (len != sizeof(*rsp))
+		goto done;
+
+	rsp = (struct mhb_uart_config_rsp *)payload;
+	rsp->baud = le32_to_cpu(rsp->baud);
+
+	if (hdr->result != MHB_RESULT_SUCCESS)
+		goto done;
+
+	ret = mods_uart_set_baud(g_ctrl->mods_uart, rsp->baud);
+	if (ret)
+		pr_err("%s: baud update failed: %d\n", __func__, ret);
+
+done:
+	complete(&g_ctrl->baud_comp);
+}
+
+static void apba_handle_uart_message(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	switch (hdr->type) {
+	case MHB_TYPE_UART_CONFIG_RSP:
+		apba_handle_uart_config_rsp(hdr, payload, len);
+		break;
+	default:
+		pr_err("%s: Invalid type=0x%02x.\n", __func__, hdr->type);
+		break;
+	}
+}
+
+/* UniPro */
+static int apba_send_unipro_read_attr_req(uint16_t attribute, uint16_t selector,
+		uint8_t peer)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+	struct mhb_unipro_read_attr_req req;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_UNIPRO;
+	req_hdr.type = MHB_TYPE_UNIPRO_READ_ATTR_REQ;
+
+	req.attribute = cpu_to_le16(attribute);
+	req.selector = cpu_to_le16(selector);
+	req.peer = peer;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr, (uint8_t *)&req,
+		sizeof(req), 0);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+static int apba_send_unipro_write_attr_req(uint16_t attribute, uint16_t selector,
+		uint8_t peer, uint32_t value)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+	struct mhb_unipro_write_attr_req req;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_UNIPRO;
+	req_hdr.type = MHB_TYPE_UNIPRO_WRITE_ATTR_REQ;
+
+	req.attribute = cpu_to_le16(attribute);
+	req.selector = cpu_to_le16(selector);
+	req.peer = peer;
+	req.value = cpu_to_le16(value);
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr, (uint8_t *)&req,
+		sizeof(req), 0);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+static int apba_send_unipro_gear_req(uint8_t tx, uint8_t rx, uint8_t pwrmode,
+		uint8_t series)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+	struct mhb_unipro_control_req req;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_UNIPRO;
+	req_hdr.type = MHB_TYPE_UNIPRO_CONTROL_REQ;
+
+	req.gear.tx = tx;
+	req.gear.rx = rx;
+	req.gear.pwrmode = pwrmode;
+	req.gear.series = series;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr, (uint8_t *)&req,
+		sizeof(req), 0);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+static void apba_handle_unipro_gear_rsp(struct mhb_hdr *hdr,
+		uint8_t *payload, size_t len)
+{
+	g_ctrl->last_unipro_status = hdr->result;
+	complete(&g_ctrl->unipro_comp);
+}
+
+static void apba_handle_unipro_read_attr_rsp(struct mhb_hdr *hdr,
+		uint8_t *payload, size_t len)
+{
+	struct mhb_unipro_read_attr_rsp *rsp;
+
+	if (len != sizeof(*rsp))
+		return;
+
+	rsp = (struct mhb_unipro_read_attr_rsp *)payload;
+
+	g_ctrl->last_unipro_status = hdr->result;
+	g_ctrl->last_unipro_value = (hdr->result == MHB_RESULT_SUCCESS) ?
+		le32_to_cpu(rsp->value) : 0;
+
+	complete(&g_ctrl->unipro_comp);
+}
+
+static void apba_handle_unipro_write_attr_rsp(struct mhb_hdr *hdr,
+		uint8_t *payload, size_t len)
+{
+	g_ctrl->last_unipro_status = hdr->result;
+	complete(&g_ctrl->unipro_comp);
+}
+
+static void apba_handle_unipro_message(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	switch (hdr->type) {
+	case MHB_TYPE_UNIPRO_CONTROL_RSP:
+		apba_handle_unipro_gear_rsp(hdr, payload, len);
+		break;
+	case MHB_TYPE_UNIPRO_READ_ATTR_RSP:
+		apba_handle_unipro_read_attr_rsp(hdr, payload, len);
+		break;
+	case MHB_TYPE_UNIPRO_WRITE_ATTR_RSP:
+		apba_handle_unipro_write_attr_rsp(hdr, payload, len);
+		break;
+	case MHB_TYPE_UNIPRO_CONFIG_RSP:
+	case MHB_TYPE_UNIPRO_STATUS_RSP:
+		/* ignore */
+		break;
+	default:
+		pr_err("%s: Invalid type=0x%02x.\n", __func__, hdr->type);
+		break;
+	}
+}
+
+/* Diag */
+static void apba_handle_diag_log_rsp(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	int of;
+
+	mutex_lock(&g_ctrl->log_mutex);
+
+	of = kfifo_len(&apba_log_fifo) + len - APBA_LOG_SIZE;
+	if (of > 0) {
+		/* pop out from older content if buffer is full */
+		of = kfifo_out(&apba_log_fifo, fifo_overflow,
+			       min(of, MHB_MAX_MSG_SIZE));
+	}
+	kfifo_in(&apba_log_fifo, payload, len);
+
+	mutex_unlock(&g_ctrl->log_mutex);
+
+	complete(&g_ctrl->comp);
+}
+
+static void apba_handle_diag_mode_rsp(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	complete(&g_ctrl->mode_comp);
+}
+
+static void apba_handle_diag_message(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	switch (hdr->type) {
+	case MHB_TYPE_DIAG_LOG_RSP:
+		apba_handle_diag_log_rsp(hdr, payload, len);
+		break;
+	case MHB_TYPE_DIAG_MODE_RSP:
+		apba_handle_diag_mode_rsp(hdr, payload, len);
+		break;
+	default:
+		pr_err("%s: Invalid type=0x%02x.\n", __func__, hdr->type);
+		break;
+	}
+}
+
+void apba_handle_message(struct mhb_hdr *hdr, uint8_t *payload, size_t len)
+{
+	__u8 func = (hdr->addr & MHB_FUNC_MASK) >> MHB_FUNC_SHIFT;
+
+	if (!g_ctrl)
+		return;
+
+	switch (func) {
+	case MHB_FUNC_PM:
+		apba_handle_pm_message(hdr, payload, len);
+		break;
+	case MHB_FUNC_UART:
+		apba_handle_uart_message(hdr, payload, len);
+		break;
+	case MHB_FUNC_UNIPRO:
+		apba_handle_unipro_message(hdr, payload, len);
+		break;
+	case MHB_FUNC_DIAG:
+		apba_handle_diag_message(hdr, payload, len);
+		break;
+	default:
+		pr_err("%s: Invalid func=0x%02x.\n", __func__, func);
+		break;
+	}
+}
+
+static int apba_send_uart_config_req(unsigned long val)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+	struct mhb_uart_config_req req;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_UART;
+	req_hdr.type = MHB_TYPE_UART_CONFIG_REQ;
+
+	req.baud = cpu_to_le32(val);
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr,
+		(uint8_t *)&req, sizeof(req), 0);
+	if (ret)
+		pr_err("%s: failed to send req\n", __func__);
+
+	return ret;
+}
+
+static int apba_send_diag_mode_req(__u8 mode)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+	struct mhb_diag_mode_req req;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_DIAG;
+	req_hdr.type = MHB_TYPE_DIAG_MODE_REQ;
+
+	req.mode = mode;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr,
+		(uint8_t *)&req, sizeof(req), 0);
+	if (ret)
+		pr_err("%s: failed to send req\n", __func__);
+
+	return ret;
+}
+
+static int apba_send_diag_log_req(void)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_DIAG;
+	req_hdr.type = MHB_TYPE_DIAG_LOG_REQ;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr,
+		NULL, 0, 0);
+	if (ret)
+		pr_err("%s: failed to send log req\n", __func__);
+
+	return ret;
+}
 
 static int apba_mtd_erase(struct mtd_info *mtd_info,
 	 unsigned int start, unsigned int len)
@@ -643,29 +1025,22 @@ static ssize_t apba_mode_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val;
-	struct apba_mode_req msg;
 
 	if (!g_ctrl || !g_ctrl->mods_uart)
-		return 0;
+		return -ENODEV;
 
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	msg.hdr.type = cpu_to_le16(APBA_CTRL_MODE_REQUEST);
-	msg.hdr.size = cpu_to_le16(sizeof(msg.mode));
-	msg.mode = (uint8_t)val;
-
-	if (mods_uart_apba_send(g_ctrl->mods_uart,
-				(uint8_t *)&msg, sizeof(msg), 0) != 0) {
+	if (apba_send_diag_mode_req(val))
 		pr_err("%s: failed to send MODE\n", __func__);
-		return count;
-	}
+		return -EIO;
 
 	if (!wait_for_completion_timeout(
 		    &g_ctrl->mode_comp,
 		    msecs_to_jiffies(APBA_MODE_REQ_TIMEOUT))) {
 		pr_err("%s: timeout for MODE\n", __func__);
-		return count;
+		return -ETIMEDOUT;
 	}
 
 	g_ctrl->mode = val;
@@ -688,7 +1063,6 @@ static ssize_t apba_baud_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val;
-	struct apba_baud_req msg;
 
 	if (!g_ctrl || !g_ctrl->mods_uart)
 		return -ENODEV;
@@ -696,15 +1070,8 @@ static ssize_t apba_baud_store(struct device *dev,
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	msg.hdr.type = cpu_to_le16(APBA_CTRL_BAUD_REQUEST);
-	msg.hdr.size = cpu_to_le16(sizeof(msg.baud));
-	msg.baud = cpu_to_le32(val);
-
-	if (mods_uart_apba_send(g_ctrl->mods_uart,
-				(uint8_t *)&msg, sizeof(msg), 0) != 0) {
-		pr_err("%s: failed to send BAUD\n", __func__);
+	if (apba_send_uart_config_req(val))
 		return -EIO;
-	}
 
 	/* Prevent further transmissions until we receive the baud
 	 * change ACK and change the baud rate.
@@ -715,7 +1082,7 @@ static ssize_t apba_baud_store(struct device *dev,
 		    msecs_to_jiffies(APBA_BAUD_REQ_TIMEOUT))) {
 		pr_err("%s: timeout for BAUD\n", __func__);
 		mods_uart_lock_tx(g_ctrl->mods_uart, false);
-		return -EAGAIN;
+		return -ETIMEDOUT;
 	}
 	mods_uart_lock_tx(g_ctrl->mods_uart, false);
 
@@ -727,26 +1094,19 @@ static DEVICE_ATTR_RW(apba_baud);
 static ssize_t apba_log_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct apba_ctrl_msg_hdr msg;
 	int count;
 
 	if (!g_ctrl)
-		return 0;
+		return -ENODEV;
 
-	msg.type = cpu_to_le16(APBA_CTRL_LOG_REQUEST);
-	msg.size = 0;
-
-	if (mods_uart_apba_send(g_ctrl->mods_uart,
-				(uint8_t *)&msg, sizeof(msg), 0) != 0) {
-		pr_err("%s: failed to send LOG REQUEST\n", __func__);
-		return 0;
-	}
+	if (apba_send_diag_log_req())
+		return -EIO;
 
 	if (!wait_for_completion_timeout(
 		    &g_ctrl->comp,
 		    msecs_to_jiffies(APBA_LOG_REQ_TIMEOUT))) {
 		pr_err("%s: timeout from LOG REQUEST\n", __func__);
-		return 0;
+		return -ETIMEDOUT;
 	}
 
 	mutex_lock(&g_ctrl->log_mutex);
@@ -782,6 +1142,186 @@ static ssize_t apbe_power_store(struct device *dev,
 
 static DEVICE_ATTR_WO(apbe_power);
 
+static ssize_t apbe_status_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", g_ctrl->apbe_status);
+}
+
+static DEVICE_ATTR_RO(apbe_status);
+
+static ssize_t apba_read_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	int attribute = 0;
+	unsigned int selector = 0;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	ret = sscanf(buf, "%x %u", &attribute, &selector);
+	if (ret < 1) /* one required parameter */
+		return -EINVAL;
+
+	if (apba_send_unipro_read_attr_req(attribute, selector, 0))
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->unipro_comp,
+		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
+		pr_err("%s: timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	return count;
+}
+
+static ssize_t apba_read_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "value=%08x, status=%08x\n",
+		g_ctrl->last_unipro_value, g_ctrl->last_unipro_status);
+}
+
+static DEVICE_ATTR_RW(apba_read);
+
+static ssize_t apba_write_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	int attribute = 0;
+	uint32_t value = 0;
+	unsigned int selector = 0;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	ret = sscanf(buf, "%x %x %u", &attribute, &value, &selector);
+	if (ret < 2) /* two required parameters */
+		return -EINVAL;
+
+	if (apba_send_unipro_write_attr_req(attribute, selector, 0, value))
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->unipro_comp,
+		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
+		pr_err("%s: timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR_WO(apba_write);
+
+static ssize_t apbe_read_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	int attribute = 0;
+	unsigned int selector = 0;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	ret = sscanf(buf, "%x %u", &attribute, &selector);
+	if (ret < 1) /* one required parameter */
+		return -EINVAL;
+
+	if (apba_send_unipro_read_attr_req(attribute, selector, 1))
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->unipro_comp,
+		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
+		pr_err("%s: timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	return count;
+}
+
+static ssize_t apbe_read_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "value=%08x, status=%08x\n",
+		g_ctrl->last_unipro_value, g_ctrl->last_unipro_status);
+}
+
+static DEVICE_ATTR_RW(apbe_read);
+
+static ssize_t apbe_write_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	int attribute = 0;
+	unsigned int value = 0;
+	unsigned int selector = 0;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	ret = sscanf(buf, "%x %x %u", &attribute, &value, &selector);
+	if (ret < 2) /* two required parameters */
+		return -EINVAL;
+
+	if (apba_send_unipro_write_attr_req(attribute, selector, 1, value))
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->unipro_comp,
+		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
+		pr_err("%s: timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR_WO(apbe_write);
+
+static ssize_t gear_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned int tx = 0;
+	unsigned int rx = 0;
+	int pwrmode = 0;
+	unsigned int series = 0;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	ret = sscanf(buf, "%u %u %x %u", &tx, &rx, &pwrmode, &series);
+	if (ret < 4)
+		return -EINVAL;
+
+	if (apba_send_unipro_gear_req(tx, rx, pwrmode, series))
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->unipro_comp,
+		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
+		pr_err("%s: timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR_WO(gear);
+
 static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
 	&dev_attr_flash_partition.attr,
@@ -791,6 +1331,12 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_apba_log.attr,
 	&dev_attr_apba_mode.attr,
 	&dev_attr_apbe_power.attr,
+	&dev_attr_apbe_status.attr,
+	&dev_attr_apba_read.attr,
+	&dev_attr_apba_write.attr,
+	&dev_attr_apbe_read.attr,
+	&dev_attr_apbe_write.attr,
+	&dev_attr_gear.attr,
 	NULL,
 };
 
@@ -985,144 +1531,9 @@ int apba_uart_register(void *mods_uart)
 	return 0;
 }
 
-static void apba_apbe_attach_work_func(struct work_struct *work)
-{
-	struct apbe_attach_work_struct *apbe;
-
-	apbe = container_of(work, struct apbe_attach_work_struct, work);
-
-	if (g_ctrl && g_ctrl->mods_uart)
-		mod_attach(g_ctrl->mods_uart, apbe->present);
-
-	kfree(apbe);
-}
-
 static void apba_disable_work_func(struct work_struct *work)
 {
 	apba_disable();
-}
-
-static void apba_notify_abpe_attach(int present)
-{
-	struct apbe_attach_work_struct *apbe;
-
-	if (!g_ctrl)
-		return;
-
-	apbe = kzalloc(sizeof(struct apbe_attach_work_struct), GFP_KERNEL);
-
-	if (!apbe)
-		return;
-
-	apbe->present = present;
-	INIT_WORK(&apbe->work, apba_apbe_attach_work_func);
-	schedule_work(&apbe->work);
-}
-
-static void apba_action_on_int_reason(uint16_t reason)
-{
-	pr_info("%s: %d\n", __func__, reason);
-
-	if (!g_ctrl || !g_ctrl->master_intf)
-		return;
-
-	switch (reason) {
-	case APBA_INT_APBE_ON:
-		mods_slave_ctrl_power(g_ctrl->master_intf,
-			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
-		break;
-	case APBA_INT_APBE_RESET:
-		mods_slave_ctrl_power(g_ctrl->master_intf,
-			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
-		msleep(APBE_RESET_DELAY);
-		mods_slave_ctrl_power(g_ctrl->master_intf,
-			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
-		break;
-	case APBA_INT_APBE_CONNECTED:
-		apba_notify_abpe_attach(1);
-		break;
-	case APBA_INT_APBE_DISCONNECTED:
-		mods_slave_ctrl_power(g_ctrl->master_intf,
-			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
-		apba_notify_abpe_attach(0);
-		break;
-	default:
-		pr_debug("%s: Unknown int reason (%d) received.\n",
-			 __func__, reason);
-		break;
-	}
-}
-
-void apba_handle_message(uint8_t *payload, size_t len)
-{
-	int of;
-	int ret;
-
-	struct apba_ctrl_msg_hdr *msg;
-	struct apba_baud_ack *baud_ack;
-
-	if (!g_ctrl)
-		return;
-
-	if (len < sizeof(struct apba_ctrl_msg_hdr)) {
-		pr_err("%s: Invalid message received.\n", __func__);
-		return;
-	}
-
-	msg = (struct apba_ctrl_msg_hdr *)payload;
-
-	switch (le16_to_cpu(msg->type)) {
-	case APBA_CTRL_INT_REASON:
-		if (len >= sizeof(struct apba_ctrl_int_reason_resp)) {
-			struct apba_ctrl_int_reason_resp *resp;
-
-			resp = (struct apba_ctrl_int_reason_resp *)payload;
-			apba_action_on_int_reason(le16_to_cpu(resp->reason));
-		}
-		break;
-	case APBA_CTRL_PM_WAKE_ACK:
-	case APBA_CTRL_PM_SLEEP_ACK:
-	case APBA_CTRL_PM_SLEEP_IND:
-		mods_uart_pm_handle_events(g_ctrl->mods_uart,
-					   le16_to_cpu(msg->type));
-		break;
-	case APBA_CTRL_LOG_IND:
-		mutex_lock(&g_ctrl->log_mutex);
-		of = kfifo_len(&apba_log_fifo) + msg->size - APBA_LOG_SIZE;
-		if (of > 0) {
-			/* pop out from older content if buffer is full */
-			of = kfifo_out(&apba_log_fifo, fifo_overflow,
-				       MIN(of, APBA_MSG_SIZE_MAX));
-		}
-		kfifo_in(&apba_log_fifo,
-			 payload + sizeof(*msg), msg->size);
-		mutex_unlock(&g_ctrl->log_mutex);
-		break;
-	case APBA_CTRL_LOG_REQUEST:
-		complete(&g_ctrl->comp);
-		break;
-	case APBA_CTRL_BAUD_ACK:
-		baud_ack = (struct apba_baud_ack *)payload;
-
-		pr_debug("%s: got baud ack %d %d\n", __func__,
-			 le32_to_cpu(baud_ack->baud), baud_ack->accepted);
-
-		if (baud_ack->accepted) {
-			ret = mods_uart_update_baud(g_ctrl->mods_uart,
-						    le32_to_cpu(baud_ack->baud));
-			if (ret)
-				pr_err("%s: baud update failed: %d\n",
-					__func__, ret);
-		}
-		complete(&g_ctrl->baud_comp);
-		break;
-	case APBA_CTRL_MODE_REQUEST:
-		complete(&g_ctrl->mode_comp);
-		break;
-	default:
-		pr_err("%s: Unknown message received.\n", __func__);
-		break;
-	}
 }
 
 /*
@@ -1196,9 +1607,7 @@ void apba_disable(void)
 	mods_slave_ctrl_power(g_ctrl->master_intf,
 		MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
 	g_ctrl->desired_on = 0;
-
-	if (g_ctrl->mods_uart)
-		mod_attach(g_ctrl->mods_uart, 0);
+	g_ctrl->apbe_status = MHB_PM_STATUS_PEER_NONE;
 
 	clk_disable_unprepare(g_ctrl->mclk);
 	apba_on(g_ctrl, false);
@@ -1305,6 +1714,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	init_completion(&ctrl->comp);
 	init_completion(&ctrl->baud_comp);
 	init_completion(&ctrl->mode_comp);
+	init_completion(&ctrl->unipro_comp);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, apba_groups);
 	if (ret) {

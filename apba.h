@@ -14,39 +14,22 @@
 #ifndef __APBA_H__
 #define __APBA_H__
 
-#define APBA_MSG_SIZE_MAX  (0x800)
-
-/* message from APBA Ctrl driver in kernel */
-#pragma pack(push, 1)
-struct apba_ctrl_msg_hdr {
-	__le16 type;
-	__le16 size; /* size of data followed by hdr */
-};
-#pragma pack(pop)
-
-/* APBA CTRL message types */
-enum {
-	APBA_CTRL_INT_REASON,
-	APBA_CTRL_PM_WAKE_ACK,
-	APBA_CTRL_PM_SLEEP_IND,
-	APBA_CTRL_PM_SLEEP_ACK,
-	APBA_CTRL_LOG_IND,
-	APBA_CTRL_LOG_REQUEST,
-	APBA_CTRL_MODE_REQUEST,
-	APBA_CTRL_BAUD_REQUEST,
-	APBA_CTRL_BAUD_ACK,
-};
+struct mhb_hdr;
 
 int apba_uart_register(void *mods_uart);
-void apba_handle_message(uint8_t *payload, size_t len);
+void apba_handle_message(struct mhb_hdr *hdr, uint8_t *payload, size_t len);
 
 int apba_enable(void);
 void apba_disable(void);
 
+/* PM */
+int apba_send_pm_wake_rsp(void);
+int apba_send_pm_sleep_req(void);
 void apba_wake_assert(bool assert);
 
 /* Driver Initializations */
 int apba_ctrl_init(void);
 void apba_ctrl_exit(void);
+
 #endif  /* __APBA_H__ */
 

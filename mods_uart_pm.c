@@ -19,6 +19,7 @@
 #include "apba.h"
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
+#include "mhb_protocol.h"
 
 struct mods_uart_pm_data {
 	void *mods_uart_data;
@@ -33,10 +34,6 @@ struct mods_uart_pm_data {
 
 #define MODS_UART_PM_HANDSHAKE_TIMEOUT	1000 /* ms */
 #define MODS_UART_PM_IDLE_TIMEOUT	2000 /* msec */
-
-#define UART_PM_FLAG_WAKE_ACK 1
-#define UART_PM_FLAG_SLEEP_ACK 2
-#define UART_PM_FLAG_SLEEP_IND 3
 
 void mods_uart_pm_update_idle_timer(void *uart_pm_data)
 {
@@ -69,24 +66,16 @@ static void idle_timer_callback(unsigned long timer_data)
 void mods_uart_pm_handle_wake_interrupt(void *uart_data)
 {
 	struct mods_uart_pm_data *data;
-	struct apba_ctrl_msg_hdr msg;
 
 	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
 
 	pr_debug("%s: wake interrupt\n", __func__);
-	if (data) {
-		msg.type = cpu_to_le16(APBA_CTRL_PM_WAKE_ACK);
-		msg.size = 0;
 
-		if (mods_uart_apba_send(data->mods_uart_data,
-					(uint8_t *)&msg, sizeof(msg),
-					UART_PM_FLAG_WAKE_ACK) != 0) {
-			pr_err("%s: failed to send WAKE_ACK\n", __func__);
-		}
+	apba_send_pm_wake_rsp();
 
-		/* Start idle time in case wake ack is dropped. */
+	/* Start idle time in case wake ack is dropped. */
+	if (data)
 		mods_uart_pm_update_idle_timer(data);
-	}
 }
 
 /*
@@ -189,26 +178,6 @@ void mods_uart_pm_post_tx(void *uart_pm_data, int flag)
 	mods_uart_pm_update_idle_timer(data);
 }
 
-/*
- * Sleep handshake procedure.
- */
-static int apba_pm_sleep_handshake(struct mods_uart_pm_data *data)
-{
-	struct apba_ctrl_msg_hdr msg;
-
-	pr_debug("%s: start sleep handshake\n", __func__);
-	msg.type = cpu_to_le16(APBA_CTRL_PM_SLEEP_IND);
-	msg.size = 0;
-	if (mods_uart_apba_send(data->mods_uart_data,
-				(uint8_t *)&msg, sizeof(msg),
-				UART_PM_FLAG_SLEEP_IND) != 0) {
-		pr_err("%s: failed to send SLEEP_IND\n", __func__);
-		return -EIO;
-	}
-
-	return 0;
-}
-
 static void idle_timeout_work_func(struct work_struct *work)
 {
 	struct mods_uart_pm_data *data;
@@ -228,53 +197,20 @@ static void idle_timeout_work_func(struct work_struct *work)
 		return;
 	}
 
-	if (apba_pm_sleep_handshake(data))
+	if (apba_send_pm_sleep_req())
 		mods_uart_pm_update_idle_timer(data);
 }
 
-static void mods_uart_pm_send_sleep_ack(struct mods_uart_pm_data *data)
-{
-	struct apba_ctrl_msg_hdr msg;
-
-	msg.type = cpu_to_le16(APBA_CTRL_PM_SLEEP_ACK);
-	msg.size = 0;
-
-	if (mods_uart_apba_send(data->mods_uart_data,
-				(uint8_t *)&msg, sizeof(msg),
-				UART_PM_FLAG_SLEEP_ACK) != 0) {
-		pr_err("%s: failed to send SLEEP_ACK\n", __func__);
-	}
-}
-
-/*
- * Handler for incoming PM events from APBA.
- */
-void mods_uart_pm_handle_events(void *uart_data, uint16_t event)
+void mods_uart_pm_handle_pm_wake_rsp(void *uart_data)
 {
 	struct mods_uart_pm_data *data;
 
 	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
 
-	switch (event) {
-	case APBA_CTRL_PM_WAKE_ACK:
-		/* APBA had acknowledged to wake interrupt */
-		pr_debug("%s: wake_ack\n", __func__);
-		atomic_set(&data->pm_state_remote, 1);
-		apba_wake_assert(false);
-		complete(&data->pm_handshake_comp);
-		break;
-	case APBA_CTRL_PM_SLEEP_ACK:
-		/* APBA had acknowledged to our sleep indication */
-		pr_debug("%s: sleep_ack\n", __func__);
-		break;
-	case APBA_CTRL_PM_SLEEP_IND:
-		/* APBA is going to sleep */
-		pr_debug("%s: sleep_ind\n", __func__);
-		mods_uart_pm_send_sleep_ack(data);
-		break;
-	default:
-		pr_err("%s: unknown event (%d)\n", __func__, event);
-	}
+	pr_debug("%s: wake_ack\n", __func__);
+	atomic_set(&data->pm_state_remote, 1);
+	apba_wake_assert(false);
+	complete(&data->pm_handshake_comp);
 }
 
 void mods_uart_pm_on(void *uart_data, bool on)

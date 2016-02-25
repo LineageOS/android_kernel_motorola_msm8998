@@ -14,9 +14,12 @@
 #ifndef __MODS_UART_PM_H__
 #define __MODS_UART_PM_H__
 
+#define UART_PM_FLAG_WAKE_ACK 1
+#define UART_PM_FLAG_SLEEP_ACK 2
+#define UART_PM_FLAG_SLEEP_IND 3
+
 void mods_uart_pm_on(void *uart_data, bool on);
 void mods_uart_pm_handle_wake_interrupt(void *uart_data);
-void mods_uart_pm_handle_events(void *uart_data, uint16_t event);
 
 void mods_uart_pm_update_idle_timer(void *uart_pm_data);
 
@@ -25,4 +28,7 @@ void mods_uart_pm_post_tx(void *uart_pm_data, int flag);
 
 void *mods_uart_pm_initialize(void *uart_data);
 void mods_uart_pm_uninitialize(void *uart_pm_data);
+
+void mods_uart_pm_handle_pm_wake_rsp(void *uart_data);
+
 #endif  /* __MODS_UART__PM_H__ */
