@@ -54,6 +54,7 @@
 #define MAX_PKTS_PER_DG     (64)
 
 /* SPI packet header bit definitions */
+#define HDR_BIT_PKT1   (0x01 << 8)  /* 1 = first packet of message */
 #define HDR_BIT_VALID  (0x01 << 7)  /* 1 = valid packet, 0 = dummy packet */
 #define HDR_BIT_TYPE   (0x01 << 6)  /* SPI message type */
 #define HDR_BIT_PKTS   (0x3F << 0)  /* How many additional packets to expect */
@@ -99,13 +100,15 @@ struct muc_spi_data {
 	struct mutex tx_mutex;             /* Used to serialize send requests */
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
+	bool pkt1_supported;               /* MuC supports setting pkt1 hdr bit */
 
 	size_t pkt_size;                   /* Size of hdr + pl + CRC in bytes */
 	__u8 *tx_pkt;                      /* Buffer for transmit packets */
 	__u8 *rx_pkt;                      /* Buffer for received packets */
 
 	__u8 *rx_datagram;                 /* Buffer used to assemble datagram */
-	int rx_datagram_ndx;               /* Index into datagram buffer for new data */
+	uint32_t rx_datagram_ndx;          /* Index into datagram buffer for new data */
+	uint8_t pkts_remaining;            /* Packets needed to complete msg */
 
 	/* Quirks below */
 	bool wake_delay;                   /* Delay after wake assert is req'd */
@@ -338,39 +341,91 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 	if (le16_to_cpu(*rcvcrc_p) != calcrc) {
 		dev_err(&spi->dev, "CRC mismatch, received: 0x%x,"
 			"calculated: 0x%x\n", le16_to_cpu(*rcvcrc_p), calcrc);
+
+		dd->rx_datagram_ndx = 0;
+		dd->pkts_remaining = 0;
 		return;
 	}
 
-	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL))
+	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL)) {
 		handler = dl_recv;
 
-	/* Check if un-packetizing is required */
-	if (MAX_DATAGRAM_SZ != pl_size) {
-		if (unlikely(dd->rx_datagram_ndx >= MAX_DATAGRAM_SZ)) {
-			dev_err(&spi->dev, "Too many packets received!\n");
-			dd->rx_datagram_ndx = 0;
-			return;
-		}
-
-		memcpy(&dd->rx_datagram[dd->rx_datagram_ndx],
-		       &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
-		       pl_size);
-		dd->rx_datagram_ndx += pl_size;
-
-		if (bitmask & HDR_BIT_PKTS) {
-			/* Need additional packets */
-			muc_spi_transfer_locked(dd, NULL,
-					((bitmask & HDR_BIT_PKTS) > 1));
-			return;
-		}
-
-		handler(dd->dld, dd->rx_datagram, dd->rx_datagram_ndx);
-		dd->rx_datagram_ndx = 0;
-	} else {
-		/* Un-packetizing not required */
-		handler(dd->dld, &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
-			pl_size);
+		/*
+		 * Check if MuC supports setting the first packet bit. Once
+		 * set, it cannot be reset until next detach. This check is
+		 * only performed on datalink packets since datalink packets
+		 * happen first and are rare.
+		 */
+		if (!dd->pkt1_supported)
+			dd->pkt1_supported = (bitmask & HDR_BIT_PKT1) != 0;
 	}
+
+	/* Check if un-packetizing is not required */
+	if (MAX_DATAGRAM_SZ == pl_size) {
+		if (!dd->pkt1_supported || (bitmask & HDR_BIT_PKT1))
+			handler(dd->dld,
+				&dd->rx_pkt[sizeof(struct spi_msg_hdr)],
+				pl_size);
+		else
+			dev_err(&spi->dev, "1st pkt bit not set\n");
+
+		return;
+	}
+
+	if (!dd->pkt1_supported)
+		goto skip_pkt1;
+
+	if (bitmask & HDR_BIT_PKT1) {
+		/* Check if data exists from earlier packets */
+		if (dd->rx_datagram_ndx) {
+			dev_warn(&spi->dev,
+				"1st pkt recv'd before prev msg complete: "
+				"bitmask=0x%04x\n", bitmask);
+			dd->rx_datagram_ndx = 0;
+		}
+
+		dd->pkts_remaining = bitmask & HDR_BIT_PKTS;
+	} else {
+		/* Check for data from earlier packets */
+		if (!dd->rx_datagram_ndx) {
+			dev_warn(&spi->dev, "Ignore non-first packet: "
+				"bitmask=0x%04x\n", bitmask);
+			return;
+		}
+
+		if ((bitmask & HDR_BIT_PKTS) != --dd->pkts_remaining) {
+			dev_err(&spi->dev,
+				"Packets remaining out of sync: "
+				"bitmask=0x%04x\n", bitmask);
+
+			/* Drop the entire message */
+			dd->rx_datagram_ndx = 0;
+			dd->pkts_remaining = 0;
+			return;
+		}
+	}
+
+skip_pkt1:
+	if (unlikely(dd->rx_datagram_ndx >= MAX_DATAGRAM_SZ)) {
+		dev_err(&spi->dev, "Too many packets received!\n");
+		dd->rx_datagram_ndx = 0;
+		return;
+	}
+
+	memcpy(&dd->rx_datagram[dd->rx_datagram_ndx],
+	       &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
+	       pl_size);
+	dd->rx_datagram_ndx += pl_size;
+
+	if (bitmask & HDR_BIT_PKTS) {
+		/* Need additional packets */
+		muc_spi_transfer_locked(dd, NULL,
+				((bitmask & HDR_BIT_PKTS) > 1));
+		return;
+	}
+
+	handler(dd->dld, dd->rx_datagram, dd->rx_datagram_ndx);
+	dd->rx_datagram_ndx = 0;
 }
 
 static irqreturn_t muc_spi_isr(int irq, void *data)
@@ -464,6 +519,8 @@ static int muc_attach(struct notifier_block *nb,
 			set_bus_speed(dd, dd->default_speed_hz);
 			set_packet_size(dd, DEFAULT_PKT_SZ);
 			dd->rx_datagram_ndx = 0;
+			dd->pkts_remaining = 0;
+			dd->pkt1_supported = false;
 		}
 	}
 	return NOTIFY_OK;
@@ -506,10 +563,14 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		/* Determine the payload size of this packet */
 		this_pl = MIN(remaining, pl_size);
 
-		/* Populate the SPI message */
+		/* Setup bitmask for packet header */
 		bitmask  = HDR_BIT_VALID;
 		bitmask |= (msg_type & HDR_BIT_TYPE);
 		bitmask |= (--packets & HDR_BIT_PKTS);
+		if (remaining == len)
+			bitmask |= HDR_BIT_PKT1;
+
+		/* Populate the SPI message */
 		hdr->bitmask = cpu_to_le16(bitmask);
 		memcpy((dd->tx_pkt + sizeof(*hdr)), buf, this_pl);
 
