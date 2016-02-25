@@ -12,6 +12,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/crc16.h>
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
@@ -26,23 +27,14 @@
 #include <linux/tty_driver.h>
 
 #include "apba.h"
-#include "crc.h"
 #include "mods_nw.h"
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
 #include "muc_svc.h"
+#include "mhb_protocol.h"
 
 #define DRIVERNAME	"mods_uart"
 #define N_MODS_UART	25
-
-#pragma pack(push, 1)
-struct uart_msg_hdr {
-	__le16 nw_msg_size;
-	__le16 msg_type;
-};
-#pragma pack(pop)
-
-#define MODS_UART_MAX_SIZE (APBA_MSG_SIZE_MAX + sizeof(struct uart_msg_hdr))
 
 struct mods_uart_err_stats {
 	uint32_t tx_failure;
@@ -54,12 +46,10 @@ struct mods_uart_err_stats {
 struct mods_uart_data {
 	struct platform_device *pdev;
 	struct tty_struct *tty;
-	struct mods_dl_device *dld;
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pinctrl_state_default;
 	struct pinctrl_state *pinctrl_state_active;
-	bool present;
-	char rx_data[MODS_UART_MAX_SIZE];
+	char rx_data[MHB_MAX_MSG_SIZE];
 	size_t rx_len;
 	unsigned long last_rx;
 	struct mods_uart_err_stats stats;
@@ -126,27 +116,26 @@ static struct attribute *uart_attrs[] = {
 ATTRIBUTE_GROUPS(uart);
 
 static int mods_uart_send_internal(struct mods_uart_data *mud,
-				   __le16 type, uint8_t *buf, size_t len,
-				   int flag)
+				   struct mhb_hdr *hdr, uint8_t *buf,
+				   size_t len, int flag)
 {
 	struct device *dev = &mud->pdev->dev;
 	int ret;
 	u8 *pkt;
 	size_t pkt_size;
-	struct uart_msg_hdr *hdr;
-	__le16 crc16;
+	__le16 calc_crc;
 
 	if (!mud->tty) {
 		dev_err(dev, "%s: no tty\n", __func__);
 		return -ENODEV;
 	}
 
-	if (len > APBA_MSG_SIZE_MAX) {
+	if (len > MHB_MAX_MSG_SIZE) {
 		mud->stats.tx_failure++;
 		return -E2BIG;
 	}
 
-	pkt_size = sizeof(struct uart_msg_hdr) + len;
+	pkt_size = sizeof(struct mhb_hdr) + len;
 	pkt = kmalloc(pkt_size, GFP_KERNEL);
 	if (!pkt) {
 		mud->stats.tx_failure++;
@@ -154,12 +143,11 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	}
 
 	/* Populate the packet */
-	hdr = (struct uart_msg_hdr *) pkt;
-	hdr->nw_msg_size = cpu_to_le16(len);
-	hdr->msg_type = cpu_to_le16(type);
+	hdr->length = cpu_to_le16(len + sizeof(*hdr) + sizeof(calc_crc));
+	memcpy(pkt, hdr, sizeof(*hdr));
 	memcpy(pkt + sizeof(*hdr), buf, len);
 
-	crc16 = crc16_calc(0, pkt, pkt_size);
+	calc_crc = crc16(0, pkt, pkt_size);
 
 	mutex_lock(&mud->tx_mutex);
 
@@ -170,6 +158,8 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	mods_uart_pm_pre_tx(mud->mods_uart_pm_data, flag);
 
 	/* First send the message */
+	print_hex_dump_debug("RAW TX: ", DUMP_PREFIX_OFFSET, 16, 1,
+		pkt, pkt_size, true);
 	ret = mud->tty->ops->write(mud->tty, pkt, pkt_size);
 	if (ret != pkt_size) {
 		dev_err(dev, "%s: Failed to send message\n", __func__);
@@ -177,8 +167,10 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	}
 
 	/* Then send the CRC */
-	ret = mud->tty->ops->write(mud->tty, (uint8_t *)&crc16, sizeof(crc16));
-	if (ret != sizeof(crc16)) {
+	print_hex_dump_debug("RAW TX (crc): ", DUMP_PREFIX_OFFSET, 16, 1,
+		(uint8_t *)&calc_crc, sizeof(calc_crc), true);
+	ret = mud->tty->ops->write(mud->tty, (uint8_t *)&calc_crc, sizeof(calc_crc));
+	if (ret != sizeof(calc_crc)) {
 		dev_err(dev, "%s: Failed to send CRC\n", __func__);
 		goto send_err;
 	}
@@ -195,19 +187,16 @@ send_err:
 	return -EIO;
 }
 
-static int mods_uart_message_send(struct mods_dl_device *dld,
-				  uint8_t *buf, size_t len)
-{
-	struct mods_uart_data *mud = (struct mods_uart_data *)dld->dl_priv;
-
-	return mods_uart_send_internal(mud, MODS_UART_DL_GB, buf, len, 0);
-}
-
-int mods_uart_apba_send(void *uart_data, uint8_t *buf, size_t len, int flag)
+int mods_uart_send(void *uart_data, struct mhb_hdr *hdr, uint8_t *buf,
+	size_t len, int flag)
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
 
-	return mods_uart_send_internal(mud, MODS_UART_DL_APBA, buf, len, flag);
+	pr_debug("MHB TX: addr=%x, type=%x, result=%x\n",
+	        hdr->addr, hdr->type, hdr->result);
+	print_hex_dump_debug("MHB TX: ", DUMP_PREFIX_OFFSET, 16, 1,
+		buf, len, true);
+	return mods_uart_send_internal(mud, hdr, buf, len, flag);
 }
 
 int mods_uart_get_baud(void *uart_data)
@@ -226,10 +215,6 @@ int mods_uart_get_baud(void *uart_data)
 
 	return (int)speed;
 }
-
-static struct mods_dl_driver mods_uart_dl_driver = {
-	.message_send		= mods_uart_message_send,
-};
 
 static int config_tty(struct mods_uart_data *mud, speed_t speed)
 {
@@ -256,7 +241,7 @@ static int config_tty(struct mods_uart_data *mud, speed_t speed)
 	return tty_set_termios(mud->tty, &kt);
 }
 
-int mods_uart_update_baud(void *uart_data, uint32_t baud)
+int mods_uart_set_baud(void *uart_data, uint32_t baud)
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
 	int ret = -ENODEV;
@@ -311,27 +296,6 @@ static struct tty_driver *find_tty_driver(char *name, int *line)
 	mutex_unlock(&tty_mutex);
 
 	return res;
-}
-
-void mod_attach(void *uart_data, unsigned long now_present)
-{
-	struct mods_uart_data *mud;
-	int err;
-
-	mud = (struct mods_uart_data *)uart_data;
-	if (now_present == mud->present)
-		return;
-
-	mud->present = now_present;
-
-	if (now_present) {
-		err = mods_dl_dev_attached(mud->dld);
-		if (err) {
-			dev_err(&mud->pdev->dev, "Error attaching to SVC\n");
-			mud->present = 0;
-		}
-	} else
-		mods_dl_dev_detached(mud->dld);
 }
 
 void mods_uart_lock_tx(void *uart_data, bool lock)
@@ -479,11 +443,6 @@ int mods_uart_close(void *uart_data)
 
 	dev_dbg(&mud->pdev->dev, "%s: closing uart\n", __func__);
 
-	if (mud->present) {
-		mods_dl_dev_detached(mud->dld);
-		mud->present = 0;
-	}
-
 	if (mud->mods_uart_pm_data) {
 		mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
 		mud->mods_uart_pm_data = NULL;
@@ -563,21 +522,12 @@ static int mods_uart_probe(struct platform_device *pdev)
 		return PTR_ERR(mud->pinctrl_state_active);
 	}
 
-	mud->dld = mods_create_dl_device(&mods_uart_dl_driver, &pdev->dev,
-					mud->intf_id);
-	if (IS_ERR(mud->dld)) {
-		dev_err(&pdev->dev, "%s: Unable to create data link device\n",
-			__func__);
-		return PTR_ERR(mud->dld);
-	}
-	mud->dld->dl_priv = (void *)mud;
-
 	mutex_init(&mud->tx_mutex);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, uart_groups);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to create sysfs attributes\n");
-		goto remove_dld;
+		return ret;
 	}
 
 	/* apba_ctrl must be probed and initialized */
@@ -591,9 +541,6 @@ static int mods_uart_probe(struct platform_device *pdev)
 remove_sysfs:
 	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
 
-remove_dld:
-	mods_remove_dl_device(mud->dld);
-
 	return ret;
 }
 
@@ -604,7 +551,6 @@ static int mods_uart_remove(struct platform_device *pdev)
 	apba_uart_register(NULL);
 	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
 	mods_uart_close(mud);
-	mods_remove_dl_device(mud->dld);
 	platform_set_drvdata(pdev, NULL);
 
 	return 0;
@@ -629,7 +575,7 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 	struct device *dev = &mud->pdev->dev;
 	uint16_t calc_crc;
 	uint16_t *rcvd_crc;
-	struct uart_msg_hdr *hdr;
+	struct mhb_hdr *hdr;
 	uint8_t *payload;
 	size_t content_size;
 	size_t segment_size;
@@ -637,17 +583,19 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 	if (mud->rx_len < sizeof(*hdr))
 		return 0;
 
-	hdr = (struct uart_msg_hdr *) mud->rx_data;
-	content_size = sizeof(*hdr) + le16_to_cpu(hdr->nw_msg_size);
-	segment_size = content_size + sizeof(calc_crc);
+	hdr = (struct mhb_hdr *) mud->rx_data;
+	segment_size = le16_to_cpu(hdr->length);
+	content_size = segment_size - sizeof(calc_crc);
 
 	if (mud->rx_len < segment_size)
 		return 0;
 
 	rcvd_crc = (uint16_t *)&mud->rx_data[content_size];
-	calc_crc = crc16_calc(0, (uint8_t *) mud->rx_data, content_size);
+	calc_crc = crc16(0, (uint8_t *) mud->rx_data, content_size);
 	if (le16_to_cpu(*rcvd_crc) != calc_crc) {
 		mud->stats.rx_crc++;
+		print_hex_dump_debug("RX (CRC error): ", DUMP_PREFIX_OFFSET,
+			16, 1, mud->rx_data, content_size, true);
 		dev_err(dev, "%s: CRC mismatch, received: 0x%x, "
 			"calculated: 0x%x\n", __func__,
 			le16_to_cpu(*rcvd_crc), calc_crc);
@@ -659,21 +607,14 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 		 */
 	} else {
 		payload = ((uint8_t *)mud->rx_data) + sizeof(*hdr);
-		switch (le16_to_cpu(hdr->msg_type)) {
-		case MODS_UART_DL_GB:
-			mods_nw_switch(mud->dld, payload,
-				       le16_to_cpu(hdr->nw_msg_size));
-			break;
-		case MODS_UART_DL_APBA:
-			apba_handle_message(payload,
-					    le16_to_cpu(hdr->nw_msg_size));
-			break;
-		default:
-			dev_err(dev,
-				"%s: Unknown DL message type (%d) received\n",
-				__func__, le16_to_cpu(hdr->msg_type));
-		}
+		pr_debug("MHB RX: addr=%x, type=%x, result=%x, len=%zd\n",
+			hdr->addr, hdr->type, hdr->result, content_size);
+
+		print_hex_dump_debug("MHB RX: ", DUMP_PREFIX_OFFSET, 16, 1,
+			payload, content_size - sizeof(*hdr), true);
+		apba_handle_message(hdr, payload, content_size - sizeof(*hdr));
 	}
+
 	mud->rx_len -= segment_size;
 
 	if (mud->rx_len) {
@@ -693,6 +634,9 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 	struct device *dev = &mud->pdev->dev;
 	int to_be_consumed = count;
 
+	print_hex_dump_debug("RAW RX: ", DUMP_PREFIX_OFFSET, 16, 1,
+		cp, count, true);
+
 	/*
 	 * Try to clean up garbage/incomplete chars received
 	 * for some reason.
@@ -701,6 +645,8 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 	    (jiffies_to_msecs(jiffies - mud->last_rx) >
 	     MODS_UART_SEGMENT_TIMEOUT)) {
 		mud->stats.rx_timeout++;
+		print_hex_dump_debug("RX (timeout): ", DUMP_PREFIX_OFFSET,
+			16, 1, mud->rx_data, mud->rx_len, true);
 		dev_err(dev, "%s: RX Buffer cleaned up\n", __func__);
 		mud->rx_len = 0;
 	}
@@ -709,7 +655,7 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 	while (to_be_consumed > 0) {
 		int copy_size;
 
-		if (mud->rx_len == MODS_UART_MAX_SIZE) {
+		if (mud->rx_len == MHB_MAX_MSG_SIZE) {
 			/*
 			 * buffer is already left full, not consumed.
 			 * Something is wrong. Need to reset the buffer
@@ -720,12 +666,15 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 			 *       UART status.
 			 */
 			mud->stats.rx_abort++;
+			print_hex_dump_debug("RX (overflow): ",
+				DUMP_PREFIX_OFFSET, 16, 1,
+				mud->rx_data, mud->rx_len, true);
 			dev_err(dev, "%s: RX buffer overflow\n", __func__);
 			mud->rx_len = 0;
 		}
 
 		copy_size = MIN(to_be_consumed,
-				MODS_UART_MAX_SIZE - mud->rx_len);
+				MHB_MAX_MSG_SIZE - mud->rx_len);
 
 		memcpy(&mud->rx_data[mud->rx_len], cp, copy_size);
 		mud->rx_len += copy_size;
