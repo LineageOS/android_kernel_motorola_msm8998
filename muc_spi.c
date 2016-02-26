@@ -331,19 +331,19 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 	size_t pl_size = PL_SIZE(dd->pkt_size);
 	handler_t handler = mods_nw_switch;
 
-	if (!(bitmask & HDR_BIT_VALID)) {
-		/* Received a dummy packet - nothing to do! */
-		return;
-	}
-
 	rcvcrc_p = (uint16_t *)&dd->rx_pkt[CRC_NDX(dd->pkt_size)];
 	calcrc = crc16_calc(0, dd->rx_pkt, CRC_NDX(dd->pkt_size));
 	if (le16_to_cpu(*rcvcrc_p) != calcrc) {
-		dev_err(&spi->dev, "CRC mismatch, received: 0x%x,"
+		dev_err(&spi->dev, "CRC mismatch, received: 0x%x, "
 			"calculated: 0x%x\n", le16_to_cpu(*rcvcrc_p), calcrc);
 
 		dd->rx_datagram_ndx = 0;
 		dd->pkts_remaining = 0;
+		return;
+	}
+
+	if (!(bitmask & HDR_BIT_VALID)) {
+		/* Received a dummy packet - nothing to do! */
 		return;
 	}
 
