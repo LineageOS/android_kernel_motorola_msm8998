@@ -136,6 +136,11 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	struct uart_msg_hdr *hdr;
 	__le16 crc16;
 
+	if (!mud->tty) {
+		dev_err(dev, "%s: no tty\n", __func__);
+		return -ENODEV;
+	}
+
 	if (len > APBA_MSG_SIZE_MAX) {
 		mud->stats.tx_failure++;
 		return -E2BIG;
