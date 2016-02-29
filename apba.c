@@ -530,8 +530,6 @@ static ssize_t apba_mode_store(struct device *dev,
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	g_ctrl->mode = val;
-
 	msg.hdr.type = cpu_to_le16(APBA_CTRL_MODE_REQUEST);
 	msg.hdr.size = cpu_to_le16(sizeof(msg.mode));
 	msg.mode = (uint8_t)val;
@@ -548,6 +546,8 @@ static ssize_t apba_mode_store(struct device *dev,
 		pr_err("%s: timeout for MODE\n", __func__);
 		return count;
 	}
+
+	g_ctrl->mode = val;
 
 	return count;
 }
