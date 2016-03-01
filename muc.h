@@ -87,6 +87,10 @@ struct muc_data {
 	bool pinctrl_disconnect;
 
 	bool need_det_output;
+	bool spi_transport_done;
+	bool i2c_transport_done;
+	bool spi_shared_with_flash;
+	bool det_irq_enabled;
 
 	/* Mod short detection */
 	int short_count;
@@ -104,7 +108,12 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev);
 void muc_intr_destroy(struct muc_data *cdata, struct device *dev);
 void muc_simulate_reset(void);
 void muc_soft_reset(void);
-
+bool muc_core_probed(void);
+void muc_enable_det(void);
+void muc_register_spi(void);
+void muc_register_spi_flash(void);
+void muc_deregister_spi_flash(void);
+void muc_register_i2c(void);
 /* Global variables */
 extern struct muc_data *muc_misc_data;
 

@@ -251,6 +251,7 @@ static void muc_handle_detection(bool force_removal)
 		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con))
 			pr_warn("%s: select SPI active pinctrl failed\n",
 				__func__);
+		muc_register_spi();
 
 		cdata->bplus_state = MUC_BPLUS_ENABLING;
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
@@ -346,6 +347,10 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 	}
 
 	enable_irq_wake(cdata->irq);
+
+	/* Handle initial detection state. */
+	queue_delayed_work(cdata->attach_wq, &cdata->isr_work.work,
+				cdata->det_hysteresis);
 
 	return ret;
 }
@@ -585,10 +590,6 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 			__func__, __LINE__);
 	}
 	cdata->det_hysteresis = MSEC_TO_JIFFIES(cdata->det_hysteresis);
-
-	/* Handle initial detection state. */
-	queue_delayed_work(cdata->attach_wq, &cdata->isr_work.work,
-				cdata->det_hysteresis);
 
 	cdata->need_det_output = of_property_read_bool(dev->of_node,
 		"mmi,muc-det-pin-reconfig");
