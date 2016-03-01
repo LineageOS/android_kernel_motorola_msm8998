@@ -191,19 +191,21 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 {
 	struct muc_spi_data *dd = dld_to_dd(dld);
 	struct device *dev = &dd->spi->dev;
-	struct spi_dl_msg *resp = (struct spi_dl_msg *)msg;
+	struct spi_dl_msg resp;
 	uint32_t max_speed;
 	size_t pl_size;
 	int ret;
 
-	if (sizeof(*resp) > len) {
-		dev_err(dev, "Dropping short message\n");
-		return -EINVAL;
-	}
+	/*
+	 * To support MuCs running firmware with fewer values in the
+	 * response, copy the message into a zero'd local struct.
+	 */
+	memset(&resp, 0, sizeof(resp));
+	memcpy(&resp, msg, min(len, sizeof(resp)));
 
 	/* Only BUS_CFG_RESP is supported */
-	if (resp->id != DL_MSG_ID_BUS_CFG_RESP) {
-		dev_err(dev, "Unknown ID (%d)!\n", resp->id);
+	if (resp.id != DL_MSG_ID_BUS_CFG_RESP) {
+		dev_err(dev, "Unknown ID (%d)!\n", resp.id);
 		return -EINVAL;
 	}
 
@@ -212,8 +214,8 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 		return -EINVAL;
 	}
 
-	max_speed = le32_to_cpu(resp->bus_resp.max_speed);
-	pl_size = le16_to_cpu(resp->bus_resp.pl_size);
+	max_speed = le32_to_cpu(resp.bus_resp.max_speed);
+	pl_size = le16_to_cpu(resp.bus_resp.pl_size);
 
 	/* Ignore max_bus_speed if zero and continue to use default speed */
 	if (max_speed > 0)
