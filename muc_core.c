@@ -14,6 +14,7 @@
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 
@@ -22,6 +23,28 @@
 #define MUC_NAME "muc"
 
 struct muc_data *muc_misc_data;
+
+void muc_enable_det(void)
+{
+	if (!muc_misc_data)
+		return;
+
+	/* one-time enable detection interrupts after apba is ready */
+	if (muc_misc_data->det_irq_enabled)
+		return;
+
+	if (muc_intr_setup(muc_misc_data, muc_misc_data->dev)) {
+		pr_err("%s: failed to setup interrupt.\n",
+			__func__);
+		return;
+	}
+	muc_misc_data->det_irq_enabled = true;
+}
+
+bool muc_core_probed(void)
+{
+	return !!muc_misc_data;
+}
 
 static int muc_probe(struct platform_device *pdev)
 {
@@ -35,40 +58,121 @@ static int muc_probe(struct platform_device *pdev)
 	if (!ps_muc)
 		return -ENOMEM;
 
-	muc_misc_data = ps_muc;
-
 	err = muc_gpio_init(dev, ps_muc);
 	if (err) {
 		dev_err(dev, "gpio init failed\n");
 		goto err_gpio_init;
 	}
 
-	err = muc_intr_setup(ps_muc, dev);
-	if (err) {
-		dev_err(dev, "%s:%d: failed to setup interrupt.\n",
-			__func__, __LINE__);
-		goto err_intr_init;
-	}
+	ps_muc->spi_shared_with_flash = of_property_read_bool(dev->of_node,
+					"mmi,spi-shared-with-flash");
 
 	ps_muc->dev = dev;
 	dev_info(dev, "probed finished");
 
+	muc_misc_data = ps_muc;
+
 	return 0;
 
-err_intr_init:
-	muc_gpio_exit(dev, ps_muc);
 err_gpio_init:
 	muc_misc_data = NULL;
 
+	dev_err(dev, "Failed to probe: %d\n", err);
+
 	return err;
 }
+
+void muc_register_spi_flash(void)
+{
+	if (!muc_misc_data)
+		return;
+
+	if (muc_misc_data->spi_shared_with_flash) {
+		pinctrl_select_state(muc_misc_data->pinctrl,
+				     muc_misc_data->pins_spi_con);
+		muc_register_spi();
+	}
+}
+
+void muc_deregister_spi_flash(void)
+{
+	if (!muc_misc_data ||
+	    gpio_get_value(muc_misc_data->gpios[MUC_GPIO_DET_N]))
+		return;
+
+	if (muc_misc_data->spi_shared_with_flash)
+		pinctrl_select_state(muc_misc_data->pinctrl,
+				     muc_misc_data->pins_discon);
+}
+
+void muc_register_spi(void)
+{
+	struct device *dev = muc_misc_data->dev;
+	struct device_node *np;
+
+	if (muc_misc_data->spi_transport_done)
+		return;
+
+	muc_misc_data->i2c_transport_done = false;
+	of_platform_depopulate(dev);
+
+	np = of_find_node_by_name(dev->of_node, "transports");
+	if (!np) {
+		dev_warn(dev, "Transport node not present\n");
+		goto skip_transports;
+	}
+
+	np = of_find_compatible_node(np, NULL, "moto,mod-spi-transfer");
+	if (!np) {
+		dev_warn(dev, "SPI transport device not present\n");
+		goto skip_transports;
+	}
+
+	if (!of_platform_device_create(np, NULL, dev))
+		dev_err(dev, "Failed to populate SPI transport devices\n");
+
+skip_transports:
+	muc_misc_data->spi_transport_done = true;
+};
+
+void muc_register_i2c(void)
+{
+	struct device *dev = muc_misc_data->dev;
+	struct device_node *np;
+
+	if (muc_misc_data->i2c_transport_done)
+		return;
+
+	muc_misc_data->spi_transport_done = false;
+	of_platform_depopulate(dev);
+
+	np = of_find_node_by_name(dev->of_node, "transports");
+	if (!np) {
+		dev_warn(dev, "Transport node not present\n");
+		goto skip_transports;
+	}
+
+	np = of_find_compatible_node(np, NULL, "moto,mod-i2c-transfer");
+	if (!np) {
+		dev_warn(dev, "I2C transport device not present\n");
+		goto skip_transports;
+	}
+
+	if (!of_platform_device_create(np, NULL, dev))
+		dev_err(dev, "Failed to populate I2C transport devices\n");
+
+skip_transports:
+	muc_misc_data->i2c_transport_done = true;
+};
 
 static int muc_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct muc_data *ps_muc = muc_misc_data;
 
-	muc_intr_destroy(ps_muc, dev);
+	of_platform_depopulate(dev);
+	if (ps_muc->det_irq_enabled)
+		muc_intr_destroy(ps_muc, dev);
 	muc_gpio_exit(dev, ps_muc);
 
 	return 0;

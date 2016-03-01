@@ -37,6 +37,7 @@
 #include "mods_protocols.h"
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
+#include "muc.h"
 
 #define MAX_PARTITION_NAME (16)
 
@@ -312,8 +313,8 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 	int ret;
 
 	if (on) {
-		dev_dbg(ctrl->dev, "%s: Pinctrl set active\n", __func__);
 		if (!IS_ERR(ctrl->pinctrl_state_active)) {
+			dev_dbg(ctrl->dev, "%s: Pinctrl set active\n", __func__);
 			ret = pinctrl_select_state(ctrl->pinctrl,
 						   ctrl->pinctrl_state_active);
 			if (ret)
@@ -324,6 +325,9 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 
 		apba_seq(ctrl, &ctrl->flash_start_seq);
 
+		/* Register SPI transport for shared muc_spi and spi_flash */
+		muc_register_spi_flash();
+
 		populate_transports_node(ctrl);
 	} else {
 		if (ctrl->flash_dev_populated) {
@@ -332,6 +336,8 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 		}
 
 		apba_seq(ctrl, &ctrl->flash_end_seq);
+
+		muc_deregister_spi_flash();
 
 		dev_dbg(ctrl->dev, "%s: Pinctrl set default\n", __func__);
 		ret = pinctrl_select_state(ctrl->pinctrl,
@@ -806,18 +812,20 @@ static void apba_firmware_callback(const struct firmware *fw,
 		apba_flash_on(ctrl, false);
 		if (ctrl->desired_on)
 			apba_on(ctrl, true);
-		return;
+	} else {
+		pr_debug("%s: size=%zu data=%p\n", __func__, fw->size,
+			fw->data);
+
+		err = apba_flash_partition(ctrl, APBA_FIRMWARE_PARTITION, fw);
+		if (err < 0)
+			pr_err("%s: flashing failed err=%d\n", __func__, err);
+
+		/* TODO: notify system, in case of error */
+		release_firmware(fw);
 	}
 
-	pr_debug("%s: size=%zu data=%p\n", __func__, fw->size, fw->data);
-
-	err = apba_flash_partition(ctrl, APBA_FIRMWARE_PARTITION, fw);
-	if (err < 0)
-		pr_err("%s: flashing failed err=%d\n", __func__, err);
-
-	/* TODO: notify system, in case of error */
-
-	release_firmware(fw);
+	/* Flashing is done, let's let muc core probe finish. */
+	muc_enable_det();
 }
 
 static irqreturn_t apba_isr(int irq, void *data)
@@ -1175,21 +1183,9 @@ int apba_enable(void)
 
 	g_ctrl->desired_on = 1;
 
-	ret = request_firmware_nowait(THIS_MODULE, true, APBA_FIRMWARE_NAME,
-				      g_ctrl->dev, GFP_KERNEL, g_ctrl,
-				      apba_firmware_callback);
-	if (ret) {
-		dev_err(g_ctrl->dev, "failed to request firmware.\n");
-		goto disable_clk;
-	}
+	apba_on(g_ctrl, true);
 
 	return 0;
-
-disable_clk:
-	clk_disable_unprepare(g_ctrl->mclk);
-	g_ctrl->desired_on = 0;
-
-	return ret;
 }
 
 void apba_disable(void)
@@ -1212,6 +1208,10 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl;
 	int ret;
+
+	/* we depend on the muc_core for transports and pinctrls */
+	if (!muc_core_probed())
+		return -EPROBE_DEFER;
 
 	if (!pdev->dev.of_node) {
 		/* Platform data not currently supported */
@@ -1326,10 +1326,20 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		goto reset_global;
 	}
 
+	ret = request_firmware_nowait(THIS_MODULE, true, APBA_FIRMWARE_NAME,
+				      g_ctrl->dev, GFP_KERNEL, g_ctrl,
+				      apba_firmware_callback);
+	if (ret) {
+		dev_err(g_ctrl->dev, "failed to request firmware.\n");
+		goto unregister_slave_ctrl;
+	}
+
 	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
 
 	return 0;
 
+unregister_slave_ctrl:
+	mods_unregister_slave_ctrl_driver(&apbe_ctrl_drv);
 reset_global:
 	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 	g_ctrl = NULL;
@@ -1338,6 +1348,8 @@ disable_irq:
 free_gpios:
 	apba_gpio_free(ctrl, &pdev->dev);
 
+	/* Let muc core finish probe even if we bombed out. */
+	muc_enable_det();
 	return ret;
 }
 
