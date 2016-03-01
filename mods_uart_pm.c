@@ -74,17 +74,19 @@ void mods_uart_pm_handle_wake_interrupt(void *uart_data)
 	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
 
 	pr_debug("%s: wake interrupt\n", __func__);
-	msg.type = cpu_to_le16(APBA_CTRL_PM_WAKE_ACK);
-	msg.size = 0;
+	if (data) {
+		msg.type = cpu_to_le16(APBA_CTRL_PM_WAKE_ACK);
+		msg.size = 0;
 
-	if (mods_uart_apba_send(data->mods_uart_data,
-				(uint8_t *)&msg, sizeof(msg),
-				UART_PM_FLAG_WAKE_ACK) != 0) {
-		pr_err("%s: failed to send WAKE_ACK\n", __func__);
+		if (mods_uart_apba_send(data->mods_uart_data,
+					(uint8_t *)&msg, sizeof(msg),
+					UART_PM_FLAG_WAKE_ACK) != 0) {
+			pr_err("%s: failed to send WAKE_ACK\n", __func__);
+		}
+
+		/* Start idle time in case wake ack is dropped. */
+		mods_uart_pm_update_idle_timer(data);
 	}
-
-	/* Start idle time in case wake ack is dropped. */
-	mods_uart_pm_update_idle_timer(data);
 }
 
 /*

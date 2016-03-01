@@ -67,6 +67,8 @@ struct apba_ctrl {
 	struct apba_seq disable_seq;
 	struct apba_seq wake_assert_seq;
 	struct apba_seq wake_deassert_seq;
+	struct apba_seq flash_start_seq;
+	struct apba_seq flash_end_seq;
 	void *mods_uart;
 	int desired_on;
 	struct mutex log_mutex;
@@ -260,6 +262,17 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 	}
 }
 
+static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
+{
+	/* set the GPIOs properly for the flash part
+	 * whether APBA is on or off
+	 */
+	if (on)
+		apba_seq(ctrl, &ctrl->flash_start_seq);
+	else
+		apba_seq(ctrl, &ctrl->flash_end_seq);
+}
+
 static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
 {
 	struct mtd_info *mtd_info;
@@ -270,6 +283,8 @@ static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
 
 	/* Disable the APBA so that it does not access the flash. */
 	apba_on(ctrl, false);
+
+	apba_flash_on(ctrl, true);
 
 	mtd_info = apba_init_mtd_module(partition);
 	if (!mtd_info) {
@@ -293,6 +308,7 @@ cleanup:
 	put_mtd_device(mtd_info);
 
 no_mtd:
+	apba_flash_on(ctrl, false);
 	if (ctrl->desired_on)
 		apba_on(ctrl, true);
 
@@ -374,6 +390,8 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 	/* Disable the APBA so that it does not access the flash. */
 	apba_on(ctrl, false);
 
+	apba_flash_on(ctrl, true);
+
 	mtd_info = apba_init_mtd_module(partition);
 	if (!mtd_info) {
 		pr_err("%s: mtd init module failed for %s, err=%d\n",
@@ -409,6 +427,7 @@ cleanup:
 	put_mtd_device(mtd_info);
 
 no_mtd:
+	apba_flash_on(ctrl, false);
 	if (ctrl->desired_on)
 		apba_on(ctrl, true);
 
@@ -1126,6 +1145,18 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	ctrl->wake_deassert_seq.len = ARRAY_SIZE(ctrl->wake_deassert_seq.val);
 	ret = apba_parse_seq(&pdev->dev, "mmi,wake-deassert-seq",
 		&ctrl->wake_deassert_seq);
+	if (ret)
+		goto disable_irq;
+
+	ctrl->flash_start_seq.len = ARRAY_SIZE(ctrl->flash_start_seq.val);
+	ret = apba_parse_seq(&pdev->dev, "mmi,flash-start-seq",
+		&ctrl->flash_start_seq);
+	if (ret)
+		goto disable_irq;
+
+	ctrl->flash_end_seq.len = ARRAY_SIZE(ctrl->flash_end_seq.val);
+	ret = apba_parse_seq(&pdev->dev, "mmi,flash-end-seq",
+		&ctrl->flash_end_seq);
 	if (ret)
 		goto disable_irq;
 
