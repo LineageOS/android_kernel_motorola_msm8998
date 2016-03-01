@@ -19,6 +19,7 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-core.h>
+#include <media/v4l2-ctrls.h>
 
 #include "v4l2_hal.h"
 
@@ -478,6 +479,14 @@ static int v4l2_hal_close(struct file *file)
 	return 0;
 }
 
+static unsigned int v4l2_hal_poll(struct file *file, poll_table *wait)
+{
+	unsigned int ret;
+	struct v4l2_stream_data *strm = file->private_data;
+	ret = vb2_poll(&strm->vb2_q, file, wait);
+	return ret;
+}
+
 /* Callout ioctls not passing through */
 static const struct v4l2_ioctl_ops v4l2_hal_ioctl_ops = {
 	.vidioc_querycap				= query_cap,
@@ -506,6 +515,7 @@ static const struct v4l2_ioctl_ops v4l2_hal_ioctl_ops = {
 
 static struct v4l2_file_operations v4l2_hal_fops = {
 	.owner	 = THIS_MODULE,
+	.poll    = v4l2_hal_poll,
 	.open	 = v4l2_hal_open,
 	.ioctl	 = video_ioctl2,
 	.release = v4l2_hal_close,
