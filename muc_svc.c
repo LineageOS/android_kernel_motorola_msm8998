@@ -48,6 +48,7 @@ struct muc_svc_data {
 	struct delayed_work wdog_work;
 	unsigned long first_fail;
 	u8 fail_count;
+	bool recovery;
 
 	u8 mod_root_ver;
 	u8 default_root_ver;
@@ -145,7 +146,11 @@ static void muc_svc_recovery(void)
 	} else {
 		dev_err(&svc_dd->pdev->dev, "Performing hard-reset recovery\n");
 		muc_svc_send_uevent("MOD_ERROR=RECOVERY_ATTEMPT");
-		muc_reset(svc_dd->mod_root_ver, false);
+		if (svc_dd->recovery)
+			muc_reset(svc_dd->mod_root_ver, false);
+		else
+			dev_warn(&svc_dd->pdev->dev,
+					"Recovery reset disabled\n");
 	}
 }
 
@@ -196,7 +201,11 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 void muc_svc_communication_reset(void)
 {
 	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
-	muc_reset(svc_dd->mod_root_ver, false);
+	if (svc_dd->recovery)
+		muc_reset(svc_dd->mod_root_ver, false);
+	else
+		dev_warn(&svc_dd->pdev->dev,
+				"%s: recovery disabled\n", __func__);
 	mods_queue_error_event_empty(MUC_SVC_COMMUNICATION_RESET);
 	muc_svc_send_uevent("MOD_ERROR=COMMUNICATION_RESET");
 }
@@ -2168,9 +2177,31 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WO(reset);
 
+static ssize_t
+recovery_enable_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	if (val != 1 && val != 0) {
+		dev_err(dev, "Invalid disable recovery state\n");
+		return -EINVAL;
+	}
+
+	dev_info(dev, "recovery set to %s\n", val ? "enabled" : "disabled");
+	svc_dd->recovery = val ? true : false;
+
+	return count;
+}
+static DEVICE_ATTR_WO(recovery_enable);
+
 static struct attribute *muc_svc_base_attrs[] = {
 	&dev_attr_flashmode.attr,
 	&dev_attr_reset.attr,
+	&dev_attr_recovery_enable.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(muc_svc_base);
@@ -2221,6 +2252,9 @@ static int muc_svc_probe(struct platform_device *pdev)
 	ret = muc_svc_of_parse(dd, &pdev->dev);
 	if (ret)
 		return ret;
+
+	/* initialize recovery to enabled */
+	dd->recovery = true;
 
 	dd->dld = _mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev,
 			MODS_INTF_SVC);
