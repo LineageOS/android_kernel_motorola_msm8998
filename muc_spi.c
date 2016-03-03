@@ -97,7 +97,6 @@ struct muc_spi_data {
 	bool attached;                     /* MuC attach is reported to SVC */
 	struct notifier_block attach_nb;   /* attach/detach notifications */
 	struct mutex mutex;                /* Used to serialize SPI transfers */
-	struct mutex tx_mutex;             /* Used to serialize send requests */
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
 	bool pkt1_supported;               /* MuC supports setting pkt1 hdr bit */
@@ -260,8 +259,8 @@ static void attach_worker(struct work_struct *work)
 	dd->attached = !ret;
 }
 
-static int muc_spi_transfer_locked(struct muc_spi_data *dd,
-				   uint8_t *tx_buf, bool keep_wake)
+static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
+			    bool keep_wake)
 {
 	struct spi_transfer t[] = {
 		{
@@ -307,18 +306,6 @@ static int muc_spi_transfer_locked(struct muc_spi_data *dd,
 
 	if (!ret)
 		parse_rx_pkt(dd);
-
-	return ret;
-}
-
-static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
-			    bool keep_wake)
-{
-	int ret;
-
-	mutex_lock(&dd->mutex);
-	ret = muc_spi_transfer_locked(dd, tx_buf, keep_wake);
-	mutex_unlock(&dd->mutex);
 
 	return ret;
 }
@@ -421,8 +408,7 @@ skip_pkt1:
 
 	if (bitmask & HDR_BIT_PKTS) {
 		/* Need additional packets */
-		muc_spi_transfer_locked(dd, NULL,
-				((bitmask & HDR_BIT_PKTS) > 1));
+		muc_spi_transfer(dd, NULL, ((bitmask & HDR_BIT_PKTS) > 1));
 		return;
 	}
 
@@ -453,7 +439,9 @@ static irqreturn_t muc_spi_isr_thread(int irq, void *data)
 {
 	struct muc_spi_data *dd = data;
 
+	mutex_lock(&dd->mutex);
 	muc_spi_transfer(dd, NULL, false);
+	mutex_unlock(&dd->mutex);
 
 	return IRQ_HANDLED;
 }
@@ -554,7 +542,7 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 	if ((len > MAX_DATAGRAM_SZ) || (packets > MAX_PKTS_PER_DG))
 		return -E2BIG;
 
-	mutex_lock(&dd->tx_mutex);
+	mutex_lock(&dd->mutex);
 	hdr = (struct spi_msg_hdr *)dd->tx_pkt;
 	crc = (uint16_t *)&dd->tx_pkt[CRC_NDX(dd->pkt_size)];
 
@@ -586,7 +574,7 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		remaining -= this_pl;
 		buf += this_pl;
 	}
-	mutex_unlock(&dd->tx_mutex);
+	mutex_unlock(&dd->mutex);
 
 	return ret;
 }
@@ -677,7 +665,6 @@ static int muc_spi_probe(struct spi_device *spi)
 
 	muc_spi_quirks_init(dd);
 	mutex_init(&dd->mutex);
-	mutex_init(&dd->tx_mutex);
 
 	spi_set_drvdata(spi, dd);
 
