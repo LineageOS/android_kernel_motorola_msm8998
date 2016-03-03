@@ -63,6 +63,9 @@
 #define MSG_TYPE_DL    (0 << 6)     /* Packet for/from data link layer */
 #define MSG_TYPE_NW    (1 << 6)     /* Packet for/from network layer */
 
+/* Possible values for bus config features */
+#define DL_BIT_ACK     (1 << 0)     /* Flag to indicate ACKing is supported */
+
 /* SPI packet CRC size (in bytes) */
 #define CRC_SIZE       (2)
 
@@ -75,9 +78,24 @@
 /* Macro to determine the location of the CRC in the packet */
 #define CRC_NDX(pkt_size)  (pkt_size - CRC_SIZE)
 
-#define RDY_TIMEOUT_JIFFIES     (HZ / 4) /* 250 milliseconds */
+#define RDY_TIMEOUT_JIFFIES     (HZ /  4) /* 250 milliseconds */
+#define ACK_TIMEOUT_JIFFIES     (HZ / 10) /* 100 milliseconds */
+
+/* The number of times to try sending a datagram to the MuC */
+#define NUM_TRIES      (3)
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
+
+/*
+ * Wait until the specified condition is true, a timeout occurs, or MuC is
+ * detached.
+ */
+#define WAIT_WHILE(cond, timeout, d)                                \
+	{                                                           \
+		unsigned long until = jiffies + timeout;            \
+		while ((cond) && time_before_eq(jiffies, until) &&  \
+			d->present);                                \
+	}
 
 typedef int (*handler_t)(struct mods_dl_device *from, uint8_t *msg, size_t len);
 
@@ -100,6 +118,7 @@ struct muc_spi_data {
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
 	bool pkt1_supported;               /* MuC supports setting pkt1 hdr bit */
+	bool ack_supported;                /* MuC supports ACK'ing on success */
 
 	size_t pkt_size;                   /* Size of hdr + pl + CRC in bytes */
 	__u8 *tx_pkt;                      /* Buffer for transmit packets */
@@ -119,11 +138,13 @@ struct spi_msg_hdr {
 
 struct spi_dl_msg_bus_config_req {
 	__le16 max_pl_size;                /* Max payload size base supports */
+	__u8   features;                   /* See DL_BIT_* defines for values */
 } __packed;
 
 struct spi_dl_msg_bus_config_resp {
 	__le32 max_speed;                  /* Max bus speed mod supports */
 	__le16 pl_size;                    /* Payload size mod selected */
+	__u8   features;                   /* See DL_BIT_* defines for values */
 } __packed;
 
 struct spi_dl_msg {
@@ -134,7 +155,7 @@ struct spi_dl_msg {
 	};
 } __packed;
 
-static void parse_rx_pkt(struct muc_spi_data *dd);
+static bool parse_rx_pkt(struct muc_spi_data *dd);
 static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 				  uint8_t *buf, size_t len);
 
@@ -236,6 +257,11 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 		}
 	}
 
+	if (!(resp.bus_resp.features & DL_BIT_ACK))
+		dd->ack_supported = false;
+
+	dev_info(dev, "ack_supported = %d\n", dd->ack_supported);
+
 	/* Schedule work to send attach to SVC */
 	schedule_work(&dd->attach_work);
 
@@ -262,6 +288,7 @@ static void attach_worker(struct work_struct *work)
 static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 			    bool keep_wake)
 {
+	struct spi_device *spi = dd->spi;
 	struct spi_transfer t[] = {
 		{
 			.tx_buf = tx_buf,
@@ -269,8 +296,19 @@ static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 			.len = dd->pkt_size,
 		},
 	};
-	unsigned long rdy_timeout;
 	int ret;
+	bool should_ack;
+	int ack;
+	int intn;
+	int num_tries_remaining = NUM_TRIES;
+
+retry:
+
+	/* Set pinmux back to SPI configuration */
+	if (dd->ack_supported) {
+		muc_gpio_set_ack(0);
+		(void)muc_gpio_ack_cfg(false);
+	}
 
 	/* Check if WAKE is not asserted */
 	if (muc_gpio_get_wake_n()) {
@@ -283,34 +321,90 @@ static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 	}
 
 	/* Wait for RDY to be asserted */
-	rdy_timeout = jiffies + RDY_TIMEOUT_JIFFIES;
-	while ((ret = muc_gpio_get_ready_n()) &&
-	       (time_before_eq(jiffies, rdy_timeout)) && dd->present);
+	WAIT_WHILE((ret = muc_gpio_get_ready_n()), RDY_TIMEOUT_JIFFIES, dd);
 
 	/* Deassert WAKE if no longer requested OR on timeout OR removal */
-	if (!keep_wake || ret != 0 || !dd->present)
+	if (!keep_wake || dd->ack_supported || ret != 0 || !dd->present)
 		muc_gpio_set_wake_n(1);
 
 	/*
-	 * Check that RDY successfully was asserted after wake deassert to ensure
-	 * wake line is deasserted.
+	 * Check that RDY successfully was asserted after wake deassert to
+	 * ensure wake line is deasserted.
 	 */
 	if (unlikely(!dd->present))
 		return -ENODEV;
 	if (unlikely(ret != 0)) {
-		dev_err(&dd->spi->dev, "Timeout waiting for rdy to assert\n");
+		dev_err(&spi->dev, "Timeout waiting for rdy to assert\n");
+		if (--num_tries_remaining > 0)
+			goto retry;
 		return -ETIMEDOUT;
 	}
 
-	ret = spi_sync_transfer(dd->spi, t, 1);
+	ret = spi_sync_transfer(spi, t, 1);
 
-	if (!ret)
-		parse_rx_pkt(dd);
+	if (ret) {
+		if (--num_tries_remaining > 0) {
+			dev_err(&spi->dev, "Retry: transfer failed\n");
+			goto retry;
+		} else {
+			dev_err(&spi->dev, "Abort: transfer failed\n");
+			return ret;
+		}
+	}
+
+	should_ack = parse_rx_pkt(dd);
+
+	if (!dd->ack_supported)
+		return 0;
+
+	/* Set pinmux for ACK'ing */
+	(void)muc_gpio_ack_cfg(true);
+
+	if (should_ack)
+		muc_gpio_set_ack(1);
+
+	if (tx_buf) {
+		WAIT_WHILE(!(ack = muc_gpio_get_ack()) &&
+			   (intn = muc_gpio_get_int_n()),
+			   ACK_TIMEOUT_JIFFIES, dd);
+		if (!ack && intn) {
+			if (!should_ack) {
+				/*
+				 * Since both TX and RX failed, need to spin
+				 * longer to ensure MuC does not see false ACK.
+				 */
+				WAIT_WHILE((intn = muc_gpio_get_int_n()),
+					   ACK_TIMEOUT_JIFFIES, dd);
+			}
+
+			if (--num_tries_remaining > 0) {
+				dev_err(&spi->dev, "Retry: No ACK received\n");
+				goto retry;
+			} else {
+				dev_err(&spi->dev, "Abort: No ACK received\n");
+				return -EIO;
+			}
+		}
+	}
+
+	if (!should_ack) {
+		/* Must block long enough to ensure MuC does not see false
+		 * ACK.
+		 */
+		WAIT_WHILE((intn = muc_gpio_get_int_n()),
+			   (2 * ACK_TIMEOUT_JIFFIES), dd);
+
+		/*
+		 * If we get here, there either was no TX or the TX was
+		 * successful and ACK'd. Either way, return from this
+		 * function to unblock any potential new messages.
+		 */
+	}
 
 	return ret;
 }
 
-static void parse_rx_pkt(struct muc_spi_data *dd)
+static bool parse_rx_pkt(struct muc_spi_data *dd)
 {
 	struct spi_msg_hdr *hdr = (struct spi_msg_hdr *)dd->rx_pkt;
 	uint16_t bitmask = le16_to_cpu(hdr->bitmask);
@@ -326,14 +420,20 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 		dev_err(&spi->dev, "CRC mismatch, received: 0x%x, "
 			"calculated: 0x%x\n", le16_to_cpu(*rcvcrc_p), calcrc);
 
-		dd->rx_datagram_ndx = 0;
-		dd->pkts_remaining = 0;
-		return;
+		/*
+		 * If ACK'ing is supported, keep received data to allow for
+		 * a successful retry.
+		 */
+		if (!dd->ack_supported) {
+			dd->rx_datagram_ndx = 0;
+			dd->pkts_remaining = 0;
+		}
+		return false;
 	}
 
 	if (!(bitmask & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
-		return;
+		return true;
 	}
 
 	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL)) {
@@ -358,7 +458,7 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 		else
 			dev_err(&spi->dev, "1st pkt bit not set\n");
 
-		return;
+		return true;
 	}
 
 	if (!dd->pkt1_supported)
@@ -379,7 +479,7 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 		if (!dd->rx_datagram_ndx) {
 			dev_warn(&spi->dev, "Ignore non-first packet: "
 				"bitmask=0x%04x\n", bitmask);
-			return;
+			return true;
 		}
 
 		if ((bitmask & HDR_BIT_PKTS) != --dd->pkts_remaining) {
@@ -390,7 +490,7 @@ static void parse_rx_pkt(struct muc_spi_data *dd)
 			/* Drop the entire message */
 			dd->rx_datagram_ndx = 0;
 			dd->pkts_remaining = 0;
-			return;
+			return true;
 		}
 	}
 
@@ -398,7 +498,7 @@ skip_pkt1:
 	if (unlikely(dd->rx_datagram_ndx >= MAX_DATAGRAM_SZ)) {
 		dev_err(&spi->dev, "Too many packets received!\n");
 		dd->rx_datagram_ndx = 0;
-		return;
+		return true;
 	}
 
 	memcpy(&dd->rx_datagram[dd->rx_datagram_ndx],
@@ -408,11 +508,13 @@ skip_pkt1:
 
 	if (bitmask & HDR_BIT_PKTS) {
 		/* Need additional packets before calling handler */
-		return;
+		return true;
 	}
 
 	handler(dd->dld, dd->rx_datagram, dd->rx_datagram_ndx);
 	dd->rx_datagram_ndx = 0;
+
+	return true;
 }
 
 static irqreturn_t muc_spi_isr(int irq, void *data)
@@ -426,9 +528,8 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	mutex_lock(&dd->mutex);
 	pm_stay_awake(&dd->spi->dev);
 
-	do {
+	while (!muc_gpio_get_int_n() && dd->present)
 		muc_spi_transfer(dd, NULL, (dd->pkts_remaining > 1));
-	} while (!muc_gpio_get_int_n() && dd->present);
 
 	pm_relax(&dd->spi->dev);
 	mutex_unlock(&dd->mutex);
@@ -436,7 +537,7 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-#define SPI_NEGOTIATE_RETRIES 8
+#define SPI_NEGOTIATE_RETRIES 3
 static int _muc_spi_negotiate(struct muc_spi_data *dd)
 {
 	struct spi_dl_msg msg;
@@ -446,6 +547,9 @@ static int _muc_spi_negotiate(struct muc_spi_data *dd)
 	memset(&msg, 0, sizeof(msg));
 	msg.id = DL_MSG_ID_BUS_CFG_REQ;
 	msg.bus_req.max_pl_size = U16_MAX;
+
+	if (dd->ack_supported)
+		msg.bus_req.features |= DL_BIT_ACK;
 
 	do {
 		err = __muc_spi_message_send(dd, MSG_TYPE_DL, (uint8_t *)&msg,
@@ -502,6 +606,7 @@ static int muc_attach(struct notifier_block *nb,
 			dd->rx_datagram_ndx = 0;
 			dd->pkts_remaining = 0;
 			dd->pkt1_supported = false;
+			dd->ack_supported = muc_gpio_ack_is_supported();
 		}
 	}
 	return NOTIFY_OK;
@@ -648,6 +753,7 @@ static int muc_spi_probe(struct spi_device *spi)
 	dd->spi = spi;
 	dd->default_speed_hz = spi->max_speed_hz;
 	dd->attach_nb.notifier_call = muc_attach;
+	dd->ack_supported = muc_gpio_ack_is_supported();
 	INIT_WORK(&dd->attach_work, attach_worker);
 
 	ret = allocate_buffers(dd);
