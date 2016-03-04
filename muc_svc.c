@@ -57,6 +57,7 @@ struct muc_svc_data *svc_dd;
 
 static DEFINE_MUTEX(slave_lock);
 static DEFINE_MUTEX(svc_list_lock);
+static DEFINE_SPINLOCK(svc_ops_lock);
 
 /* Define the SVCs reserved area of CPORTS to create the vendor
  * connections to each interface
@@ -580,12 +581,17 @@ static inline size_t get_gb_msg_size(struct gb_message *msg)
 static struct svc_op *svc_find_op(struct muc_svc_data *dd, uint16_t id)
 {
 	struct svc_op *e, *tmp;
+	unsigned long flags;
 
+	spin_lock_irqsave(&svc_ops_lock, flags);
 	list_for_each_entry_safe(e, tmp, &dd->operations, entry)
 		if (e->msg_id == id)
-			return e;
+			goto found;
+	e = NULL;
+found:
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
 
-	return NULL;
+	return e;
 }
 
 /* Route a gb_message to the mods_nw layer, adding the necessary
@@ -961,6 +967,7 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	struct gb_message *msg;
 	int ret;
 	uint16_t cycle;
+	unsigned long flags;
 
 	op = kzalloc(sizeof(*op), GFP_KERNEL);
 	if (!op)
@@ -983,7 +990,9 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 		init_completion(&op->completion);
 
 		msg->header->operation_id = cpu_to_le16(op->msg_id);
+		spin_lock_irqsave(&svc_ops_lock, flags);
 		list_add_tail(&op->entry, &dd->operations);
+		spin_unlock_irqrestore(&svc_ops_lock, flags);
 	}
 
 	/* Send to NW Routing Layer */
@@ -1015,7 +1024,10 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	}
 
 	/* Remove and free the request */
+	spin_lock_irqsave(&svc_ops_lock, flags);
 	list_del(&op->entry);
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
+
 	svc_gb_msg_free(op->request);
 	op->request = NULL;
 
@@ -1032,8 +1044,11 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	return msg;
 
 remove_op:
+	spin_lock_irqsave(&svc_ops_lock, flags);
 	if (response)
 		list_del(&op->entry);
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
+
 	svc_gb_msg_free(op->request);
 gb_msg_alloc:
 	kfree(op);
