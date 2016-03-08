@@ -16,6 +16,7 @@
 #define __V4L2_HAL_H__
 
 #include <linux/ioctl.h>
+#include <linux/videodev2.h>
 
 /* structure used for misc -> v4l2_hal direction */
 struct misc_stream_resp {
@@ -69,6 +70,36 @@ struct misc_set_handler {
 #define V4L2_HAL_IN_SNAPSHOT_STREAM	3
 #define V4L2_HAL_IN_METADATA_STREAM	4
 
+/* Below are the CIDs used in G_CTRL/S_CTRL to pass around
+   ION memory mapped content */
+enum {
+	V4L2_HAL_EXT_CTRLS,
+	V4L2_HAL_MAX_NUM_MMAP_CID,
+};
+
+#define V4L2_HAL_CID_SET_EXT_CTRLS_MEM	(V4L2_CID_PRIVATE_BASE + 0)
+
+#define V4L2_HAL_CID_MMAP_MIN		(V4L2_HAL_CID_SET_EXT_CTRLS_MEM + 1)
+
+#define V4L2_HAL_CID_EXT_CTRLS		(V4L2_HAL_CID_MMAP_MIN + \
+					 V4L2_HAL_EXT_CTRLS)
+
+#define V4L2_HAL_CID_MMAP_MAX	V4L2_HAL_CID_EXT_CTRLS
+
+static inline bool v4l2_hal_is_set_mapping_cid(__u32 id) {
+	if (id == V4L2_HAL_CID_SET_EXT_CTRLS_MEM)
+		return true;
+
+	return false;
+}
+
+static inline bool v4l2_hal_is_mmap_cid(__u32 id) {
+	if (id < V4L2_HAL_CID_MMAP_MIN || id > V4L2_HAL_CID_MMAP_MAX)
+		return false;
+
+	return true;
+}
+
 /* structure used for V4L2_hal -> misc direction */
 struct misc_read_cmd {
 	unsigned int stream;
@@ -90,10 +121,15 @@ bool v4l2_misc_compat_mode(void);
 int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 			      size_t size, void *data);
 int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream,
-			  int fd, unsigned int length, enum misc_buffer_state state);
+			  int fd, unsigned int length,
+			  enum misc_buffer_state state);
 int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index);
 void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream,
 			    int index, int orig_fd, int mapped_fd);
+int v4l2_hal_get_mapped_fd_for_cid(void *hal_data, unsigned int stream,
+				   __u32 cid);
+void v4l2_hal_set_mapped_fd_for_cid(void *hal_data, unsigned int stream,
+				    __u32 cid, int orig_fd, int mapped_fd);
 
 int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream);
 void *v4l2_hal_init(void);

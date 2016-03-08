@@ -91,6 +91,7 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	int copy_size;
 	struct misc_read_cmd *misc_cmd;
 	struct v4l2_hal_qbuf_data *qb;
+	struct v4l2_control *ctrl;
 	int tgt_fd;
 	struct v4l2_misc_command *target_cmd;
 
@@ -153,6 +154,39 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 		}
 
 		qb->fd = tgt_fd;
+	} else if (target_cmd->cmd == VIDIOC_S_CTRL && target_cmd->ionfile) {
+		ctrl = target_cmd->data;
+		tgt_fd = v4l2_hal_get_mapped_fd_for_cid(g_data->v4l2_hal_data,
+							target_cmd->stream,
+							ctrl->id);
+		if (tgt_fd < 0) {
+			tgt_fd = get_unused_fd_flags(O_CLOEXEC);
+
+			if (tgt_fd < 0)
+				goto errout;
+
+			fd_install(tgt_fd, target_cmd->ionfile);
+			v4l2_hal_set_mapped_fd_for_cid(g_data->v4l2_hal_data,
+						       target_cmd->stream,
+						       ctrl->id,
+						       target_cmd->orig_fd,
+						       tgt_fd);
+		}
+		ctrl->value = tgt_fd;
+	} else if (target_cmd->cmd == VIDIOC_G_CTRL ||
+		   target_cmd->cmd == VIDIOC_S_CTRL) {
+		ctrl = target_cmd->data;
+		if (v4l2_hal_is_mmap_cid(ctrl->id)) {
+			tgt_fd = v4l2_hal_get_mapped_fd_for_cid(
+				g_data->v4l2_hal_data,
+				target_cmd->stream,
+				ctrl->id);
+
+			if (tgt_fd < 0)
+				goto errout;
+
+			ctrl->value = tgt_fd;
+		}
 	}
 
 	if (copy_to_user((void __user *)misc_cmd->data,
@@ -394,6 +428,7 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	struct v4l2_misc_command *target_cmd_queue;
 	int ret;
 	struct v4l2_hal_qbuf_data *qb;
+	struct v4l2_control *ctrl;
 
 	/* OPEN request will be sent to monitor.
 	 * Other stream request will be sent to its handler.
@@ -410,14 +445,19 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	target_cmd_queue->cmd = cmd;
 	target_cmd_queue->size = size;
 	target_cmd_queue->data = data;
+	target_cmd_queue->orig_fd = -1;
+	target_cmd_queue->ionfile = NULL;
 
 	if (cmd == VIOC_HAL_STREAM_QBUF) {
 		qb = data;
 		target_cmd_queue->orig_fd = qb->fd;
 		target_cmd_queue->ionfile = fget(qb->fd);
-	} else {
-		target_cmd_queue->orig_fd = -1;
-		target_cmd_queue->ionfile = NULL;
+	} else if (cmd == VIDIOC_S_CTRL) {
+		ctrl = data;
+		if (v4l2_hal_is_set_mapping_cid(ctrl->id)) {
+			target_cmd_queue->orig_fd = ctrl->value;
+			target_cmd_queue->ionfile = fget(ctrl->value);
+		}
 	}
 
 	atomic_set(&target_cmd_queue->result_code, -ETIME);

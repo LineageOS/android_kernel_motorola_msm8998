@@ -38,6 +38,7 @@ struct v4l2_stream_data {
 	struct vb2_queue vb2_q;
 	size_t bcount;
 	struct v4l2_buffer_data *bdata;
+	struct v4l2_buffer_data cid_map[V4L2_HAL_MAX_NUM_MMAP_CID];
 };
 
 struct v4l2_hal_data {
@@ -258,25 +259,85 @@ static int streamoff(struct file *file, void *fh, enum v4l2_buf_type buf_type)
 	return vb2_streamoff(&strm->vb2_q, buf_type);
 }
 
-static int query_ctrl(struct file *file, void *fh,
-			  struct v4l2_queryctrl *a)
-{
-	/* TODO: add code */
-	return 0;
+static __u32 v4l2_hal_mmap_cid_index(__u32 id) {
+	if (id == V4L2_HAL_CID_SET_EXT_CTRLS_MEM ||
+	    id == V4L2_HAL_CID_EXT_CTRLS)
+		return V4L2_HAL_EXT_CTRLS;
+
+	return V4L2_HAL_MAX_NUM_MMAP_CID;
+}
+
+static bool is_mapping_exists(struct v4l2_stream_data *strm,
+			     struct v4l2_control *ctrl) {
+	__u32 idx;
+
+	idx = v4l2_hal_mmap_cid_index(ctrl->id);
+	if (strm->cid_map[idx].orig_fd == -1) {
+		return false;
+	}
+	return true;
+}
+
+static bool validate_mapping(struct v4l2_stream_data *strm,
+			     struct v4l2_control *ctrl) {
+	__u32 idx;
+
+	idx = v4l2_hal_mmap_cid_index(ctrl->id);
+
+	if (strm->cid_map[idx].orig_fd != -1 &&
+	    strm->cid_map[idx].orig_fd != ctrl->value) {
+		return false;
+	}
+
+	return true;
 }
 
 static int get_ctrl(struct file *file, void *fh,
-			struct v4l2_control *a)
+			struct v4l2_control *ctrl)
 {
-	/* TODO: add code */
-	return 0;
+	int ret;
+	__u32 idx;
+	struct v4l2_stream_data *strm = file->private_data;
+
+	if (v4l2_hal_is_mmap_cid(ctrl->id)) {
+		if (!is_mapping_exists(strm, ctrl)) {
+			pr_err("%s: No mapping. S_CTRL first\n", __func__);
+			return -EINVAL;
+		}
+	} else if (v4l2_hal_is_set_mapping_cid(ctrl->id))
+		/* No "get" for setup mapping request */
+		return -EINVAL;
+
+	ret = v4l2_misc_process_command(strm->id, VIDIOC_G_CTRL,
+					sizeof(*ctrl), ctrl);
+	if (ret == 0)
+		ctrl->value = strm->cid_map[idx].orig_fd;
+
+	return ret;
 }
 
 static int set_ctrl(struct file *file, void *fh,
-			struct v4l2_control *a)
+			struct v4l2_control *ctrl)
 {
-	/* TODO: add code */
-	return 0;
+	int ret;
+	struct v4l2_stream_data *strm = file->private_data;
+
+	if (v4l2_hal_is_mmap_cid(ctrl->id)) {
+		if (!is_mapping_exists(strm, ctrl)) {
+			pr_err("%s: No mapping. S_CTRL first\n", __func__);
+			return -EINVAL;
+		}
+	} else if (v4l2_hal_is_set_mapping_cid(ctrl->id)) {
+		if (!validate_mapping(strm, ctrl)) {
+			pr_err("%s: cannot override fd mapping\n", __func__);
+			return -EINVAL;
+		}
+	}
+
+	ret = v4l2_misc_process_command(strm->id, VIDIOC_S_CTRL,
+					sizeof(*ctrl), ctrl);
+
+	return ret;
 }
 
 static int v4l2_hal_queue_setup(struct vb2_queue *q,
@@ -402,6 +463,28 @@ void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream, int index,
 	strm->bdata[index].mapped_fd = mapped_fd;
 }
 
+int v4l2_hal_get_mapped_fd_for_cid(void *hal_data, unsigned int stream, __u32 cid)
+{
+	struct v4l2_hal_data *data = hal_data;
+	struct v4l2_stream_data *strm;
+	__u32 idx = v4l2_hal_mmap_cid_index(cid);
+
+	strm = &data->strms[stream];
+	return strm->cid_map[idx].mapped_fd;
+}
+
+void v4l2_hal_set_mapped_fd_for_cid(void *hal_data, unsigned int stream, __u32 cid,
+				    int orig_fd, int mapped_fd)
+{
+	struct v4l2_hal_data *data = hal_data;
+	struct v4l2_stream_data *strm;
+	__u32 idx = v4l2_hal_mmap_cid_index(cid);
+
+	strm = &data->strms[stream];
+	strm->cid_map[idx].orig_fd = orig_fd;
+	strm->cid_map[idx].mapped_fd = mapped_fd;
+}
+
 int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream)
 {
 	int rc = 0;
@@ -516,6 +599,7 @@ release_stream:
 
 static int v4l2_hal_close(struct file *file)
 {
+	int i;
 	struct v4l2_hal_data *data = video_drvdata(file);
 	struct v4l2_stream_data *strm = file->private_data;
 	unsigned int id = strm->id;
@@ -528,6 +612,10 @@ static int v4l2_hal_close(struct file *file)
 	kfree(strm->bdata);
 	memset(strm, 0, sizeof(*strm));
 	strm->id = id;
+	for (i = 0; i < V4L2_HAL_MAX_NUM_MMAP_CID; i++) {
+		strm->cid_map[i].orig_fd = -1;
+		strm->cid_map[i].mapped_fd = -1;
+	}
 	mutex_unlock(&data->lock);
 
 	file->private_data = NULL;
@@ -564,7 +652,6 @@ static const struct v4l2_ioctl_ops v4l2_hal_ioctl_ops = {
 	.vidioc_streamon		= streamon,
 	.vidioc_streamoff		= streamoff,
 
-	.vidioc_queryctrl		= query_ctrl,
 	.vidioc_g_ctrl			= get_ctrl,
 	.vidioc_s_ctrl			= set_ctrl,
 };
@@ -580,15 +667,20 @@ static struct v4l2_file_operations v4l2_hal_fops = {
 void *v4l2_hal_init()
 {
 	int retval;
-	int i;
+	int i, j;
 	struct v4l2_hal_data *data;
 
 	data = kzalloc(sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return NULL;
 
-	for (i = 0; i < V4L2_HAL_MAX_STREAMS; i++)
+	for (i = 0; i < V4L2_HAL_MAX_STREAMS; i++) {
 		data->strms[i].id = i;
+		for (j = 0; j < V4L2_HAL_MAX_NUM_MMAP_CID; j++) {
+			data->strms[i].cid_map[j].orig_fd = -1;
+			data->strms[i].cid_map[j].mapped_fd = -1;
+		}
+	}
 
 	mutex_init(&data->lock);
 
