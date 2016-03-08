@@ -62,6 +62,13 @@ struct misc_set_handler {
 
 #define V4L2_HAL_MAX_STREAMS	6
 
+/* Used in capabilities field in v4l2_input structure */
+#define V4L2_HAL_IN_STREAM_TYPE_MASK	0x00000007
+#define V4L2_HAL_IN_PREVIEW_STREAM	1
+#define V4L2_HAL_IN_VIDEO_STREAM	2
+#define V4L2_HAL_IN_SNAPSHOT_STREAM	3
+#define V4L2_HAL_IN_METADATA_STREAM	4
+
 /* structure used for V4L2_hal -> misc direction */
 struct misc_read_cmd {
 	unsigned int stream;
