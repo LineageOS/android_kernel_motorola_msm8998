@@ -25,6 +25,8 @@ enum {
 	MUC_GPIO_WAKE_N = 3,
 	MUC_GPIO_READY_N = 4,
 	MUC_GPIO_FORCE_FLASH = 5,
+	MUC_GPIO_SPI_MOSI = 6,
+	MUC_GPIO_SPI_MISO = 7,
 	MUC_MAX_GPIOS
 };
 
@@ -33,7 +35,7 @@ enum {
  */
 static inline bool muc_gpio_optional(int index)
 {
-	return index >= MUC_GPIO_FORCE_FLASH;
+	return index == MUC_GPIO_FORCE_FLASH;
 }
 
 #define MUC_ROOT_VER_UNKNOWN     0x00 /* For not implemented */
@@ -84,6 +86,7 @@ struct muc_data {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_discon;
 	struct pinctrl_state *pins_spi_con;
+	struct pinctrl_state *pins_spi_ack;
 	bool pinctrl_disconnect;
 
 	bool need_det_output;
@@ -178,5 +181,23 @@ static inline int muc_gpio_get_ready_n(void)
 static inline int muc_gpio_get_int_n(void)
 {
 	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_INT_N]);
+}
+
+/* ACKing APIs */
+int muc_gpio_ack_cfg(bool en);
+
+static inline bool muc_gpio_ack_is_supported(void)
+{
+	return (muc_misc_data->pins_spi_ack != NULL);
+}
+
+static inline int muc_gpio_get_ack(void)
+{
+	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_SPI_MISO]);
+}
+
+static inline void muc_gpio_set_ack(int value)
+{
+	gpio_set_value(muc_misc_data->gpios[MUC_GPIO_SPI_MOSI], value);
 }
 #endif  /* __MUC_H__ */
