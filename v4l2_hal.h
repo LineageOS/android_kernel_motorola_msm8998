@@ -93,7 +93,7 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream,
 			  int fd, unsigned int length, enum misc_buffer_state state);
 int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index);
 void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream,
-			    int index, int fd);
+			    int index, int orig_fd, int mapped_fd);
 
 int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream);
 void *v4l2_hal_init(void);

@@ -32,6 +32,7 @@ struct v4l2_misc_command {
 	unsigned int cmd;
 	size_t size;
 	void *data;
+	int orig_fd;
 	struct file *ionfile;
 	wait_queue_head_t wait;
 	struct completion comp;
@@ -146,8 +147,9 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 
 			fd_install(tgt_fd, target_cmd->ionfile);
 			v4l2_hal_set_mapped_fd(g_data->v4l2_hal_data,
-						   target_cmd->stream,
-						   qb->index, tgt_fd);
+					       target_cmd->stream,
+					       qb->index,
+					       target_cmd->orig_fd, tgt_fd);
 		}
 
 		qb->fd = tgt_fd;
@@ -411,9 +413,12 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 
 	if (cmd == VIOC_HAL_STREAM_QBUF) {
 		qb = data;
+		target_cmd_queue->orig_fd = qb->fd;
 		target_cmd_queue->ionfile = fget(qb->fd);
-	} else
+	} else {
+		target_cmd_queue->orig_fd = -1;
 		target_cmd_queue->ionfile = NULL;
+	}
 
 	atomic_set(&target_cmd_queue->result_code, -ETIME);
 	atomic_set(&target_cmd_queue->pending_read, 1);
