@@ -83,6 +83,21 @@ static void gb_connection_kref_release(struct kref *kref)
 	mutex_unlock(&connection_mutex);
 }
 
+void gb_connection_get(struct gb_connection *connection)
+{
+	mutex_lock(&connection_mutex);
+	kref_get(&connection->kref);
+	mutex_unlock(&connection_mutex);
+}
+EXPORT_SYMBOL_GPL(gb_connection_get);
+
+void gb_connection_put(struct gb_connection *connection)
+{
+	kref_put_mutex(&connection->kref, gb_connection_kref_release,
+		       &connection_mutex);
+}
+EXPORT_SYMBOL_GPL(gb_connection_put);
+
 static void gb_connection_init_name(struct gb_connection *connection)
 {
 	u16 hd_cport_id = connection->hd_cport_id;

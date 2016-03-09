@@ -77,4 +77,7 @@ struct gb_connection *gb_connection_hd_find(struct gb_host_device *hd,
 
 void gb_connection_error_accounting(struct gb_connection *connection, int ret);
 
+void gb_connection_get(struct gb_connection *connection);
+void gb_connection_put(struct gb_connection *connection);
+
 #endif /* __CONNECTION_H */
