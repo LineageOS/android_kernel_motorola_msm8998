@@ -27,6 +27,7 @@
 #define HAL_DEV_NAME "v4l2_hal"
 
 struct v4l2_buffer_data {
+	int orig_fd;
 	int mapped_fd;
 };
 
@@ -35,6 +36,7 @@ struct v4l2_stream_data {
 	bool used;
 	bool handled;
 	struct vb2_queue vb2_q;
+	size_t bcount;
 	struct v4l2_buffer_data *bdata;
 };
 
@@ -221,6 +223,16 @@ static int request_bufs(struct file *file, void *fh,
 static int queue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
 	struct v4l2_stream_data *strm = file->private_data;
+	unsigned int idx = b->index;
+	int fd = b->m.userptr;
+
+	/* Make sure existing mapped fd is not overwritten with new one.
+	   REQ_BUF needs to be called when queuing a new set */
+	if (strm->bdata && idx < strm->bcount &&
+	    strm->bdata[idx].orig_fd != -1) {
+		if (strm->bdata[idx].orig_fd != fd)
+			return -EAGAIN;
+	}
 
 	return vb2_qbuf(&strm->vb2_q, b);
 }
@@ -287,9 +299,15 @@ static int v4l2_hal_queue_setup(struct vb2_queue *q,
 	if (bdata == NULL)
 		return -ENOMEM;
 
-	for (i = 0; i < data.count; i++)
+	for (i = 0; i < data.count; i++) {
+		bdata[i].orig_fd = -1;
 		bdata[i].mapped_fd = -1;
+	}
 
+	/* free existing mapping data if any */
+	kfree(strm->bdata);
+
+	strm->bcount = data.count;
 	strm->bdata = bdata;
 
 	return v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_REQBUFS,
@@ -374,13 +392,14 @@ int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index)
 }
 
 void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream, int index,
-				int fd)
+			    int orig_fd, int mapped_fd)
 {
 	struct v4l2_hal_data *data = hal_data;
 	struct v4l2_stream_data *strm;
 
 	strm = &data->strms[stream];
-	strm->bdata[index].mapped_fd = fd;
+	strm->bdata[index].orig_fd = orig_fd;
+	strm->bdata[index].mapped_fd = mapped_fd;
 }
 
 int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream)
