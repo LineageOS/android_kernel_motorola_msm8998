@@ -415,11 +415,10 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	} else
 		target_cmd_queue->ionfile = NULL;
 
+	atomic_set(&target_cmd_queue->result_code, -ETIME);
 	atomic_set(&target_cmd_queue->pending_read, 1);
-
 	wake_up(&target_cmd_queue->wait);
 
-	atomic_set(&target_cmd_queue->result_code, -ETIME);
 	/* wait for ioctl command response */
 	if (!wait_for_completion_timeout(
 			&target_cmd_queue->comp,
