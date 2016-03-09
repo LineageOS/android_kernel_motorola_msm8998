@@ -363,6 +363,28 @@ void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
 	disable_irq(cdata->irq);
 }
 
+int muc_gpio_ack_cfg(bool en)
+{
+	int ret;
+
+	/* Only allow the configuration to change if the muc is detected */
+	if (!muc_gpio_ack_is_supported() || !muc_misc_data->muc_detected)
+		return -ENODEV;
+
+	if (en)
+		ret = pinctrl_select_state(muc_misc_data->pinctrl,
+					   muc_misc_data->pins_spi_ack);
+	else
+		ret = pinctrl_select_state(muc_misc_data->pinctrl,
+					   muc_misc_data->pins_spi_con);
+
+	if (ret)
+		pr_warn("%s: select SPI pinctrl failed (en = %d)\n",
+			__func__, en);
+
+	return ret;
+}
+
 static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 {
 	int ret;
@@ -385,6 +407,13 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 	if (IS_ERR(cdata->pins_spi_con)) {
 		dev_err(dev, "Failed to lookup 'spi_active' pinctrl\n");
 		return PTR_ERR(cdata->pins_spi_con);
+	}
+
+	cdata->pins_spi_ack = pinctrl_lookup_state(cdata->pinctrl,
+				"spi_ack");
+	if (IS_ERR(cdata->pins_spi_ack)) {
+		dev_info(dev, "Failed to lookup 'spi_ack' pinctrl\n");
+		cdata->pins_spi_ack = NULL;
 	}
 
 	/* Default to connected initially until detection is complete */
