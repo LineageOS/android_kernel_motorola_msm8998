@@ -407,8 +407,7 @@ skip_pkt1:
 	dd->rx_datagram_ndx += pl_size;
 
 	if (bitmask & HDR_BIT_PKTS) {
-		/* Need additional packets */
-		muc_spi_transfer(dd, NULL, ((bitmask & HDR_BIT_PKTS) > 1));
+		/* Need additional packets before calling handler */
 		return;
 	}
 
@@ -440,7 +439,11 @@ static irqreturn_t muc_spi_isr_thread(int irq, void *data)
 	struct muc_spi_data *dd = data;
 
 	mutex_lock(&dd->mutex);
-	muc_spi_transfer(dd, NULL, false);
+
+	do {
+		muc_spi_transfer(dd, NULL, (dd->pkts_remaining > 1));
+	} while (!muc_gpio_get_int_n());
+
 	mutex_unlock(&dd->mutex);
 
 	return IRQ_HANDLED;
