@@ -161,5 +161,9 @@ static inline int muc_gpio_get_ready_n(void)
 {
 	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_READY_N]);
 }
-#endif  /* __MUC_H__ */
 
+static inline int muc_gpio_get_int_n(void)
+{
+	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_INT_N]);
+}
+#endif  /* __MUC_H__ */
