@@ -17,6 +17,11 @@
 
 #include "greybus.h"
 
+enum gb_raw_state {
+	GB_RAW_READY = 0,
+	GB_RAW_DESTROYED,
+};
+
 struct gb_raw {
 	struct gb_connection *connection;
 
@@ -27,6 +32,9 @@ struct gb_raw {
 	struct cdev cdev;
 	struct device *device;
 	wait_queue_head_t read_wq;
+
+	struct kref kref;
+	enum gb_raw_state state;
 };
 
 struct raw_data {
@@ -39,6 +47,7 @@ static struct class *raw_class;
 static int raw_major;
 static const struct file_operations raw_fops;
 static DEFINE_IDA(minors);
+static DEFINE_SPINLOCK(raw_lock);
 
 /* Number of minor devices this driver supports */
 #define NUM_MINORS	256
@@ -51,6 +60,36 @@ static DEFINE_IDA(minors);
  * drop messages on the floor
  */
 #define MAX_DATA_SIZE	(MAX_PACKET_SIZE * 8)
+
+
+static void gb_raw_kref_release(struct kref *kref)
+{
+	struct gb_raw *raw;
+
+	raw = container_of(kref, struct gb_raw, kref);
+	kfree(raw);
+}
+
+static inline void gb_raw_get(struct gb_raw *raw)
+{
+	unsigned long flags;
+
+	gb_connection_get(raw->connection);
+	spin_lock_irqsave(&raw_lock, flags);
+	kref_get(&raw->kref);
+	spin_unlock_irqrestore(&raw_lock, flags);
+}
+
+static inline void gb_raw_put(struct gb_raw *raw)
+{
+	unsigned long flags;
+	struct gb_connection *conn = raw->connection;
+
+	spin_lock_irqsave(&raw_lock, flags);
+	kref_put(&raw->kref, gb_raw_kref_release);
+	spin_unlock_irqrestore(&raw_lock, flags);
+	gb_connection_put(conn);
+}
 
 /*
  * Add the raw data message to the list of received messages.
@@ -150,6 +189,14 @@ static int gb_raw_send(struct gb_raw *raw, u32 len, const char __user *data)
 	return retval;
 }
 
+static void gb_raw_dev_release(struct device *dev)
+{
+	struct gb_raw *raw = dev_get_drvdata(dev);
+
+	gb_raw_put(raw);
+	kfree(dev);
+}
+
 static int gb_raw_connection_init(struct gb_connection *connection)
 {
 	struct gb_raw *raw;
@@ -160,8 +207,11 @@ static int gb_raw_connection_init(struct gb_connection *connection)
 	if (!raw)
 		return -ENOMEM;
 
+	kref_init(&raw->kref);
 	raw->connection = connection;
 	connection->private = raw;
+	gb_connection_get(raw->connection);
+	raw->state = GB_RAW_READY;
 
 	INIT_LIST_HEAD(&raw->list);
 	mutex_init(&raw->list_lock);
@@ -172,19 +222,32 @@ static int gb_raw_connection_init(struct gb_connection *connection)
 		goto error_free;
 	}
 
+	raw->device = kzalloc(sizeof(*raw->device), GFP_KERNEL);
+	if (!raw->device) {
+		retval = -ENOMEM;
+		goto error_devalloc;
+	}
+
+	raw->device->devt = MKDEV(raw_major, minor);
+	raw->device->class = raw_class;
+	raw->device->parent = &connection->bundle->dev;
+	raw->device->release = gb_raw_dev_release;
+	dev_set_name(raw->device, "gbraw%d", minor);
+	device_initialize(raw->device);
+
 	init_waitqueue_head(&raw->read_wq);
 	raw->dev = MKDEV(raw_major, minor);
 	cdev_init(&raw->cdev, &raw_fops);
+	raw->cdev.kobj.parent = &raw->device->kobj;
 	retval = cdev_add(&raw->cdev, raw->dev, 1);
 	if (retval)
 		goto error_cdev;
 
-	raw->device = device_create(raw_class, &connection->bundle->dev,
-				    raw->dev, raw, "gbraw%d", minor);
-	if (IS_ERR(raw->device)) {
-		retval = PTR_ERR(raw->device);
+	retval = device_add(raw->device);
+	if (retval)
 		goto error_device;
-	}
+
+	dev_set_drvdata(raw->device, raw);
 
 	return 0;
 
@@ -192,9 +255,13 @@ error_device:
 	cdev_del(&raw->cdev);
 
 error_cdev:
+	put_device(raw->device);
+	kfree(raw->device);
+error_devalloc:
 	ida_simple_remove(&minors, minor);
 
 error_free:
+	gb_connection_put(raw->connection);
 	kfree(raw);
 	return retval;
 }
@@ -205,18 +272,19 @@ static void gb_raw_connection_exit(struct gb_connection *connection)
 	struct raw_data *raw_data;
 	struct raw_data *temp;
 
-	// FIXME - handle removing a connection when the char device node is open.
+	raw->state = GB_RAW_DESTROYED;
+	wake_up(&raw->read_wq);
+
 	cdev_del(&raw->cdev);
-	ida_simple_remove(&minors, MINOR(raw->dev));
 	device_del(raw->device);
+	ida_simple_remove(&minors, MINOR(raw->dev));
 	mutex_lock(&raw->list_lock);
 	list_for_each_entry_safe(raw_data, temp, &raw->list, entry) {
 		list_del(&raw_data->entry);
 		kfree(raw_data);
 	}
 	mutex_unlock(&raw->list_lock);
-
-	kfree(raw);
+	put_device(raw->device);
 }
 
 static struct gb_protocol raw_protocol = {
@@ -243,7 +311,9 @@ static int raw_open(struct inode *inode, struct file *file)
 	struct cdev *cdev = inode->i_cdev;
 	struct gb_raw *raw = container_of(cdev, struct gb_raw, cdev);
 
+	gb_raw_get(raw);
 	file->private_data = raw;
+
 	return 0;
 }
 
@@ -279,9 +349,14 @@ static ssize_t raw_read(struct file *file, char __user *buf, size_t count,
 			do {
 				mutex_unlock(&raw->list_lock);
 				retval = wait_event_interruptible(raw->read_wq,
-				    !list_empty(&raw->list));
+				    !list_empty(&raw->list) ||
+				    raw->state == GB_RAW_DESTROYED);
+
 				if (retval < 0)
 					return retval;
+				if (raw->state == GB_RAW_DESTROYED)
+					return -ENOTCONN;
+
 				mutex_lock(&raw->list_lock);
 			} while (list_empty(&raw->list));
 		} else
@@ -309,12 +384,22 @@ exit:
 	return retval;
 }
 
+static int raw_release(struct inode *inode, struct file *file)
+{
+	struct gb_raw *raw = file->private_data;
+
+	gb_raw_put(raw);
+
+	return 0;
+}
+
 static const struct file_operations raw_fops = {
 	.owner		= THIS_MODULE,
 	.write		= raw_write,
 	.read		= raw_read,
 	.open		= raw_open,
 	.llseek		= noop_llseek,
+	.release	= raw_release,
 };
 
 static int raw_init(void)
