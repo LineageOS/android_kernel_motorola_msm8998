@@ -14,6 +14,7 @@
 #include <linux/fs.h>
 #include <linux/idr.h>
 #include <linux/uaccess.h>
+#include <linux/poll.h>
 
 #include "greybus.h"
 
@@ -32,6 +33,7 @@ struct gb_raw {
 	struct cdev cdev;
 	struct device *device;
 	wait_queue_head_t read_wq;
+	atomic_t open_excl;
 
 	struct kref kref;
 	enum gb_raw_state state;
@@ -236,6 +238,7 @@ static int gb_raw_connection_init(struct gb_connection *connection)
 	device_initialize(raw->device);
 
 	init_waitqueue_head(&raw->read_wq);
+	atomic_set(&raw->open_excl, 0);
 	raw->dev = MKDEV(raw_major, minor);
 	cdev_init(&raw->cdev, &raw_fops);
 	raw->cdev.kobj.parent = &raw->device->kobj;
@@ -310,6 +313,9 @@ static int raw_open(struct inode *inode, struct file *file)
 {
 	struct cdev *cdev = inode->i_cdev;
 	struct gb_raw *raw = container_of(cdev, struct gb_raw, cdev);
+
+	if (atomic_xchg(&raw->open_excl, 1))
+		return -EBUSY;
 
 	gb_raw_get(raw);
 	file->private_data = raw;
@@ -388,9 +394,24 @@ static int raw_release(struct inode *inode, struct file *file)
 {
 	struct gb_raw *raw = file->private_data;
 
+	WARN_ON(!atomic_xchg(&raw->open_excl, 0));
 	gb_raw_put(raw);
 
 	return 0;
+}
+
+static unsigned int raw_poll(struct file *file,struct poll_table_struct *pll_table)
+{
+	int ret = 0;
+	struct gb_raw *raw = file->private_data;
+
+	poll_wait(file, &raw->read_wq, pll_table);
+	if (!list_empty(&raw->list))
+		ret |= POLLIN;
+	if (raw->state == GB_RAW_DESTROYED)
+		ret |= POLLHUP;
+
+	return ret;
 }
 
 static const struct file_operations raw_fops = {
@@ -400,6 +421,7 @@ static const struct file_operations raw_fops = {
 	.open		= raw_open,
 	.llseek		= noop_llseek,
 	.release	= raw_release,
+	.poll		= raw_poll,
 };
 
 static int raw_init(void)
