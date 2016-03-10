@@ -203,38 +203,32 @@ static void muc_handle_detection(bool force_removal, bool flashmode)
 	pr_debug("%s: detected: %d previous state: %d\n",
 			__func__, detected, cdata->muc_detected);
 
-	/* If this is a force removal, send out removal first if we were
-	 * previously detected
+	/* If this is a force removal, we were previously detected, and we
+	 * still are detected, we need to send out the removal and then
+	 * debounce the newly detected state.
 	 */
-	if (force_removal && cdata->muc_detected) {
+	if (force_removal && cdata->muc_detected && detected) {
 		pr_debug("%s: sending force removal\n", __func__);
 		err = muc_attach_notifier_call_chain(0);
 		if (err)
 			pr_warn("%s: force notify fail: %d\n", __func__, err);
 
-		/* If we were doing a force removal, and we are still detected
-		 * re-queue it for debouncing so it settles.
+		cdata->muc_detected = false;
+
+		/* Disable BPLUS on force removal to guarantee the attached mod
+		 * sees the BPLUS removal.
 		 */
-		if (detected) {
-			pr_debug("%s: re-queuing detection\n", __func__);
-
-			cdata->muc_detected = false;
-
-			/* Disable BPLUS on force removal to guarantee the
-			 * attached mod sees the BPLUS removal.
-			 */
-			if (!flashmode) {
-				muc_seq(cdata, cdata->dis_seq,
-						cdata->dis_seq_len);
-				cdata->bplus_state = MUC_BPLUS_DISABLED;
-			}
-
-			/* Perform a normal/isr detection */
-			queue_delayed_work(cdata->attach_wq,
-						&cdata->isr_work.work,
-						cdata->det_hysteresis);
-			return;
+		if (!flashmode) {
+			muc_seq(cdata, cdata->dis_seq,
+					cdata->dis_seq_len);
+			cdata->bplus_state = MUC_BPLUS_DISABLED;
 		}
+
+		/* Perform a normal/isr detection */
+		queue_delayed_work(cdata->attach_wq,
+					&cdata->isr_work.work,
+					cdata->det_hysteresis);
+		return;
 	}
 
 	if (detected == cdata->muc_detected) {
