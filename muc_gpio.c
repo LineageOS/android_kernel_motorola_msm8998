@@ -186,7 +186,7 @@ static void muc_handle_short(struct muc_data *cdata)
 	}
 }
 
-static void muc_handle_detection(bool force_removal, bool flashmode)
+static void muc_handle_detection(bool force_removal)
 {
 	struct muc_data *cdata = muc_misc_data;
 	bool detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
@@ -218,11 +218,8 @@ static void muc_handle_detection(bool force_removal, bool flashmode)
 		/* Disable BPLUS on force removal to guarantee the attached mod
 		 * sees the BPLUS removal.
 		 */
-		if (!flashmode) {
-			muc_seq(cdata, cdata->dis_seq,
-					cdata->dis_seq_len);
-			cdata->bplus_state = MUC_BPLUS_DISABLED;
-		}
+		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+		cdata->bplus_state = MUC_BPLUS_DISABLED;
 
 		/* Perform a normal/isr detection */
 		queue_delayed_work(cdata->attach_wq,
@@ -281,7 +278,7 @@ static void attach_work(struct work_struct *work)
 
 	pr_debug("%s: force: %s\n", __func__, force ? "yes" : "no");
 
-	muc_handle_detection(force, false);
+	muc_handle_detection(force);
 }
 
 static irqreturn_t muc_isr(int irq, void *data)
@@ -613,7 +610,7 @@ static void do_muc_reset(struct work_struct *work)
 	 */
 	cancel_delayed_work_sync(&muc_misc_data->isr_work.work);
 
-	muc_handle_detection(false, false);
+	muc_handle_detection(false);
 
 	kfree(dwork);
 
@@ -656,6 +653,12 @@ static void do_muc_ff_reset(struct work_struct *work)
 	disable_irq(cd->irq);
 	devm_free_irq(cd->dev, cd->irq, cd);
 
+	/* Send force removal before resetting the muc */
+	ret = muc_attach_notifier_call_chain(0);
+	if (ret)
+		pr_warn("%s: force notify fail: %d\n", __func__, ret);
+	cd->muc_detected = false;
+
 	if (cd->need_det_output)
 		gpio_direction_output(cd->gpios[MUC_GPIO_DET_N], 0);
 
@@ -686,7 +689,7 @@ static void do_muc_ff_reset(struct work_struct *work)
 	} else
 		cd->bplus_state = MUC_BPLUS_ENABLED;
 
-	muc_handle_detection(true, !rw->do_reset);
+	muc_handle_detection(false);
 
 	kfree(dwork);
 }
