@@ -629,6 +629,7 @@ void muc_simulate_reset(void)
 	queue_delayed_work(muc_misc_data->attach_wq, dw, 0);
 }
 
+#define DET_TIMEOUT_JIFFIES (HZ / 5) /* 200ms */
 static void do_muc_ff_reset(struct work_struct *work)
 {
 	struct muc_data *cd = muc_misc_data;
@@ -636,6 +637,7 @@ static void do_muc_ff_reset(struct work_struct *work)
 	struct delayed_work *dwork;
 	struct muc_reset_work *rw;
 	int ret;
+	unsigned long det_timeout;
 
 	dwork = container_of(work, struct delayed_work, work);
 	rw = container_of(dwork, struct muc_reset_work, work);
@@ -689,7 +691,19 @@ static void do_muc_ff_reset(struct work_struct *work)
 	} else
 		cd->bplus_state = MUC_BPLUS_ENABLED;
 
-	muc_handle_detection(false);
+	/* Lets wait for the device to be re-detected */
+	det_timeout = jiffies + DET_TIMEOUT_JIFFIES;
+	while (gpio_get_value(cd->gpios[MUC_GPIO_DET_N]) &&
+	       time_before_eq(jiffies, det_timeout))
+		;
+
+	/* If the gpio is still de-asserted, the device is gone */
+	if (gpio_get_value(cd->gpios[MUC_GPIO_DET_N])) {
+		muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
+		cd->bplus_state = MUC_BPLUS_DISABLED;
+		pinctrl_select_state(cd->pinctrl, cd->pins_discon);
+	} else
+		muc_handle_detection(false);
 
 	kfree(dwork);
 }
