@@ -36,6 +36,9 @@ struct gb_display_device {
 #define	GB_DISPLAY_SET_STATE			0x07
 #define	GB_DISPLAY_NOTIFICATION			0x08
 
+#define GB_DISPLAY_STATE_OFF			0x00
+#define GB_DISPLAY_STATE_ON			0x01
+
 #define GB_DISPLAY_NOTIFY_FAILURE		0x01
 #define GB_DISPLAY_NOTIFY_AVAILABLE		0x02
 #define GB_DISPLAY_NOTIFY_UNAVAILABLE		0x03
@@ -185,27 +188,36 @@ static int set_display_state(void *data, u8 state)
 	return ret;
 }
 
-static ssize_t display_config_show(struct device *dev,
+/* Sysfs Entries */
+
+static ssize_t config_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
 	struct gb_display_device *disp = dev_get_drvdata(dev);
 	struct mod_display_panel_config *display_config;
 	char dump_buf[64];
 	char *ptr;
-	int cnt, tot = 0;
-	size_t len;
+	int cnt;
+	ssize_t len, tot;
 	int ret;
 
 	ret = get_display_config((void *)disp, &display_config);
 	if (ret) {
 		dev_err(dev, "Failed to get config: %d\n", ret);
-		return ret;
+		tot = ret;
+		goto exit;
 	}
+
+	tot = scnprintf(buf, PAGE_SIZE, "0x%02x\n0x%02x\n0x%08x\n",
+		display_config->display_type,
+		display_config->config_type,
+		display_config->edid_buf_size);
 
 	ptr = display_config->edid_buf;
 
 	for (cnt = display_config->edid_buf_size; cnt > 0; cnt -= 16) {
-		hex_dump_to_buffer(ptr, min(cnt, 16), 16, 1, dump_buf, sizeof(dump_buf), false);
+		hex_dump_to_buffer(ptr, min(cnt, 16), 16, 1, dump_buf,
+			sizeof(dump_buf), false);
 		len = scnprintf(buf + tot, PAGE_SIZE - tot, "%s\n", dump_buf);
 		ptr += 16;
 		tot += len;
@@ -215,77 +227,84 @@ static ssize_t display_config_show(struct device *dev,
 
 	kfree(display_config);
 
+exit:
 	return tot;
 }
-static DEVICE_ATTR_RO(display_config);
+static DEVICE_ATTR_RO(config);
 
-static ssize_t connect_store(struct device *dev, struct device_attribute *attr,
-	const char *buf, size_t count)
+static ssize_t notification_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
 {
-	u32 connect;
-	int ret;
-
-	ret = kstrtou32(buf, 10, &connect);
-	if (ret < 0) {
-		dev_err(dev, "%s: Could not parse connect value %d\n", __func__,
-			ret);
-		return ret;
-	}
-
-	switch (connect) {
-	case 0:
-		dev_info(dev, "%s: Forcing disconnect\n", __func__);
-		mod_display_notification(MOD_NOTIFY_DISCONNECT);
-		break;
-	case 1:
-		dev_info(dev, "%s: Forcing connect\n", __func__);
+	if (!strncmp(buf, "connect", 7)) {
+		dev_dbg(dev, "%s: Forcing connect\n", __func__);
 		mod_display_notification(MOD_NOTIFY_CONNECT);
-		break;
-	default:
-		dev_err(dev, "%s: Invalid value: %d\n", __func__, connect);
-		return -EINVAL;
-	}
+	} else if (!strncmp(buf, "disconnect", 10)) {
+		dev_dbg(dev, "%s: Forcing disconnect\n", __func__);
+		mod_display_notification(MOD_NOTIFY_DISCONNECT);
+	} else if (!strncmp(buf, "available", 9)) {
+		dev_dbg(dev, "%s: Forcing available\n", __func__);
+		mod_display_notification(MOD_NOTIFY_AVAILABLE);
+	} else if (!strncmp(buf, "unavailable", 11)) {
+		dev_dbg(dev, "%s: Forcing unavailable\n", __func__);
+		mod_display_notification(MOD_NOTIFY_UNAVAILABLE);
+	} else if (!strncmp(buf, "failure", 7)) {
+		dev_dbg(dev, "%s: Forcing failure\n", __func__);
+		mod_display_notification(MOD_NOTIFY_FAILURE);
+	} else
+		dev_err(dev, "%s: Unknown notification: %s\n", __func__, buf);
 
 	return count;
 }
-static DEVICE_ATTR_WO(connect);
+static DEVICE_ATTR_WO(notification);
 
-static ssize_t display_state_store(struct device *dev, struct device_attribute *attr,
-	const char *buf, size_t count)
+static ssize_t state_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
 {
 	struct gb_display_device *disp = dev_get_drvdata(dev);
-	u32 display_state;
-	int ret;
+	u8 display_state;
+	ssize_t len = 0;
+	int ret = 0;
 
-	ret = kstrtou32(buf, 10, &display_state);
-	if (ret < 0) {
-		dev_err(dev, "%s: Could not parse display_state value %d\n", __func__,
-			ret);
-		return ret;
-	}
+	ret = get_display_state(disp, &display_state);
+	if (ret) {
+		dev_err(dev, "%s: failed to get display state! (ret: %d)\n",
+			__func__, ret);
+		len = ret;
+	} else if (display_state != GB_DISPLAY_STATE_ON &&
+		   display_state != GB_DISPLAY_STATE_OFF) {
+		dev_err(dev, "%s: invalid display state! (display_state: %d)\n",
+			__func__, display_state);
+		len = -EINVAL;
+	} else
+		len = scnprintf(buf, PAGE_SIZE, "%s\n", display_state ? "on" : "off");
 
-	switch (display_state) {
-	case 0:
-		dev_info(dev, "%s: Setting display state OFF\n", __func__);
+	return len;
+}
+
+static ssize_t state_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct gb_display_device *disp = dev_get_drvdata(dev);
+
+	if (!strncmp(buf, "off", 3)) {
+		dev_dbg(dev, "%s: Setting display state OFF\n", __func__);
 		set_display_state(disp, 0);
-		break;
-	case 1:
-		dev_info(dev, "%s: Setting display state ON\n", __func__);
+	} else if (!strncmp(buf, "on", 2)) {
+		dev_dbg(dev, "%s: Setting display state ON\n", __func__);
 		set_display_state(disp, 1);
-		break;
-	default:
-		dev_err(dev, "%s: Invalid value: %d\n", __func__, display_state);
+	} else {
+		dev_err(dev, "%s: Invalid state: %s\n", __func__, buf);
 		return -EINVAL;
 	}
 
 	return count;
 }
-static DEVICE_ATTR_WO(display_state);
+static DEVICE_ATTR_RW(state);
 
 static struct attribute *display_attrs[] = {
-	&dev_attr_display_config.attr,
-	&dev_attr_connect.attr,
-	&dev_attr_display_state.attr,
+	&dev_attr_config.attr,
+	&dev_attr_notification.attr,
+	&dev_attr_state.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(display);
