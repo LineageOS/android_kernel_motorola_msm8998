@@ -124,8 +124,14 @@ static void mods_codec_work(struct work_struct *work)
 		return;
 	}
 
-	if (!gb_codec || !gb_codec->mgmt_connection)
+	if (!gb_codec || !gb_codec->mgmt_connection) {
+		/* Always clear the rx/tx port active status
+		 * when greybus connection down
+ 		 */
+		priv->rx_active = false;
+		priv->tx_active = false;
 		return;
+	}
 
 	if (priv->substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		port_active = &priv->rx_active;
