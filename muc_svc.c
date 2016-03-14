@@ -1730,6 +1730,7 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *dev, u8 intf_id)
 {
 	struct mods_dl_device *mods_dev;
+	int ret;
 
 	pr_info("%s for %s [%d]\n", __func__, dev_name(dev), intf_id);
 	mods_dev = kzalloc(sizeof(*mods_dev), GFP_KERNEL);
@@ -1740,7 +1741,12 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 	mods_dev->dev = dev;
 	mods_dev->intf_id = intf_id;
 
-	mods_nw_add_dl_device(mods_dev);
+	ret = mods_nw_add_dl_device(mods_dev);
+	if (ret) {
+		dev_err(dev, "Failed to add interface %d: %d\n", intf_id, ret);
+		mods_dl_device_put(mods_dev);
+		return ERR_PTR(ret);
+	}
 
 	return mods_dev;
 }
