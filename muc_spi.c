@@ -439,11 +439,13 @@ static irqreturn_t muc_spi_isr_thread(int irq, void *data)
 	struct muc_spi_data *dd = data;
 
 	mutex_lock(&dd->mutex);
+	pm_stay_awake(&dd->spi->dev);
 
 	do {
 		muc_spi_transfer(dd, NULL, (dd->pkts_remaining > 1));
 	} while (!muc_gpio_get_int_n());
 
+	pm_relax(&dd->spi->dev);
 	mutex_unlock(&dd->mutex);
 
 	return IRQ_HANDLED;
@@ -546,6 +548,8 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		return -E2BIG;
 
 	mutex_lock(&dd->mutex);
+	pm_stay_awake(&dd->spi->dev);
+
 	hdr = (struct spi_msg_hdr *)dd->tx_pkt;
 	crc = (uint16_t *)&dd->tx_pkt[CRC_NDX(dd->pkt_size)];
 
@@ -577,6 +581,8 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 		remaining -= this_pl;
 		buf += this_pl;
 	}
+
+	pm_relax(&dd->spi->dev);
 	mutex_unlock(&dd->mutex);
 
 	return ret;
@@ -671,6 +677,11 @@ static int muc_spi_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, dd);
 
+	device_set_wakeup_capable(&spi->dev, true);
+	ret = device_wakeup_enable(&spi->dev);
+	if (ret)
+		dev_warn(&spi->dev, "Failed to wakeup_enable: %d\n", ret);
+
 	register_muc_attach_notifier(&dd->attach_nb);
 
 	return 0;
@@ -686,6 +697,8 @@ static int muc_spi_remove(struct spi_device *spi)
 	struct muc_spi_data *dd = spi_get_drvdata(spi);
 
 	dev_info(&spi->dev, "%s: enter\n", __func__);
+
+	device_wakeup_disable(&spi->dev);
 
 	flush_work(&dd->attach_work);
 	if (dd->attached) {
