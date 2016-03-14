@@ -1639,6 +1639,8 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 			VENDOR_CTRL_DEST_CPORT);
 
 	kfree(mods_dev->manifest);
+	kfree(mods_dev->hpw);
+	mods_dev->hpw = NULL;
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 
