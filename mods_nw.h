@@ -68,6 +68,8 @@ struct mods_dl_device {
 	__le32 fw_version;
 	char fw_version_str[FW_VER_STR_SZ];
 	__le32 slave_mask;
+
+	struct kref kref;
 };
 
 struct mods_nw_msg_filter {

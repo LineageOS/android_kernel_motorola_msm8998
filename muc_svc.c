@@ -1737,6 +1737,7 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 	if (!mods_dev)
 		return ERR_PTR(-ENOMEM);
 
+	kref_init(&mods_dev->kref);
 	mods_dev->drv = drv;
 	mods_dev->dev = dev;
 	mods_dev->intf_id = intf_id;
@@ -1751,6 +1752,15 @@ struct mods_dl_device *_mods_create_dl_device(struct mods_dl_driver *drv,
 	return mods_dev;
 }
 
+void mods_dl_device_get(struct mods_dl_device *mods_dev)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&svc_ops_lock, flags);
+	kref_get(&mods_dev->kref);
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
+}
+
 struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *dev, u8 intf_id)
 {
@@ -1762,11 +1772,28 @@ struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 }
 EXPORT_SYMBOL_GPL(mods_create_dl_device);
 
+static void mods_dl_device_free(struct kref *kref)
+{
+	struct mods_dl_device *mods_dev;
+
+	mods_dev = container_of(kref, struct mods_dl_device, kref);
+	kfree(mods_dev->hpw);
+	kfree(mods_dev);
+}
+
+void mods_dl_device_put(struct mods_dl_device *mods_dev)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&svc_ops_lock, flags);
+	kref_put(&mods_dev->kref, mods_dl_device_free);
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
+}
+
 void mods_remove_dl_device(struct mods_dl_device *dev)
 {
 	mods_nw_del_dl_device(dev);
-	kfree(dev->hpw);
-	kfree(dev);
+	mods_dl_device_put(dev);
 }
 EXPORT_SYMBOL_GPL(mods_remove_dl_device);
 
