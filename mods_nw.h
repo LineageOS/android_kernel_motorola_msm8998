@@ -84,7 +84,7 @@ extern int mods_nw_add_route(u8 from_intf, u16 from_cport,
 		u8 to_intf, u16 to_cport);
 extern void mods_nw_del_route(u8 from_intf, u16 from_cport,
 		u8 to_intf, u16 to_cport);
-extern void mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
+extern int mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
 extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
 extern struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id);
 

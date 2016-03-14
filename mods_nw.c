@@ -101,20 +101,25 @@ struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id)
 
 /* add the dl device to the table */
 /* called by the svc while creating the dl device */
-void mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
+int mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
 {
 	struct cport_set *new;
+	int ret = 0;
 
 	if (!mods_dev)
-		return;
+		return -EINVAL;
 
 	mutex_lock(&list_lock);
-	if (radix_tree_lookup(&nw_interfaces, mods_dev->intf_id))
+	if (radix_tree_lookup(&nw_interfaces, mods_dev->intf_id)) {
+		ret = -EEXIST;
 		goto unlock;
+	}
 
 	new = kzalloc(sizeof(*new), GFP_KERNEL);
-	if (!new)
+	if (!new) {
+		ret = -ENOMEM;
 		goto unlock;
+	}
 
 	new->dev = mods_dev;
 	INIT_RADIX_TREE(&new->tree, GFP_KERNEL);
@@ -122,6 +127,8 @@ void mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
 
 unlock:
 	mutex_unlock(&list_lock);
+
+	return ret;
 }
 
 void mods_nw_del_dl_device(struct mods_dl_device *mods_dev)
