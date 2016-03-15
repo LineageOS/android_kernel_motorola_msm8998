@@ -29,6 +29,12 @@
 #include "muc_svc.h"
 #include "mods_nw.h"
 
+enum muc_svc_recover {
+	MUC_SVC_RECOVERY_FULL,
+	MUC_SVC_RECOVERY_OFF,
+	MUC_SVC_RECOVERY_SOFT,
+};
+
 struct muc_svc_data {
 	struct mods_dl_device *dld;
 	atomic_t msg_num;
@@ -48,7 +54,7 @@ struct muc_svc_data {
 	struct delayed_work wdog_work;
 	unsigned long first_fail;
 	u8 fail_count;
-	bool recovery;
+	enum muc_svc_recover recovery_level;
 
 	u8 mod_root_ver;
 	u8 default_root_ver;
@@ -93,6 +99,24 @@ static void muc_svc_send_uevent(const char *event)
 
 	kobject_uevent_env(&svc_dd->pdev->dev.kobj, KOBJ_CHANGE, env->envp);
 	kfree(env);
+}
+
+static void _do_muc_recovery_level(void)
+{
+	switch (svc_dd->recovery_level) {
+	case MUC_SVC_RECOVERY_FULL:
+		muc_reset(svc_dd->mod_root_ver, false);
+		break;
+	case MUC_SVC_RECOVERY_OFF:
+		dev_warn(&svc_dd->pdev->dev, "Recovery reset disabled\n");
+		break;
+	case MUC_SVC_RECOVERY_SOFT:
+		muc_soft_reset();
+		break;
+	default:
+		dev_err(&svc_dd->pdev->dev, "Invalid recovery: %d\n",
+			svc_dd->recovery_level);
+	}
 }
 
 #define MUC_SVC_FAILURE_WINDOW (60 * 5 * HZ) /* 5 minute window */
@@ -145,13 +169,9 @@ static void muc_svc_recovery(void)
 		muc_poweroff();
 		svc_dd->fail_count = 0;
 	} else {
-		dev_err(&svc_dd->pdev->dev, "Performing hard-reset recovery\n");
+		dev_err(&svc_dd->pdev->dev, "Performing recovery\n");
 		muc_svc_send_uevent("MOD_ERROR=RECOVERY_ATTEMPT");
-		if (svc_dd->recovery)
-			muc_reset(svc_dd->mod_root_ver, false);
-		else
-			dev_warn(&svc_dd->pdev->dev,
-					"Recovery reset disabled\n");
+		_do_muc_recovery_level();
 	}
 }
 
@@ -202,11 +222,8 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 void muc_svc_communication_reset(void)
 {
 	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
-	if (svc_dd->recovery)
-		muc_reset(svc_dd->mod_root_ver, false);
-	else
-		dev_warn(&svc_dd->pdev->dev,
-				"%s: recovery disabled\n", __func__);
+	_do_muc_recovery_level();
+
 	mods_queue_error_event_empty(MUC_SVC_COMMUNICATION_RESET);
 	muc_svc_send_uevent("MOD_ERROR=COMMUNICATION_RESET");
 }
@@ -2228,30 +2245,41 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 static DEVICE_ATTR_WO(reset);
 
 static ssize_t
-recovery_enable_store(struct device *dev, struct device_attribute *attr,
+recovery_mode_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
-	unsigned long val;
 
-	if (kstrtoul(buf, 10, &val) < 0)
-		return -EINVAL;
+	if (!svc_dd)
+		return -ENODEV;
 
-	if (val != 1 && val != 0) {
-		dev_err(dev, "Invalid disable recovery state\n");
-		return -EINVAL;
+	if (strncmp(buf, "enable", 6) == 0) {
+		svc_dd->recovery_level = MUC_SVC_RECOVERY_FULL;
+		dev_info(dev, "recovery: fully enabled\n");
+		return count;
 	}
 
-	dev_info(dev, "recovery set to %s\n", val ? "enabled" : "disabled");
-	svc_dd->recovery = val ? true : false;
+	if (strncmp(buf, "disable", 7) == 0) {
+		svc_dd->recovery_level = MUC_SVC_RECOVERY_OFF;
+		dev_info(dev, "recovery: fully disabled\n");
+		return count;
+	}
 
-	return count;
+	if (strncmp(buf, "soft", 4) == 0) {
+		svc_dd->recovery_level = MUC_SVC_RECOVERY_SOFT;
+		dev_info(dev, "recovery: soft reset\n");
+		return count;
+	}
+
+	dev_err(dev, "invalid recovery mode [enable, disable, soft]\n");
+
+	return -EINVAL;
 }
-static DEVICE_ATTR_WO(recovery_enable);
+static DEVICE_ATTR_WO(recovery_mode);
 
 static struct attribute *muc_svc_base_attrs[] = {
 	&dev_attr_flashmode.attr,
 	&dev_attr_reset.attr,
-	&dev_attr_recovery_enable.attr,
+	&dev_attr_recovery_mode.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(muc_svc_base);
@@ -2304,7 +2332,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 		return ret;
 
 	/* initialize recovery to enabled */
-	dd->recovery = true;
+	dd->recovery_level = MUC_SVC_RECOVERY_FULL;
 
 	dd->dld = _mods_create_dl_device(&muc_svc_dl_driver, &pdev->dev,
 			MODS_INTF_SVC);
