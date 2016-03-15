@@ -766,3 +766,35 @@ void muc_poweroff(void)
 	INIT_DELAYED_WORK(dw, do_muc_poweroff);
 	queue_delayed_work(muc_misc_data->attach_wq, dw, 0);
 }
+
+static void do_muc_soft_reset(struct work_struct *work)
+{
+	struct muc_data *cd = muc_misc_data;
+	struct delayed_work *dwork;
+
+	pr_info("%s: requested soft reset\n", __func__);
+
+	dwork = container_of(work, struct delayed_work, work);
+
+	muc_attach_notifier_call_chain(0);
+	cd->muc_detected = false;
+
+	muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
+	cd->bplus_state = MUC_BPLUS_DISABLED;
+
+	muc_handle_detection(false);
+
+	kfree(dwork);
+}
+
+void muc_soft_reset(void)
+{
+	struct delayed_work *dw;
+
+	dw = kzalloc(sizeof(*dw), GFP_KERNEL);
+	if (!dw)
+		return;
+
+	INIT_DELAYED_WORK(dw, do_muc_soft_reset);
+	queue_delayed_work(muc_misc_data->attach_wq, dw, 0);
+}

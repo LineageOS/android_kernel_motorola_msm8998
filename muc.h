@@ -100,6 +100,7 @@ void muc_gpio_exit(struct device *dev, struct muc_data *cdata);
 int muc_intr_setup(struct muc_data *cdata, struct device *dev);
 void muc_intr_destroy(struct muc_data *cdata, struct device *dev);
 void muc_simulate_reset(void);
+void muc_soft_reset(void);
 
 /* Global variables */
 extern struct muc_data *muc_misc_data;
