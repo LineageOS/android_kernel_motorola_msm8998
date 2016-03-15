@@ -449,8 +449,11 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 	mutex_lock(&data->lock);
 	if (strm->used) {
 		vb = strm->vb2_q.bufs[index];
-		vb->v4l2_planes[0].bytesused = length;
-		vb2_buffer_done(vb, buffer_state);
+		if (vb != NULL) {
+			vb->v4l2_planes[0].bytesused = length;
+			vb2_buffer_done(vb, buffer_state);
+		} else
+			pr_warn("%s: return buffer in error status\n", __func__);
 	}
 	mutex_unlock(&data->lock);
 
