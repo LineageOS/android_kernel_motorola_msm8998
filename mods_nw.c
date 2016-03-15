@@ -320,6 +320,7 @@ static void _set_filter(uint8_t protocol, bool value)
 	struct cport_set *route;
 	struct dest_entry *dest;
 
+	mutex_lock(&list_lock);
 	radix_tree_for_each_slot(rt_slot, &nw_interfaces, &rt_iter, 0) {
 		route = radix_tree_deref_slot(rt_slot);
 
@@ -331,6 +332,7 @@ static void _set_filter(uint8_t protocol, bool value)
 				dest->filter = value;
 		}
 	}
+	mutex_unlock(&list_lock);
 }
 
 int mods_nw_register_filter(struct mods_nw_msg_filter *filter)
