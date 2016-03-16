@@ -423,21 +423,6 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	if (!dd->present)
 		return IRQ_HANDLED;
 
-	/*
-	 * Assert WAKE early so the MuC is ready (or close to ready) by the time
-	 * the ISR thread runs. Do not assert early if a wake delay is required
-	 * so the delay can be accurately timed in the ISR thread.
-	 */
-	if (!dd->wake_delay)
-		muc_gpio_set_wake_n(0);
-
-	return IRQ_WAKE_THREAD;
-}
-
-static irqreturn_t muc_spi_isr_thread(int irq, void *data)
-{
-	struct muc_spi_data *dd = data;
-
 	mutex_lock(&dd->mutex);
 	pm_stay_awake(&dd->spi->dev);
 
@@ -487,7 +472,7 @@ static int muc_attach(struct notifier_block *nb,
 
 		if (now_present) {
 			err = devm_request_threaded_irq(&spi->dev, spi->irq,
-							muc_spi_isr, muc_spi_isr_thread,
+							NULL, muc_spi_isr,
 							IRQF_TRIGGER_LOW |
 							IRQF_ONESHOT,
 							"muc_spi", dd);
