@@ -1386,6 +1386,7 @@ static void muc_svc_attach_work(struct work_struct *work)
 }
 
 static int muc_svc_control_version(struct mods_dl_device *mods_dev, u8 type,
+					u8 host_major, u8 host_minor,
 					uint16_t cport, u8 *major, u8 *minor)
 {
 	struct gb_protocol_version_response *ver;
@@ -1395,8 +1396,8 @@ static int muc_svc_control_version(struct mods_dl_device *mods_dev, u8 type,
 	if (!ver)
 		return -ENOMEM;
 
-	ver->major = GB_CONTROL_VERSION_MAJOR;
-	ver->minor = GB_CONTROL_VERSION_MINOR;
+	ver->major = host_major;
+	ver->minor = host_minor;
 
 	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)ver,
 				type, sizeof(*ver), cport);
@@ -1428,7 +1429,10 @@ muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
 	u8 type = GB_REQUEST_TYPE_PROTOCOL_VERSION;
 	int err;
 
-	err = muc_svc_control_version(mods_dev, type, out_cport,
+	err = muc_svc_control_version(mods_dev, type,
+					GB_CONTROL_VERSION_MAJOR,
+					GB_CONTROL_VERSION_MINOR,
+					out_cport,
 					&mods_dev->gb_ctrl_major,
 					&mods_dev->gb_ctrl_minor);
 	if (err) {
@@ -1535,6 +1539,8 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 	/* Get/Negotiate MB Control Protocol Version */
 	ret = muc_svc_control_version(mods_dev,
 				MB_CONTROL_TYPE_PROTOCOL_VERSION,
+				MB_CONTROL_VERSION_MAJOR,
+				MB_CONTROL_VERSION_MINOR,
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
 				&mods_dev->mb_ctrl_major,
 				&mods_dev->mb_ctrl_minor);
