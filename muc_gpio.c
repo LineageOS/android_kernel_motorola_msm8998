@@ -36,7 +36,11 @@ static int muc_attach_notifier_call_chain(unsigned long val)
 {
 	int ret;
 
-	pr_debug("%s val = %lu\n", __func__, val);
+	/* Log the new state and interrupts since last change in state */
+	pr_info("muc_attach_state: val = %lu intr_count = %d\n",
+		val, muc_misc_data->intr_count);
+	muc_misc_data->intr_count = 0;
+
 	ret  = blocking_notifier_call_chain(&muc_attach_chain_head,
 			val, NULL);
 	return notifier_to_errno(ret);
@@ -292,6 +296,8 @@ static irqreturn_t muc_isr(int irq, void *data)
 	 */
 	if (cdata->bplus_state == MUC_BPLUS_ENABLING)
 		return IRQ_HANDLED;
+
+	muc_misc_data->intr_count++;
 
 	pr_debug("%s: detected: %d previous state: %d\n",
 			__func__, det, cdata->muc_detected);

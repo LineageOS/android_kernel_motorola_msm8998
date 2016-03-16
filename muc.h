@@ -89,6 +89,8 @@ struct muc_data {
 
 	/* Mod short detection */
 	int short_count;
+
+	u32 intr_count;
 };
 
 /* Global functions */
