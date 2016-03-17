@@ -443,7 +443,7 @@ static irqreturn_t muc_spi_isr_thread(int irq, void *data)
 
 	do {
 		muc_spi_transfer(dd, NULL, (dd->pkts_remaining > 1));
-	} while (!muc_gpio_get_int_n());
+	} while (!muc_gpio_get_int_n() && dd->present);
 
 	pm_relax(&dd->spi->dev);
 	mutex_unlock(&dd->mutex);
