@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/of_platform.h>
 #include <linux/clk.h>
 #include <linux/mtd/mtd.h>
 #include <linux/workqueue.h>
@@ -58,6 +59,9 @@ struct apba_seq {
 struct apba_ctrl {
 	struct device *dev;
 	struct clk *mclk;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pinctrl_state_default;
+	struct pinctrl_state *pinctrl_state_active;
 	int gpio_cnt;
 	int gpios[APBA_NUM_GPIOS];
 	const char *gpio_labels[APBA_NUM_GPIOS];
@@ -77,6 +81,7 @@ struct apba_ctrl {
 	struct completion mode_comp;
 	uint8_t master_intf;
 	uint8_t mode;
+	bool flash_dev_populated;
 } *g_ctrl;
 
 /* message from APBA Ctrl driver in kernel */
@@ -264,15 +269,78 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 	}
 }
 
+static void populate_transports_node(struct apba_ctrl *ctrl)
+{
+	struct device_node *np;
+
+	np = of_find_node_by_name(ctrl->dev->of_node, "transports");
+	if (!np) {
+		dev_warn(ctrl->dev, "transports node not present\n");
+		return;
+	}
+
+	np = of_find_compatible_node(np, NULL, "moto,apba-spi-transfer");
+	if (!np) {
+		dev_warn(ctrl->dev, "SPI transport device not present\n");
+		return;
+	}
+
+	dev_dbg(ctrl->dev, "%s: creating platform device\n", __func__);
+	if (!of_platform_device_create(np, NULL, ctrl->dev)) {
+		dev_warn(ctrl->dev, "failed to populate transport devices\n");
+	} else {
+		ctrl->flash_dev_populated = true;
+	}
+}
+
+/*
+ * for flash on:
+ *   Configure SPI interface pin control for use of the SPI interface to
+ *    the flash part.
+ *   Set the PMIC GPIO and any other GPIOs needed for AP to interface with
+ *    the flash part on the SPI interface.
+ *   Search device tree entry for a transport node which holds the SPI
+ *    interface info.
+ *   If the transport node is found, probe the flash device on the SPI
+ *    interface.
+ *
+ * for flash off:
+ *   reverse the above conditions.
+ */
 static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 {
-	/* set the GPIOs properly for the flash part
-	 * whether APBA is on or off
-	 */
-	if (on)
+	int ret;
+
+	if (on) {
+		dev_dbg(ctrl->dev, "%s: Pinctrl set active\n", __func__);
+		if (!IS_ERR(ctrl->pinctrl_state_active)) {
+			ret = pinctrl_select_state(ctrl->pinctrl,
+						   ctrl->pinctrl_state_active);
+			if (ret)
+				dev_err(ctrl->dev,
+					"%s: Pinctrl set failed %d\n",
+					__func__, ret);
+		}
+
 		apba_seq(ctrl, &ctrl->flash_start_seq);
-	else
+
+		populate_transports_node(ctrl);
+	} else {
+		if (ctrl->flash_dev_populated) {
+			of_platform_depopulate(ctrl->dev);
+			ctrl->flash_dev_populated = false;
+		}
+
 		apba_seq(ctrl, &ctrl->flash_end_seq);
+
+		dev_dbg(ctrl->dev, "%s: Pinctrl set default\n", __func__);
+		ret = pinctrl_select_state(ctrl->pinctrl,
+					   ctrl->pinctrl_state_default);
+		if (ret)
+			dev_err(ctrl->dev,
+				"%s: Pinctrl set default failed %d\n",
+				__func__, ret);
+	}
 }
 
 static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
@@ -510,6 +578,32 @@ static ssize_t apba_enable_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", g_ctrl->desired_on);
 }
 
+static ssize_t flash_enable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return 0;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", (int)g_ctrl->flash_dev_populated);
+}
+
+static ssize_t flash_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+	else if (val != 0 && val != 1)
+		return -EINVAL;
+
+	apba_flash_on(g_ctrl, val ? true : false);
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(flash_enable);
+
 static ssize_t apba_enable_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -685,6 +779,7 @@ static DEVICE_ATTR_WO(apbe_power);
 static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
 	&dev_attr_flash_partition.attr,
+	&dev_attr_flash_enable.attr,
 	&dev_attr_apba_enable.attr,
 	&dev_attr_apba_baud.attr,
 	&dev_attr_apba_log.attr,
@@ -708,6 +803,7 @@ static void apba_firmware_callback(const struct firmware *fw,
 
 	if (!fw) {
 		pr_err("%s: no firmware available\n", __func__);
+		apba_flash_on(ctrl, false);
 		if (ctrl->desired_on)
 			apba_on(ctrl, true);
 		return;
@@ -1181,6 +1277,29 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		&ctrl->flash_end_seq);
 	if (ret)
 		goto disable_irq;
+
+	/* A default pinctrl state (at least) is expected */
+	ctrl->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(ctrl->pinctrl)) {
+		dev_err(&pdev->dev, "Pinctrl not defined\n");
+		ret = PTR_ERR(ctrl->pinctrl);
+		goto disable_irq;
+	}
+
+	ctrl->pinctrl_state_default = pinctrl_lookup_state(ctrl->pinctrl,
+							   PINCTRL_STATE_DEFAULT);
+	if (IS_ERR(ctrl->pinctrl_state_default)) {
+		dev_err(&pdev->dev, "Pinctrl lookup failed for default\n");
+		ret = PTR_ERR(ctrl->pinctrl_state_default);
+		goto disable_irq;
+	}
+
+	/* The spi_active pinctrl state is optional */
+	ctrl->pinctrl_state_active = pinctrl_lookup_state(ctrl->pinctrl,
+							  "spi_active");
+	if (IS_ERR(ctrl->pinctrl_state_active)) {
+		dev_warn(&pdev->dev, "Pinctrl lookup failed for spi_active\n");
+	}
 
 	mutex_init(&ctrl->log_mutex);
 	init_completion(&ctrl->comp);
