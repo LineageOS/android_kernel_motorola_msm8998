@@ -117,8 +117,8 @@ static int get_display_config(void *data, struct mod_display_panel_config **disp
 
 	config->display_type = config_response->display_type;
 	config->config_type = config_response->config_type;
-	config->edid_buf_size = config_size;
-	memcpy(config->edid_buf, config_response->data, config_size);
+	config->config_size = config_size;
+	memcpy(config->config_buf, config_response->data, config_size);
 
 	*display_config = config;
 
@@ -211,11 +211,11 @@ static ssize_t config_show(struct device *dev,
 	tot = scnprintf(buf, PAGE_SIZE, "0x%02x\n0x%02x\n0x%08x\n",
 		display_config->display_type,
 		display_config->config_type,
-		display_config->edid_buf_size);
+		display_config->config_size);
 
-	ptr = display_config->edid_buf;
+	ptr = display_config->config_buf;
 
-	for (cnt = display_config->edid_buf_size; cnt > 0; cnt -= 16) {
+	for (cnt = display_config->config_size; cnt > 0; cnt -= 16) {
 		hex_dump_to_buffer(ptr, min(cnt, 16), 16, 1, dump_buf,
 			sizeof(dump_buf), false);
 		len = scnprintf(buf + tot, PAGE_SIZE - tot, "%s\n", dump_buf);
