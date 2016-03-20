@@ -164,10 +164,6 @@ static void muc_svc_recovery(void)
 		svc_dd->first_fail = jiffies;
 	}
 
-	/* Create an error event on first recovery case */
-	if (!svc_dd->fail_count)
-		mods_queue_error_event_empty(MUC_SVC_ATTACH_ERROR);
-
 	/* Too many failures within the window, shut her down */
 	if (++svc_dd->fail_count > MUC_SVC_WATCHDOG_MAX_RETRIES) {
 		dev_err(&svc_dd->pdev->dev,
@@ -190,24 +186,34 @@ static void muc_svc_wdog(struct work_struct *work)
 	muc_svc_recovery();
 }
 
-static void muc_svc_clear_wdog(void)
+static void muc_svc_clear_wdog(struct mods_dl_device *mods_dev)
 {
-	char retrystring[16];
-	int count;
+	u8 count = svc_dd->fail_count;
+	struct kobj_uevent_env *env;
 
 	cancel_delayed_work_sync(&svc_dd->wdog_work);
 
 	if (!svc_dd->fail_count)
 		return;
-
-	count = scnprintf(retrystring, sizeof(retrystring), "retries: %2d\n",
-				svc_dd->fail_count);
-
-	muc_svc_send_uevent("MOD_EVENT=RECOVERY_SUCCESS");
-	mods_queue_error_event_text(MUC_SVC_RECOVERY_SUCCESS,
-					retrystring, count);
-
 	svc_dd->fail_count = 0;
+
+	env = kzalloc(sizeof(*env), GFP_KERNEL);
+	if (!env)
+		return;
+
+	add_uevent_var(env, "MOD_EVENT=RECOVERY_SUCCESS");
+	add_uevent_var(env, "RECOVERY_RETRIES=%d", count);
+	add_uevent_var(env, "RECOVERY_VID=%d",
+		mods_dev->hpw->hotplug.data.ara_vend_id);
+	add_uevent_var(env, "RECOVERY_PID=%d",
+		mods_dev->hpw->hotplug.data.ara_prod_id);
+	add_uevent_var(env, "RECOVERY_UID=0x%016llX%016llX",
+		mods_dev->uid_high, mods_dev->uid_low);
+	add_uevent_var(env, "RECOVERY_FW_VERSION=0x%08X", mods_dev->fw_version);
+	kobject_uevent_env(&svc_dd->pdev->dev.kobj, KOBJ_CHANGE, env->envp);
+
+	dev_dbg(&svc_dd->pdev->dev, "report RECOVERY_SUCCESS\n");
+	kfree(env);
 }
 
 #define MUC_SVC_WATCHDOG_ATTACH_TIMEOUT (5 * HZ) /* 5s */
@@ -1958,7 +1964,7 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 		goto free_ext_ctrl;
 
 	/* Got successful external interface notification, can cancel wdog */
-	muc_svc_clear_wdog();
+	muc_svc_clear_wdog(mods_dev);
 
 	return 0;
 
