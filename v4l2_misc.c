@@ -23,6 +23,7 @@
 #include <media/v4l2-device.h>
 
 #include "v4l2_hal.h"
+#include "v4l2_hal_internal.h"
 
 struct v4l2_misc_command {
 	atomic_t pending_read;
@@ -34,6 +35,7 @@ struct v4l2_misc_command {
 	void *data;
 	int orig_fd;
 	struct file *ionfile;
+	void *priv;
 	wait_queue_head_t wait;
 	struct completion comp;
 	struct mutex lock;
@@ -121,7 +123,18 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	atomic_set(&target_cmd->pending_resp, 1);
 
 	/* make sure there is enough space to copy */
-	copy_size = sizeof(struct misc_read_cmd) + target_cmd->size;
+	if (target_cmd->cmd == VIDIOC_G_EXT_CTRLS ||
+	    target_cmd->cmd == VIDIOC_S_EXT_CTRLS) {
+		struct v4l2_ext_controls *ctrls = target_cmd->data;
+		if (g_data->compat)
+			copy_size = sizeof(struct misc_read_cmd) +
+				v4l2_hal_get_required_size32(ctrls);
+		else
+			copy_size = sizeof(struct misc_read_cmd) +
+				v4l2_hal_get_required_size(ctrls);
+	} else
+		copy_size = sizeof(struct misc_read_cmd) + target_cmd->size;
+
 	if (copy_size > count) {
 		pr_err("%s: No enough memory to copy data.\n", __func__);
 		ret = -ENOMEM;
@@ -189,10 +202,31 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 		}
 	}
 
-	if (copy_to_user((void __user *)misc_cmd->data,
-			 target_cmd->data, target_cmd->size)) {
-		ret = -EFAULT;
-		goto errout;
+	if (target_cmd->cmd == VIDIOC_G_EXT_CTRLS ||
+	    target_cmd->cmd == VIDIOC_S_EXT_CTRLS) {
+		struct v4l2_ext_controls *ctrls = target_cmd->data;
+		if (g_data->compat) {
+			ret =v4l2_hal_put_ext_controls32(ctrls,
+							 misc_cmd->data,
+							 target_cmd->priv);
+
+			if (target_cmd->cmd == VIDIOC_G_EXT_CTRLS)
+				misc_cmd->cmd = VIDIOC_G_EXT_CTRLS32;
+			else
+				misc_cmd->cmd = VIDIOC_S_EXT_CTRLS32;
+		} else
+			ret =v4l2_hal_put_ext_controls(ctrls,
+						       misc_cmd->data,
+						       target_cmd->priv);
+
+		if (ret)
+			goto errout;
+	} else {
+		if (copy_to_user((void __user *)misc_cmd->data,
+				 target_cmd->data, target_cmd->size)) {
+			ret = -EFAULT;
+			goto errout;
+		}
 	}
 
 	return copy_size;
@@ -249,8 +283,24 @@ static int misc_copy_ioctl(struct v4l2_misc_command *target_cmd,
 		return -EINVAL;
 	}
 
-	if (copy_from_user(target_cmd->data, data, _IOC_SIZE(cmd)))
-		return -EFAULT;
+	if (cmd == VIDIOC_G_EXT_CTRLS ||
+	    cmd == VIDIOC_S_EXT_CTRLS) {
+		int ret;
+		struct v4l2_ext_controls *ctrls = target_cmd->data;
+
+		if (g_data->compat)
+			ret = v4l2_hal_get_ext_controls32(ctrls, data,
+							  target_cmd->priv);
+		else
+			ret = v4l2_hal_get_ext_controls(ctrls, data,
+							target_cmd->priv);
+
+		if (ret)
+			return ret;
+	} else {
+		if (copy_from_user(target_cmd->data, data, _IOC_SIZE(cmd)))
+			return -EFAULT;
+	}
 
 	return 0;
 }
@@ -264,9 +314,13 @@ static int misc_process_v4l2_ioctl(struct v4l2_misc_command *target_cmd, void *a
 	if (copy_from_user(&ioctl_resp, arg, sizeof(ioctl_resp)))
 		return -EFAULT;
 
-	if (g_data->compat)
+	if (g_data->compat) {
 		data_ptr = compat_ptr((compat_uptr_t)ioctl_resp.data);
-	else
+		if (ioctl_resp.cmd == VIDIOC_G_EXT_CTRLS32)
+			ioctl_resp.cmd = VIDIOC_G_EXT_CTRLS;
+		else if (ioctl_resp.cmd == VIDIOC_S_EXT_CTRLS32)
+			ioctl_resp.cmd = VIDIOC_S_EXT_CTRLS;
+	} else
 		data_ptr = (void *)ioctl_resp.data;
 
 	if (!atomic_read(&target_cmd->pending_resp)) {
@@ -429,6 +483,7 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	int ret;
 	struct v4l2_hal_qbuf_data *qb;
 	struct v4l2_control *ctrl;
+	void *priv = NULL;
 
 	/* OPEN request will be sent to monitor.
 	 * Other stream request will be sent to its handler.
@@ -437,6 +492,12 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 		target_cmd_queue = &g_data->command[V4L2_HAL_MAX_STREAMS];
 	else
 		target_cmd_queue = &g_data->command[stream];
+
+	/* Need to save all ext control data existing in userspace */
+	if (cmd == VIDIOC_G_EXT_CTRLS || cmd == VIDIOC_S_EXT_CTRLS) {
+		if (v4l2_hal_ext_ctrl_save_private(data, &priv))
+			return -EFAULT;
+	}
 
 	/* each stream only allow one command queued at a time */
 	mutex_lock(&target_cmd_queue->lock);
@@ -447,6 +508,7 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	target_cmd_queue->data = data;
 	target_cmd_queue->orig_fd = -1;
 	target_cmd_queue->ionfile = NULL;
+	target_cmd_queue->priv = priv;
 
 	if (cmd == VIOC_HAL_STREAM_QBUF) {
 		qb = data;
@@ -477,6 +539,17 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	ret = atomic_read(&target_cmd_queue->result_code);
 
 	mutex_unlock(&target_cmd_queue->lock);
+
+	if (cmd != VIDIOC_G_EXT_CTRLS && cmd != VIDIOC_S_EXT_CTRLS)
+		return ret;
+
+	if (!priv)
+		return ret;
+
+	if (cmd == VIDIOC_G_EXT_CTRLS)
+		ret = v4l2_hal_ext_ctrl_restore_private(data, priv);
+
+	kfree(priv);
 
 	return ret;
 }

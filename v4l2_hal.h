@@ -117,23 +117,4 @@ struct v4l2_hal_qbuf_data {
 	unsigned int length;
 };
 
-bool v4l2_misc_compat_mode(void);
-int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
-			      size_t size, void *data);
-int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream,
-			  int fd, unsigned int length,
-			  enum misc_buffer_state state);
-int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index);
-void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream,
-			    int index, int orig_fd, int mapped_fd);
-int v4l2_hal_get_mapped_fd_for_cid(void *hal_data, unsigned int stream,
-				   __u32 cid);
-void v4l2_hal_set_mapped_fd_for_cid(void *hal_data, unsigned int stream,
-				    __u32 cid, int orig_fd, int mapped_fd);
-
-int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream);
-void *v4l2_hal_init(void);
-void v4l2_hal_exit(void *);
-
-
 #endif /* __V4L2_HAL_H__ */

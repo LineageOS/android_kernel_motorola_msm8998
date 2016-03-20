@@ -22,6 +22,7 @@
 #include <media/v4l2-ctrls.h>
 
 #include "v4l2_hal.h"
+#include "v4l2_hal_internal.h"
 
 #define V4L2_HAL_DRIVER_VERSION 1
 #define HAL_DEV_NAME "v4l2_hal"
@@ -340,6 +341,28 @@ static int set_ctrl(struct file *file, void *fh,
 	return ret;
 }
 
+static int get_ext_ctrls(struct file *file, void *fh,
+			 struct v4l2_ext_controls *ctrls) {
+	int ret;
+	struct v4l2_stream_data *strm = file->private_data;
+
+	ret = v4l2_misc_process_command(strm->id, VIDIOC_G_EXT_CTRLS,
+					sizeof(*ctrls), ctrls);
+
+	return ret;
+}
+
+static int set_ext_ctrls(struct file *file, void *fh,
+			 struct v4l2_ext_controls *ctrls) {
+	int ret;
+	struct v4l2_stream_data *strm = file->private_data;
+
+	ret = v4l2_misc_process_command(strm->id, VIDIOC_S_EXT_CTRLS,
+					sizeof(*ctrls), ctrls);
+
+	return ret;
+}
+
 static int v4l2_hal_queue_setup(struct vb2_queue *q,
 				const struct v4l2_format *fmt,
 				unsigned int *num_buffers,
@@ -654,6 +677,9 @@ static const struct v4l2_ioctl_ops v4l2_hal_ioctl_ops = {
 
 	.vidioc_g_ctrl			= get_ctrl,
 	.vidioc_s_ctrl			= set_ctrl,
+
+	.vidioc_g_ext_ctrls		= get_ext_ctrls,
+	.vidioc_s_ext_ctrls		= set_ext_ctrls,
 };
 
 static struct v4l2_file_operations v4l2_hal_fops = {
