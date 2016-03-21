@@ -369,7 +369,7 @@ static int misc_process_stream_command(struct v4l2_misc_command *target_cmd,
 		return -EINVAL;
 	}
 
-	atomic_set(&target_cmd->result_code, 0);
+	atomic_set(&target_cmd->result_code, stream_resp.result_code);
 	complete(&target_cmd->comp);
 
 	return 0;
