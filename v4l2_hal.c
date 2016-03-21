@@ -541,16 +541,23 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 	struct v4l2_stream_data *strm;
 	struct vb2_buffer *vb;
 	enum vb2_buffer_state buffer_state;
-
 	if (stream >= V4L2_HAL_MAX_STREAMS)
 		return -EINVAL;
 
-	if (state == MISC_BUFFER_STATE_DONE)
+	switch(state) {
+	case MISC_BUFFER_STATE_DONE:
 		buffer_state = VB2_BUF_STATE_DONE;
-	else if (state == MISC_BUFFER_STATE_ERROR)
+		break;
+	case MISC_BUFFER_STATE_ERROR:
 		buffer_state = VB2_BUF_STATE_ERROR;
-	else
+		break;
+	case MISC_BUFFER_STATE_QUEUED:
+		buffer_state = VB2_BUF_STATE_QUEUED;
+		break;
+	default:
 		return -EINVAL;
+	}
+
 	strm = &data->strms[stream];
 	mutex_lock(&data->lock);
 	if (strm->used) {

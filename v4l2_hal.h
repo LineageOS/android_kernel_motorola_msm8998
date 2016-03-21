@@ -26,6 +26,7 @@ struct misc_stream_resp {
 
 enum misc_buffer_state {
 	MISC_BUFFER_STATE_DONE,
+	MISC_BUFFER_STATE_QUEUED,
 	MISC_BUFFER_STATE_ERROR,
 };
 
