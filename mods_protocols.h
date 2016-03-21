@@ -61,7 +61,7 @@
 
 /* Version of the Greybus control protocol we support */
 #define MB_CONTROL_VERSION_MAJOR              0x00
-#define MB_CONTROL_VERSION_MINOR              0x05
+#define MB_CONTROL_VERSION_MINOR              0x06
 
 /* Greybus control request types */
 #define MB_CONTROL_TYPE_INVALID               0x00
@@ -74,6 +74,8 @@
 #define MB_CONTROL_TYPE_GET_ROOT_VER          0x07
 #define MB_CONTROL_TYPE_RTC_SYNC              0x08
 #define MB_CONTROL_TYPE_SLAVE_STATE           0x09
+#define MB_CONTROL_TYPE_SET_CURRENT_LIMIT     0x0a
+#define MB_CONTROL_TYPE_CAPABLITY_CHANGED     0x10
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -88,6 +90,17 @@
 #define MB_CONTROL_SLAVE_POWER_OFF            0x02
 #define MB_CONTROL_SLAVE_POWER_FLASH_MODE     0x03
 
+#define MB_CONTROL_CURRENT_LIMIT_LOW                  0x00
+#define MB_CONTROL_CURRENT_LIMIT_FULL                 0x01
+
+#define MB_CONTROL_CAPABILITY_FULL                    0x00
+#define MB_CONTROL_CAPABILITY_REDUCED                 0x01
+#define MB_CONTROL_CAPABILITY_DISABLED                0x02
+
+#define MB_CONTROL_CAPABILITY_CAUSE_TEMP_MASK         0x01
+#define MB_CONTROL_CAPABILITY_CAUSE_BATTERY_MASK      0x02
+#define MB_CONTROL_CAPABILITY_CAUSE_BPLUS_MASK        0x04
+
 /* Reserved Values for core version, all others are versions */
 #define MB_CONTROL_ROOT_VER_INVALID           0x00
 #define MB_CONTROL_ROOT_VER_NOT_APPLICABLE    0xff
@@ -97,6 +110,9 @@
 
 #define MB_CONTROL_SUPPORT_RTC_SYNC_MAJOR             0x00
 #define MB_CONTROL_SUPPORT_RTC_SYNC_MINOR             0x03
+
+#define MB_CONTROL_SUPPORT_SET_CURRENT_LIMIT_MAJOR    0x00
+#define MB_CONTROL_SUPPORT_SET_CURRENT_LIMIT_MINOR    0x06
 
 /* Version Support Macros */
 #define MB_CONTROL_SUPPORTS(mods_dev, name) \
@@ -158,5 +174,18 @@ struct gb_control_slave_state_request {
 	__le32  slave_state;
 } __packed;
 /* Control protocol slave state response has no payload */
+
+/* Control protocol current limit request */
+struct mb_control_current_limit_request {
+	__u8 limit;
+} __packed;
+/* Control protocol current limit response has no payload */
+
+struct mb_control_capability_changed_request {
+	__u8 level;
+	__u8 reason;
+	__le16 vendor;
+} __packed;
+/* Control protocol functionality limit has no response */
 
 #endif /* __MODS_PROTOCOLS_H */
