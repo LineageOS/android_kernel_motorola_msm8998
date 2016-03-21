@@ -82,12 +82,14 @@ struct muc_svc_hotplug_work {
 
 #define SVC_MSG_DEFAULT_TIMEOUT 500
 #define SVC_AP_HOTPLUG_UNPLUG_TIMEOUT 5000
+#define SVC_CURRENT_LIMIT_TIMEOUT_MS 100
 
 #define kobj_to_device(k) \
 	container_of(k, struct mods_dl_device, intf_kobj)
 
 static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master);
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
+static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
 
 static void muc_svc_send_uevent(const char *event)
 {
@@ -355,6 +357,42 @@ uevent_store(struct mods_dl_device *dev, const char *buf, size_t count)
 	return count;
 }
 
+static ssize_t
+current_limit_store(struct mods_dl_device *mods_dev,
+		const char *buf, size_t count)
+{
+	uint8_t limit;
+	int ret;
+
+	if (!strncmp(buf, "low", 3))
+		limit = MB_CONTROL_CURRENT_LIMIT_LOW;
+	else if (!strncmp(buf, "full", 4))
+		limit = MB_CONTROL_CURRENT_LIMIT_FULL;
+	else
+		return -EINVAL;
+
+	ret = muc_svc_send_current_limit(mods_dev, limit);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t capability_level_show(struct mods_dl_device *dev, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "0x%02X", dev->capability.level);
+}
+
+static ssize_t capability_reason_show(struct mods_dl_device *dev, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "0x%02X", dev->capability.reason);
+}
+
+static ssize_t capability_vendor_show(struct mods_dl_device *dev, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "0x%04X", dev->capability.vendor);
+}
+
 struct muc_svc_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
@@ -379,6 +417,10 @@ static MUC_SVC_ATTR(uevent, 0200, NULL, uevent_store);
 static MUC_SVC_ATTR(fw_version, 0444, fw_version_show, NULL);
 static MUC_SVC_ATTR(fw_version_str, 0444, fw_version_str_show, NULL);
 static MUC_SVC_ATTR(blank, 0200, NULL, blank_store);
+static MUC_SVC_ATTR(current_limit, 0200, NULL, current_limit_store);
+static MUC_SVC_ATTR(capability_level, 0444,  capability_level_show, NULL);
+static MUC_SVC_ATTR(capability_reason, 0444, capability_reason_show, NULL);
+static MUC_SVC_ATTR(capability_vendor, 0444, capability_vendor_show, NULL);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -424,6 +466,10 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_fw_version.attr,
 	&muc_svc_attr_fw_version_str.attr,
 	&muc_svc_attr_blank.attr,
+	&muc_svc_attr_current_limit.attr,
+	&muc_svc_attr_capability_level.attr,
+	&muc_svc_attr_capability_reason.attr,
+	&muc_svc_attr_capability_vendor.attr,
 	NULL,
 };
 
@@ -970,7 +1016,34 @@ mods_slave_state(struct mods_dl_device *dld, struct gb_message *req,
 	muc_svc_broadcast_slave_notification(mods_dev);
 
 	mutex_unlock(&svc_list_lock);
+	return 0;
+}
 
+static int
+muc_svc_capability_changed(struct mods_dl_device *dld, struct gb_message *msg,
+			  uint16_t cport)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct mods_dl_device *mods_dev;
+	struct mb_control_capability_changed_request *req = msg->payload;
+	u8 intf_id;
+
+	mutex_lock(&svc_list_lock);
+	intf_id = SVC_VENDOR_CTRL_INTF(cport);
+	mods_dev = dev_from_intf(intf_id);
+	if (!mods_dev) {
+		dev_err(&dd->pdev->dev, "Interface not found: %d\n", intf_id);
+		mutex_unlock(&svc_list_lock);
+		return -EINVAL;
+	}
+
+	dld->capability.level = req->level;
+	dld->capability.reason = req->reason;
+	dld->capability.vendor = le16_to_cpu(req->vendor);
+
+	muc_svc_send_uevent("MOD_EVENT=CAPABILITY_CHANGED");
+
+	mutex_unlock(&svc_list_lock);
 	return 0;
 }
 
@@ -994,6 +1067,9 @@ muc_svc_handle_mods_request(struct mods_dl_device *dld, uint8_t *data,
 	switch (hdr.type) {
 	case MB_CONTROL_TYPE_SLAVE_STATE:
 		ret = mods_slave_state(dld, req, cport);
+		break;
+	case MB_CONTROL_TYPE_CAPABLITY_CHANGED:
+		ret = muc_svc_capability_changed(dld, req, cport);
 		break;
 	default:
 		dev_err(&dd->pdev->dev, "Unsupported Mods Request type: %d\n",
@@ -2276,6 +2352,28 @@ static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode)
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
 
 	return ret;
+}
+
+static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit)
+{
+	struct gb_message *msg;
+	struct mb_control_current_limit_request request;
+
+	if (!MB_CONTROL_SUPPORTS(dev, SET_CURRENT_LIMIT))
+		return -ENOENT;
+
+	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&request,
+			MB_CONTROL_TYPE_SET_CURRENT_LIMIT, sizeof(request),
+			SVC_VENDOR_CTRL_CPORT(dev->intf_id),
+			SVC_CURRENT_LIMIT_TIMEOUT_MS);
+	if (IS_ERR(msg)) {
+		dev_err(&svc_dd->pdev->dev,
+			"[%d] Failed to set current limit\n", dev->intf_id);
+		return PTR_ERR(msg);
+	}
+	svc_gb_msg_free(msg);
+
+	return 0;
 }
 
 static int muc_svc_enter_fw_flash(struct device *dev)

@@ -49,6 +49,12 @@ struct mods_slave_ctrl_driver {
 	struct list_head list;
 };
 
+struct capability {
+	u8 level;
+	u8 reason;
+	u16 vendor;
+};
+
 #define FW_VER_STR_SZ           32
 struct mods_dl_device {
 	struct list_head	list;
@@ -73,6 +79,7 @@ struct mods_dl_device {
 	__le64 uid_high;
 	__le32 fw_version;
 	char fw_version_str[FW_VER_STR_SZ];
+	struct capability capability;
 	struct kref kref;
 	uint32_t slave_mask;
 	uint32_t slave_state;
