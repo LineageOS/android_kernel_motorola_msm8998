@@ -44,7 +44,7 @@ struct gb_snd_codec {
 	struct gb_connection *mgmt_connection;
 	uint32_t playback_use_case;
 	uint32_t capture_use_case;
-	int sys_vol_step;
+	int sys_vol_mb;
 	int mods_vol_step;
 	struct mutex lock;
 	int (*report_devices)(struct gb_snd_codec *);

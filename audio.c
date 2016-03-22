@@ -133,7 +133,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 		pr_warn("%s: failed to set mods codec playback use case\n",
 				__func__);
 
-	ret = gb_mods_aud_set_sys_vol(connection, snd_codec.sys_vol_step);
+	ret = gb_mods_aud_set_sys_vol(connection, snd_codec.sys_vol_mb);
 	if (ret)
 		pr_warn("%s: failed to set mods codec sys volume\n", __func__);
 	/* calculate remote codec vol step and set it*/

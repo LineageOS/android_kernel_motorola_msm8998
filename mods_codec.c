@@ -35,8 +35,6 @@ struct mods_codec_dai {
 /* declare 0 to -127.5 vol range with step 0.5 db */
 static const DECLARE_TLV_DB_SCALE(mods_tlv_0_5, \
 											MODS_MIN_VOL, MODS_VOL_STEP, 0);
-static const DECLARE_TLV_DB_SCALE(mods_sys_tlv_0_5, \
-											MODS_MIN_VOL, MODS_VOL_STEP, 0);
 
 static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol);
@@ -84,9 +82,8 @@ static const struct soc_enum mods_codec_enum[] = {
 static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
 	SOC_SINGLE_EXT_TLV("Mods Codec Volume", SND_SOC_NOPM,
 			0, 0xff, 0, mods_codec_get_vol, mods_codec_set_vol, mods_tlv_0_5),
-	SOC_SINGLE_EXT_TLV("Mods Codec System Volume", SND_SOC_NOPM,
-			0, 0xff, 0, mods_codec_get_sys_vol, mods_codec_set_sys_vol,
-				mods_sys_tlv_0_5),
+	SOC_SINGLE_EXT("Mods Codec System Volume", SND_SOC_NOPM,
+			0, 0xffff, 0, mods_codec_get_sys_vol, mods_codec_set_sys_vol),
 	SOC_ENUM_EXT("Mods Set Playback Use Case", mods_codec_enum[0],
 				mods_codec_get_usecase,
 				mods_codec_set_usecase),
@@ -288,7 +285,7 @@ static int mods_codec_get_sys_vol(struct snd_kcontrol *kcontrol,
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
 
-	ucontrol->value.integer.value[0] = gb_codec->sys_vol_step;
+	ucontrol->value.integer.value[0] = gb_codec->sys_vol_mb;
 
 	return 0;
 }
@@ -299,22 +296,19 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	int mods_vol_db;
 	int ret;
-	uint32_t vol_step = ucontrol->value.integer.value[0];
+	int sys_vol_mb = ucontrol->value.integer.value[0];
 
 	mutex_lock(&gb_codec->lock);
-	gb_codec->sys_vol_step = vol_step;
+	gb_codec->sys_vol_mb = sys_vol_mb;
 	if (!mods_codec_check_connection(gb_codec)) {
 		pr_err("%s: audio mods connection is not init'ed yet\n",
 			__func__);
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
-	/* calculate remote codec vol db */
-	mods_vol_db = (vol_step*MODS_VOL_STEP);
 	ret = gb_mods_aud_set_sys_vol(gb_codec->mods_aud_connection,
-			mods_vol_db);
+			sys_vol_mb);
 	if (ret) {
 		pr_err("%s: failed to set mods codec sys volume\n", __func__);
 		mutex_unlock(&gb_codec->lock);
