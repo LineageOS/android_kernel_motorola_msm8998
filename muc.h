@@ -71,6 +71,7 @@ struct muc_data {
 	int gpios[MUC_MAX_GPIOS];
 	int irq;
 	u32 det_hysteresis;
+	u32 rm_hysteresis;
 	u32 en_seq[MUC_MAX_SEQ];
 	size_t en_seq_len;
 	u32 dis_seq[MUC_MAX_SEQ];
