@@ -322,7 +322,8 @@ static irqreturn_t muc_isr(int irq, void *data)
 	cdata->isr_work.force_removal = !det ? true : false;
 
 	queue_delayed_work(cdata->attach_wq, &cdata->isr_work.work,
-		cdata->isr_work.force_removal ? 0 : cdata->det_hysteresis);
+		cdata->isr_work.force_removal ?
+		cdata->rm_hysteresis : cdata->det_hysteresis);
 
 	return IRQ_HANDLED;
 }
@@ -621,6 +622,13 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 			__func__, __LINE__);
 	}
 	cdata->det_hysteresis = MSEC_TO_JIFFIES(cdata->det_hysteresis);
+
+	ret = of_property_read_u32(dev->of_node,
+		"mmi,muc-ctrl-rm-hysteresis", &cdata->rm_hysteresis);
+	if (ret)
+		dev_warn(dev, "%s:%d failed to read rm hysteresis.\n",
+			__func__, __LINE__);
+	cdata->rm_hysteresis = MSEC_TO_JIFFIES(cdata->rm_hysteresis);
 
 	cdata->need_det_output = of_property_read_bool(dev->of_node,
 		"mmi,muc-det-pin-reconfig");
