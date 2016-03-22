@@ -458,6 +458,7 @@ static int _muc_spi_negotiate(struct muc_spi_data *dd)
 	int err;
 	int retries = 0;
 
+	memset(&msg, 0, sizeof(msg));
 	msg.id = DL_MSG_ID_BUS_CFG_REQ;
 	msg.bus_req.max_pl_size = U16_MAX;
 
