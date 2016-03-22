@@ -161,9 +161,7 @@ static void muc_handle_short(struct muc_data *cdata)
 
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 	cdata->bplus_state = MUC_BPLUS_DISABLED;
-
-	if (pinctrl_select_state(cdata->pinctrl, cdata->pins_discon))
-		pr_warn("%s: select disconnected pinctrl failed\n", __func__);
+	cdata->pinctrl_disconnect = true;
 
 	/* Force a removal if we were previously detected */
 	if (cdata->muc_detected) {
@@ -234,6 +232,17 @@ static void muc_handle_detection(bool force_removal)
 
 	if (detected == cdata->muc_detected) {
 		pr_debug("%s: detection in same state, skipping\n", __func__);
+
+		/* If we're detected, or don't need to mux the spi pins on
+		 * removal we're all done.
+		 */
+		if (detected || !cdata->pinctrl_disconnect)
+			return;
+
+		cdata->pinctrl_disconnect = false;
+		pinctrl_select_state(cdata->pinctrl, cdata->pins_discon);
+		pr_debug("%s: pinctrl: disconnected\n", __func__);
+
 		return;
 	}
 
@@ -371,7 +380,8 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 		return PTR_ERR(cdata->pins_spi_con);
 	}
 
-	ret = pinctrl_select_state(cdata->pinctrl, cdata->pins_discon);
+	/* Default to connected initially until detection is complete */
+	ret = pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con);
 	if (ret) {
 		dev_err(dev, "Failed to select pinctrl initial state\n");
 		return ret;
@@ -380,9 +390,13 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 	return 0;
 }
 
-static void muc_pinctrl_cleanup(struct muc_data *cdata, struct device *dev)
+static void muc_pinctrl_cleanup(struct muc_data *cd, struct device *dev)
 {
-	(void)pinctrl_select_state(cdata->pinctrl, cdata->pins_discon);
+	/* If no mod present, set to disconnected, otherwise leave active */
+	if (gpio_get_value(cd->gpios[MUC_GPIO_DET_N]))
+		(void)pinctrl_select_state(cd->pinctrl, cd->pins_discon);
+	else
+		(void)pinctrl_select_state(cd->pinctrl, cd->pins_spi_con);
 }
 
 static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
@@ -521,6 +535,11 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 			__func__, __LINE__);
 		goto free_attach_wq;
 	}
+
+	/* Set pinctrl to disconnected if no mod attached */
+	if (gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]))
+		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_discon))
+			dev_warn(dev, "fail setting pinctrl disconnected\n");
 
 	cdata->en_seq_len = ARRAY_SIZE(cdata->en_seq);
 	ret = muc_parse_seq(cdata, dev, "mmi,muc-ctrl-en-seq",
@@ -753,12 +772,20 @@ static void do_muc_poweroff(struct work_struct *work)
 	muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
 	cd->bplus_state = MUC_BPLUS_DISABLED;
 
-	if (pinctrl_select_state(cd->pinctrl, cd->pins_discon))
-		pr_warn("%s: select disconnected pinctrl failed\n", __func__);
-
 	cd->muc_detected = false;
 
 	kfree(dwork);
+
+	/* If we're still detected, don't mux to disconnected
+	 * state until we get the removal interrupt.
+	 */
+	if (!gpio_get_value(cd->gpios[MUC_GPIO_DET_N])) {
+		cd->pinctrl_disconnect = true;
+		return;
+	}
+
+	if (pinctrl_select_state(cd->pinctrl, cd->pins_discon))
+		pr_warn("%s: select disconnected pinctrl failed\n", __func__);
 }
 
 void muc_poweroff(void)

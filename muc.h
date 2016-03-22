@@ -84,6 +84,7 @@ struct muc_data {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_discon;
 	struct pinctrl_state *pins_spi_con;
+	bool pinctrl_disconnect;
 
 	bool need_det_output;
 
