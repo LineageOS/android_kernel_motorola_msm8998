@@ -395,6 +395,7 @@ static int custom_ctrl_register(
 		case V4L2_CTRL_TYPE_BOOLEAN:
 		case V4L2_CTRL_TYPE_INTEGER_MENU:
 		case V4L2_CTRL_TYPE_MENU:
+		case V4L2_CTRL_TYPE_BITMASK:
 			cfg->def = *(int32_t *)mod_cfg->p_def;
 			break;
 		default:

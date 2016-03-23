@@ -564,6 +564,7 @@ static inline int get_def(uint8_t **p, size_t *size, void **q, size_t length,
 		case V4L2_CTRL_TYPE_BOOLEAN:
 		case V4L2_CTRL_TYPE_INTEGER_MENU:
 		case V4L2_CTRL_TYPE_MENU:
+		case V4L2_CTRL_TYPE_BITMASK:
 			while (i < length) {
 				*(uint32_t *)num = le32_to_cpu(*(__le32 *)num);
 				num += sizeof(uint32_t);
@@ -919,6 +920,7 @@ static int ctrl_val_mod_to_v4l2(uint8_t *mod_ctrl_val, struct v4l2_ctrl *ctrl)
 		case V4L2_CTRL_TYPE_BOOLEAN:
 		case V4L2_CTRL_TYPE_MENU:
 		case V4L2_CTRL_TYPE_INTEGER_MENU:
+		case V4L2_CTRL_TYPE_BITMASK:
 			*(s32 *)q = le32_to_cpu(*(__le32 *)p);
 			break;
 		case V4L2_CTRL_TYPE_INTEGER64:
@@ -983,6 +985,7 @@ static int ctrl_val_v4l2_to_mod(struct v4l2_ctrl *ctrl, uint8_t *mod_ctrl_val)
 		case V4L2_CTRL_TYPE_BUTTON:
 		case V4L2_CTRL_TYPE_MENU:
 		case V4L2_CTRL_TYPE_INTEGER_MENU:
+		case V4L2_CTRL_TYPE_BITMASK:
 			*(__le32 *)p = cpu_to_le32(*(s32*)q);
 			break;
 		case V4L2_CTRL_TYPE_STRING:

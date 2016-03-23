@@ -34,6 +34,8 @@
 #define CTRL_MAX_INT 0x7FFFFFFF
 #define CTRL_MAX_INT64 0x7FFFFFFFFFFFFFFFLL
 
+#define CTRL_STRING_MAX_LEN 64
+
 /* camera_ext predefined controls
  * These objects cannot be constant because they will be updated by data from
  * MOD. TODO: to support multiple MODS, need to allocate memory for menu and
@@ -278,14 +280,14 @@ static struct v4l2_ctrl_config video_stabilization = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK,
 };
 
-/* double [2] */
+/* double [3] */
 static struct v4l2_ctrl_config jpeg_gps_location = {
 	.id = CAM_EXT_CID_JPEG_GPS_LOCATION,
 	.type = V4L2_CTRL_TYPE_STRING,
 	/* v4l2 will use max+1 for elem_size */
 	.max = CAM_EXT_CTRL_DOUBLE_STR_LEN - 1,
 	.name = "jpeg gps location",
-	.dims = {2},
+	.dims = {3},
 	.step = 1,
 	.flags = CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
 	/* no default value needed from MOD */
@@ -1239,6 +1241,153 @@ static struct v4l2_ctrl_config hot_pixel_map = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_DIMS,
 };
 
+static const u64 capture_items[] = {
+	CAM_EXT_CID_CAPTURE_PREVIEW,
+	CAM_EXT_CID_CAPTURE_STILL_CAPTURE,
+	CAM_EXT_CID_CAPTURE_VIDEO_RECORD,
+	CAM_EXT_CID_CAPTURE_VIDEO_SNAPSHOT,
+	CAM_EXT_CID_CAPTURE_ZSL_CAPTURE,
+	CAM_EXT_CID_CAPTURE_RAW,
+	CAM_EXT_CID_CAPTURE_JPG,
+	CAM_EXT_CID_CAPTURE_BURST,
+};
+
+static struct v4l2_ctrl_config start_capture = {
+	.id = CAM_EXT_CID_START_CAPTURE,
+	.type = V4L2_CTRL_TYPE_BITMASK,
+	.name = "start capture",
+	.max = CAM_EXT_CID_CAPTURE_MAX,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_WRITE_ONLY,
+};
+
+static struct v4l2_ctrl_config abort_capture = {
+	.id = CAM_EXT_CID_ABORT_CAPTURE,
+	.type = V4L2_CTRL_TYPE_BITMASK,
+	.name = "abort capture",
+	.max = CAM_EXT_CID_CAPTURE_MAX,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_WRITE_ONLY,
+};
+
+static const u64 iso_items[] = {
+	CAM_EXT_ISO_AUTO,
+	CAM_EXT_ISO_50,
+	CAM_EXT_ISO_100,
+	CAM_EXT_ISO_200,
+	CAM_EXT_ISO_400,
+	CAM_EXT_ISO_800,
+	CAM_EXT_ISO_1600,
+	CAM_EXT_ISO_3200,
+};
+
+static struct v4l2_ctrl_config iso = {
+	.id = CAM_EXT_CID_ISO,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "iso",
+	.max = CAM_EXT_ISO_MAX,
+	.qmenu_int = iso_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static const u64 nd_filter_items[] = {
+	CAM_EXT_ND_FILTER_AUTO,
+	CAM_EXT_ND_FILTER_ON,
+	CAM_EXT_ND_FILTER_OFF,
+};
+
+static struct v4l2_ctrl_config nd_filter = {
+	.id = CAM_EXT_CID_ND_FILTER,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "neutral desity filter",
+	.max = CAM_EXT_ND_FILTER_MAX,
+	.qmenu_int = nd_filter_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config jpeg_sharpness = {
+	.id = CAM_EXT_CID_JPEG_SHARPNESS,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "sharpness tunning for jpeg",
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+	.min = -2,
+	.max = 2,
+	.step = 1,
+	.def = 0,
+};
+
+static struct v4l2_ctrl_config jpeg_contrast = {
+	.id = CAM_EXT_CID_JPEG_CONTRAST,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "contrast tunning for jpeg",
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+	.min = -2,
+	.max = 2,
+	.step = 1,
+	.def = 0,
+};
+
+static struct v4l2_ctrl_config jpeg_saturation = {
+	.id = CAM_EXT_CID_JPEG_SATURATION,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "saturation tunning for jpeg",
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+	.min = -2,
+	.max = 2,
+	.step = 1,
+	.def = 0,
+};
+
+static struct v4l2_ctrl_config time_sync = {
+	.id = CAM_EXT_CID_TIME_SYNC,
+	.type = V4L2_CTRL_TYPE_INTEGER64,
+	.name = "time sync",
+	.min = 0,
+	.max = CTRL_MAX_INT64,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MIN
+		| CAMERA_EXT_CTRL_FLAG_NEED_MAX
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config jpeg_gps_timestamp = {
+	.id = CAM_EXT_CID_JPEG_GPS_TIMESTAMP,
+	.type = V4L2_CTRL_TYPE_INTEGER64,
+	.name = "jpeg gps timestamp",
+	.min = 0,
+	.max = CTRL_MAX_INT64,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MIN
+		| CAMERA_EXT_CTRL_FLAG_NEED_MAX
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config jpeg_gps_proc_method = {
+	.id = CAM_EXT_CID_JPEG_GPS_PROC_METHOD,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.max = CTRL_STRING_MAX_LEN - 1,
+	.name = "jpeg gps location proc method",
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static const u64 face_detection_items[] = {
+	CAM_EXT_CID_FACE_DETECTION_STOP,
+	CAM_EXT_CID_FACE_DETECTION_START,
+};
+
+static struct v4l2_ctrl_config face_detection = {
+	.id = CAM_EXT_CID_FACE_DETECTION,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "face detection operation",
+	.max = CAM_EXT_ND_FILTER_MAX,
+	.qmenu_int = face_detection_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1341,6 +1490,17 @@ __ITEM(SENSOR_PREFERENCE_ILLUMINANT1, sensor_preference_illuminant1),
 __ITEM(SENSOR_PREFERENCE_ILLUMINANT2, sensor_preference_illuminant2),
 __ITEM(STATISTICS_HOT_PIXEL_MAP_MODE, statistics_hot_pixel_map_mode),
 __ITEM(HOT_PIXEL_MAP, hot_pixel_map),
+__ITEM(START_CAPTURE, start_capture),
+__ITEM(ABORT_CAPTURE, abort_capture),
+__ITEM(ISO, iso),
+__ITEM(ND_FILTER, nd_filter),
+__ITEM(JPEG_SHARPNESS, jpeg_sharpness),
+__ITEM(JPEG_CONTRAST, jpeg_contrast),
+__ITEM(JPEG_SATURATION, jpeg_saturation),
+__ITEM(TIME_SYNC, time_sync),
+__ITEM(JPEG_GPS_TIMESTAMP, jpeg_gps_timestamp),
+__ITEM(JPEG_GPS_PROC_METHOD, jpeg_gps_proc_method),
+__ITEM(FACE_DETECTION, face_detection),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
