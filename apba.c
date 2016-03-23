@@ -1326,9 +1326,12 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		goto reset_global;
 	}
 
+	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
+
 	return 0;
 
 reset_global:
+	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 	g_ctrl = NULL;
 disable_irq:
 	disable_irq_wake(ctrl->irq);
