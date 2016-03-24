@@ -13,6 +13,7 @@
  *
  */
 
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
@@ -127,6 +128,12 @@ struct muc_spi_data {
 	__u8 *rx_datagram;                 /* Buffer used to assemble datagram */
 	uint32_t rx_datagram_ndx;          /* Index into datagram buffer for new data */
 	uint8_t pkts_remaining;            /* Packets needed to complete msg */
+
+	/* Statistics below */
+	struct dentry *stats_dentry;       /* Debugfs entry */
+	uint32_t no_ack_sent;              /* Number of times no ACK was sent */
+	uint32_t no_ack_rcvd;              /* Number of times no ACK was received */
+	uint32_t no_ack_abort;             /* Number of times transfer was aborted */
 
 	/* Quirks below */
 	bool wake_delay;                   /* Delay after wake assert is req'd */
@@ -362,6 +369,8 @@ retry:
 
 	if (should_ack)
 		muc_gpio_set_ack(1);
+	else
+		dd->no_ack_sent++;
 
 	if (tx_buf) {
 		WAIT_WHILE(!(ack = muc_gpio_get_ack()) &&
@@ -377,11 +386,13 @@ retry:
 					   ACK_TIMEOUT_JIFFIES, dd);
 			}
 
+			dd->no_ack_rcvd++;
 			if (--num_tries_remaining > 0) {
 				dev_err(&spi->dev, "Retry: No ACK received\n");
 				goto retry;
 			} else {
 				dev_err(&spi->dev, "Abort: No ACK received\n");
+				dd->no_ack_abort++;
 				return -EIO;
 			}
 		}
@@ -600,6 +611,12 @@ static int muc_attach(struct notifier_block *nb,
 				dd->attached = false;
 			}
 
+			if (dd->ack_supported)
+				dev_info(&spi->dev, "No ACK sent: %u | "
+					"No ACK rcvd: %u | No ACK abort: %u\n",
+					dd->no_ack_sent, dd->no_ack_rcvd,
+					dd->no_ack_abort);
+
 			/* Reset bus settings to default values */
 			set_bus_speed(dd, dd->default_speed_hz);
 			set_packet_size(dd, DEFAULT_PKT_SZ);
@@ -607,6 +624,9 @@ static int muc_attach(struct notifier_block *nb,
 			dd->pkts_remaining = 0;
 			dd->pkt1_supported = false;
 			dd->ack_supported = muc_gpio_ack_is_supported();
+			dd->no_ack_sent = 0;
+			dd->no_ack_rcvd = 0;
+			dd->no_ack_abort = 0;
 		}
 	}
 	return NOTIFY_OK;
@@ -692,6 +712,24 @@ static struct mods_dl_driver muc_spi_dl_driver = {
 	.message_send		= muc_spi_message_send,
 };
 
+#define STATS_BUF_SZ 100
+static ssize_t muc_spi_stats_read(struct file *f, char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	struct muc_spi_data *dd = f->f_inode->i_private;
+	char tmp[STATS_BUF_SZ];
+	int size;
+
+	size = snprintf(tmp, STATS_BUF_SZ, "No ACK sent:  %u\nNo ACK rcvd:  %u"
+		"\nNo ACK abort: %u\n", dd->no_ack_sent, dd->no_ack_rcvd,
+		dd->no_ack_abort);
+	return simple_read_from_buffer(buf, count, ppos, tmp, size);
+}
+
+static const struct file_operations muc_spi_stats_fops = {
+	.read	= muc_spi_stats_read,
+};
+
 static int allocate_buffers(struct muc_spi_data *dd)
 {
 	struct device *dev = &dd->spi->dev;
@@ -774,6 +812,9 @@ static int muc_spi_probe(struct spi_device *spi)
 	if (ret)
 		dev_warn(&spi->dev, "Failed to wakeup_enable: %d\n", ret);
 
+	dd->stats_dentry = debugfs_create_file("muc_spi_stats", S_IRUGO,
+				mods_debugfs_get(), dd, &muc_spi_stats_fops);
+
 	register_muc_attach_notifier(&dd->attach_nb);
 
 	return 0;
@@ -806,6 +847,7 @@ static int muc_spi_remove(struct spi_device *spi)
 
 	unregister_muc_attach_notifier(&dd->attach_nb);
 	mods_remove_dl_device(dd->dld);
+	debugfs_remove(dd->stats_dentry);
 	spi_set_drvdata(spi, NULL);
 
 	return 0;
