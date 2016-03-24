@@ -1884,9 +1884,6 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 	list_add_tail(&mods_dev->list, &svc_dd->ext_intf);
 	mutex_unlock(&svc_list_lock);
 
-	/* Got external interface notification, can cancel wdog */
-	muc_svc_clear_wdog();
-
 	/* Create route for vendor control protocol on reserved CPORT */
 	err = muc_svc_create_control_route(mods_dev->intf_id,
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
@@ -1901,6 +1898,9 @@ int mods_dl_dev_attached(struct mods_dl_device *mods_dev)
 	err = muc_svc_generate_hotplug(mods_dev);
 	if (err)
 		goto free_ext_ctrl;
+
+	/* Got successful external interface notification, can cancel wdog */
+	muc_svc_clear_wdog();
 
 	return 0;
 
