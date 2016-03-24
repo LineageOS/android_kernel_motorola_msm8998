@@ -40,13 +40,89 @@
 #include "mods_uart_pm.h"
 #include "muc.h"
 
-#define MAX_PARTITION_NAME (16)
+#define MAX_PARTITION_NAME           (16)
 
-#define FFFF_EXT (".ffff")
-#define BIN_EXT  (".bin")
+#define APBA_FIRMWARE_PARTITION      ("apba")
 
-#define APBA_FIRMWARE_PARTITION ("apba")
-#define APBA_FIRMWARE_NAME ("apba.ffff")
+#define APBA_FIRMWARE_UNIPRO_MID     (0x00000126)
+#define APBA_FIRMWARE_UNIPRO_PID_ES2 (0x00001000)
+#define APBA_FIRMWARE_UNIPRO_PID     (0x00001001)
+#define APBA_FIRMWARE_ARA_VID        (0xfed70128)
+#define APBA_FIRMWARE_ARA_PID        (0xffff0001)
+#define APBA_FIRMWARE_STAGE          (2)
+#define APBA_FIRMWARE_NAME_LEN       (48)
+
+#define FFFF_HEADER_SIZE          (4096)
+#define FFFF_SENTINEL             "FlashFormatForFW"
+#define FFFF_SENTINEL_LENGTH      (16)
+#define FFFF_TIMESTAMP_LENGTH     (16)
+#define FFFF_NAME_LENGTH          (48)
+#define FFFF_RESERVED_LENGTH      (16)
+#define FFFF_ELEMENT_CLASS_LENGTH (3)
+#define FFFF_ELEMENT_LENGTH       (20)
+#define FFFF_ELEMENTS             (198)
+
+#define FFFF_ELEMENT_TYPE_STAGE_2_FW  (1)
+#define FFFF_ELEMENT_TYPE_END         (0xFE)
+
+#if FFFF_HEADER_SIZE > PAGE_SIZE
+#error 'This should not happen'
+#endif
+
+#pragma pack(push, 1)
+typedef struct {
+	u8 type;
+	u8 class[FFFF_ELEMENT_CLASS_LENGTH];
+	u32 id;
+	u32 length;
+	u32 offset;
+	u32 generation;
+} ffff_element;
+
+typedef struct {
+	u8 leading_sentinel[FFFF_SENTINEL_LENGTH];
+	u8 timestamp[FFFF_TIMESTAMP_LENGTH];
+	char name[FFFF_NAME_LENGTH];
+	u32 flash_capacity;
+	u32 erase_size;
+	u32 header_size;
+	u32 flash_image_length;
+	u32 header_generation;
+	u8 reserved[FFFF_RESERVED_LENGTH];
+	ffff_element element[FFFF_ELEMENTS];
+	u32 padding;
+	u8 trailing_sentinel[FFFF_SENTINEL_LENGTH];
+} ffff_header;
+#pragma pack(pop)
+
+#define TFTF_OFFSET           (FFFF_HEADER_SIZE * 2)
+#define TFTF_HEADER_SIZE      (512)
+#define TFTF_SENTINEL         "TFTF"
+#define TFTF_SENTINEL_LENGTH  (4)
+#define TFTF_TIMESTAMP_LENGTH (16)
+#define TFTF_NAME_LENGTH      (48)
+#define TFTF_RESERVED_LENGTH  (12)
+#define TFTF_SECTION_LENGTH   (20)
+#define TFTF_SECTION_CLASS_LENGTH (3)
+#define TFTF_SECTIONS         (20)
+
+#pragma pack(push, 1)
+typedef struct {
+	u8 sentinel[TFTF_SENTINEL_LENGTH];
+	u32 header_size;
+	u8 timestamp[TFTF_TIMESTAMP_LENGTH];
+	char name[TFTF_NAME_LENGTH];
+	u32 package_type;
+	u32 start_offset;
+	u32 unipro_mid;
+	u32 unipro_pid;
+	u32 ara_vid;
+	u32 ara_pid;
+	u8 reserved[TFTF_RESERVED_LENGTH];
+	u32 version;
+	u8 reserved_sections[TFTF_SECTIONS][TFTF_SECTION_LENGTH];
+} tftf_header;
+#pragma pack(pop)
 
 #define APBA_NUM_GPIOS (8)
 #define APBA_MAX_SEQ   (APBA_NUM_GPIOS*3*2)
@@ -64,6 +140,7 @@ struct apba_ctrl {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pinctrl_state_default;
 	struct pinctrl_state *pinctrl_state_active;
+	char firmware_name[APBA_FIRMWARE_NAME_LEN];
 	int gpio_cnt;
 	int gpios[APBA_NUM_GPIOS];
 	const char *gpio_labels[APBA_NUM_GPIOS];
@@ -537,7 +614,7 @@ static int apba_mtd_erase(struct mtd_info *mtd_info,
 	ei.addr = start;
 	ei.len = len;
 	ei.mtd = mtd_info;
-	err = mtd_info->_erase(mtd_info, &ei);
+	err = mtd_erase(mtd_info, &ei);
 	return err;
 }
 
@@ -813,33 +890,101 @@ static ssize_t erase_partition_store(struct device *dev,
 
 static DEVICE_ATTR_WO(erase_partition);
 
+/* The TFTF header is 512 bytes at the beginning of the firmware file.
+ * This function will compare the TFTF header and a part of the firmware
+ * immediately following the header against what is stored in the flash.
+ * The flash contents will have two FFFF headers prepended before the TFTF
+ * header, so this function reads from the flash after the FFFF headers.
+ *
+ * Return 0 if the firmware does not need to be flashed
+ * Return !0 otherwise
+ */
 static int apba_compare_partition(struct mtd_info *mtd_info,
 	const struct firmware *fw)
 {
 	int err;
-	void *ffff;
+	tftf_header *fsfw = (tftf_header *)fw->data;
+	tftf_header *tftf;
 	size_t retlen = 0;
 	/* Assume different */
 	int compare_result = 1;
 
-	ffff = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!ffff)
+	tftf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!tftf)
 		goto skip_compare;
 
-	err = mtd_info->_read(mtd_info, 0, PAGE_SIZE, &retlen, ffff);
+	err = mtd_read(mtd_info, TFTF_OFFSET, PAGE_SIZE, &retlen, (void *)tftf);
 	if (err < 0)
 		goto cleanup;
 
 	if (retlen < PAGE_SIZE)
 		goto cleanup;
 
-	compare_result = memcmp(ffff, fw->data, PAGE_SIZE);
+	compare_result = memcmp(tftf, fw->data, PAGE_SIZE);
+
+	/* log header values only if header sentinal is valid */
+	if (memcmp(tftf->sentinel, TFTF_SENTINEL, TFTF_SENTINEL_LENGTH)) {
+		pr_debug("%s: flashed sentinel value not valid\n", __func__);
+	} else {
+		pr_debug("%s: flashed ts %s name %s type %d mid: %08x pid: %08x"\
+			 " ara vid: %08x ara pid: %08x version %08x\n", __func__,
+			 tftf->timestamp, tftf->name, tftf->package_type,
+			 tftf->unipro_mid, tftf->unipro_pid,
+			 tftf->ara_vid, tftf->ara_pid, tftf->version);
+
+		/* don't overwrite newer fw with older fw */
+		if (tftf->version > fsfw->version) {
+			compare_result = 0;
+			goto cleanup;
+		}
+	}
+
+	pr_debug("%s: file ts %s name %s type %d mid: %08x pid: %08x"\
+		 " ara vid: %08x ara pid: %08x version: %08x comp: %d\n",
+		__func__, fsfw->timestamp, fsfw->name, fsfw->package_type,
+		fsfw->unipro_mid, fsfw->unipro_pid,
+		fsfw->ara_vid, fsfw->ara_pid, fsfw->version, compare_result);
 
 cleanup:
-	kfree(ffff);
+	kfree(tftf);
 
 skip_compare:
 	return compare_result;
+}
+
+static void construct_ffff_header(ffff_header *header,
+				  const struct mtd_info *mtd_info,
+				  const struct firmware *fw)
+{
+	tftf_header *tftf_hdr = (tftf_header *)fw->data;
+
+	memcpy(&header->leading_sentinel, FFFF_SENTINEL,
+		sizeof(header->leading_sentinel));
+	memcpy(&header->timestamp, tftf_hdr->timestamp,
+		sizeof(header->timestamp));
+	memcpy(&header->name, tftf_hdr->name, sizeof(header->name));
+
+	header->flash_capacity = mtd_info->size;
+	header->erase_size = mtd_info->erasesize;
+
+	header->header_size = sizeof(*header);
+	/* flash_image_length is used in the bootloader when validating
+	 * element locations */
+	header->flash_image_length = 2 * sizeof(*header) + fw->size;
+	header->header_generation = 1;
+	header->element[0].type = FFFF_ELEMENT_TYPE_STAGE_2_FW;
+	/* currently assume that element class 0 (the default) is fine. */
+	header->element[0].id = 1;
+	header->element[0].length = fw->size;
+	header->element[0].offset = TFTF_OFFSET;
+	/* Boot rom and tools will use the latest generation of a given
+	 * element and type. */
+	header->element[0].generation = 0;
+
+	header->element[1].type = FFFF_ELEMENT_TYPE_END;
+
+	memcpy(&header->trailing_sentinel, FFFF_SENTINEL,
+		sizeof(header->trailing_sentinel));
 }
 
 static int apba_flash_partition(struct apba_ctrl *ctrl,
@@ -849,9 +994,19 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 	int err;
 	size_t retlen = 0;
 	int compare_result;
+	void *buffer;
+	const void *data;
+	int offset;
+	size_t count;
 
 	if (!fw || !ctrl)
 		return -EINVAL;
+
+	if (memcmp(fw->data, TFTF_SENTINEL, TFTF_SENTINEL_LENGTH) ||
+	    fw->size < PAGE_SIZE) {
+		pr_err("%s: firmware invalid\n", __func__);
+		return -EINVAL;
+	}
 
 	/* Disable the APBA so that it does not access the flash. */
 	apba_on(ctrl, false);
@@ -872,7 +1027,8 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 	 */
 	compare_result = apba_compare_partition(mtd_info, fw);
 	if (compare_result == 0) {
-		pr_info("%s: firmware unchanged, skipping flash\n", __func__);
+		pr_info("%s: firmware unchanged or newer, skipping flash\n",
+			__func__);
 		err = 0;
 		goto cleanup;
 	}
@@ -885,85 +1041,138 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 		goto cleanup;
 	}
 
-	err = mtd_info->_write(mtd_info, 0, fw->size, &retlen, fw->data);
+	buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto cleanup;
+	}
 
-	pr_debug("%s: %s complete\n", __func__, partition);
+	construct_ffff_header((ffff_header *)buffer, mtd_info, fw);
+
+	/* Write the first copy of the FFFF header to the flash */
+	err = mtd_write(mtd_info, 0, FFFF_HEADER_SIZE,
+			&retlen, (const u_char *)buffer);
+	if (err < 0) {
+		pr_err("%s: write error %d\n", __func__, err);
+		goto free_mem;
+	}
+
+	/* Write the second copy of the FFFF header to the flash */
+	err = mtd_write(mtd_info, FFFF_HEADER_SIZE, FFFF_HEADER_SIZE,
+			&retlen, (const u_char *)buffer);
+	if (err < 0) {
+		pr_err("%s: write error %d\n", __func__, err);
+		goto free_mem;
+	}
+
+	/* Write the TFTF header and firmware from the firmware file
+	   one page at a time to allow DMA to be used. */
+	data = fw->data;
+	offset = TFTF_OFFSET;
+	count = fw->size;
+	while (count) {
+		size_t s = count > PAGE_SIZE ? PAGE_SIZE : count;
+
+		memcpy(buffer, data, s);
+
+		err = mtd_write(mtd_info, offset, s, &retlen, buffer);
+		if (err < 0) {
+			pr_err("%s: write error %d\n", __func__, err);
+			break;
+		}
+
+		data += s;
+		offset += s;
+		count -= s;
+	}
+
+	pr_debug("%s: %s complete %d\n", __func__, partition, err);
+free_mem:
+	kfree(buffer);
 
 cleanup:
 	put_mtd_device(mtd_info);
 
 no_mtd:
 	apba_flash_on(ctrl, false);
-	if (ctrl->desired_on)
+	if (ctrl->desired_on && !err)
 		apba_on(ctrl, true);
 
 	return err;
 }
 
-static ssize_t flash_partition_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+/*
+ * Try to load the specified firmware file and flash it into the specified
+ * partition.
+ */
+static int request_fw_and_flash(struct apba_ctrl *ctrl,
+				const char *name, const char *partition)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
-	char partition[MAX_PARTITION_NAME + 1];
-	size_t partition_name_sz;
-	/* Null-termination accounted for in *_EXT macros. */
-	char fw_name[MAX_PARTITION_NAME + max(sizeof(FFFF_EXT), sizeof(BIN_EXT))];
 	const struct firmware *fw = NULL;
 	int err;
 
-	partition_name_sz = count;
-	if (partition_name_sz && buf[partition_name_sz - 1] == '\n')
-		partition_name_sz--;
-
-	if (!partition_name_sz || (partition_name_sz >= sizeof(partition))) {
-		pr_err("%s: partition name too large %s\n",
-			__func__, buf);
-		return -EINVAL;
-	}
-
-	/* Try .ffff extension first. */
-	memcpy(fw_name, buf, partition_name_sz);
-	memcpy(fw_name + partition_name_sz, FFFF_EXT, sizeof(FFFF_EXT));
-
-	memcpy(partition, buf, partition_name_sz);
-	partition[partition_name_sz] = 0;
-
-	err = request_firmware(&fw, fw_name, ctrl->dev);
+	pr_debug("%s: request firmware %s for parition %s\n",
+		__func__, name, partition);
+	err = request_firmware(&fw, name, ctrl->dev);
 	if (err < 0) {
 		pr_debug("%s: request firmware failed for %s, err=%d\n",
-			__func__, partition, err);
-
-		/* Fallback and try .bin extension. */
-		memcpy(fw_name + partition_name_sz, BIN_EXT, sizeof(BIN_EXT));
-		err = request_firmware(&fw, fw_name, ctrl->dev);
-	}
-
-	if (err < 0) {
-		pr_err("%s: request firmware failed for %s, err=%d\n",
-			__func__, partition, err);
+			__func__, name, err);
 		return err;
 	}
 
 	if (!fw || !fw->size) {
 		pr_err("%s: firmware invalid for %s\n",
-			__func__, partition);
+			__func__, name);
 		return -EINVAL;
 	}
 
-	pr_debug("%s: partition=%s, fw=%s, size=%zu\n",
-		__func__, partition, fw_name, fw->size);
-
-	err = apba_flash_partition(ctrl, partition, fw);
+	/* Support loading fw for ES2 into es2_apba partition */
+	err = apba_flash_partition(ctrl,
+		((tftf_header *)fw->data)->unipro_pid ==
+		  APBA_FIRMWARE_UNIPRO_PID_ES2 ? "es2_apba" : partition,
+		fw);
 	if (err < 0)
-		pr_err("%s: flashing failed for %s, err=%d\n",
-			__func__, partition, err);
+		pr_err("%s: flashing failed for %s partition %s, err=%d\n",
+			__func__, name, partition, err);
 
 	release_firmware(fw);
+
+	return err;
+}
+
+/*
+ * Given a specific firmware file name as input to this sys fs file,
+ * attempt to load that firmware file and flash it in the apba
+ * flash partition.
+ */
+static ssize_t flash_file_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
+	/* Null-termination accounted for. */
+	char fw_name[APBA_FIRMWARE_NAME_LEN];
+	size_t fw_name_sz = count;
+	int err;
+
+	if (fw_name_sz && buf[fw_name_sz - 1] == '\n')
+		fw_name_sz--;
+
+	if (!fw_name_sz || (fw_name_sz >= sizeof(fw_name))) {
+		pr_err("%s: firmware name too large %s\n",
+			__func__, buf);
+		return -EINVAL;
+	}
+
+	memcpy(fw_name, buf, fw_name_sz);
+	fw_name[fw_name_sz] = 0;
+
+	err = request_fw_and_flash(ctrl, fw_name, APBA_FIRMWARE_PARTITION);
+
 	return err ? err : count;
 }
 
-static DEVICE_ATTR_WO(flash_partition);
+static DEVICE_ATTR_WO(flash_file);
 
 static ssize_t apba_enable_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -1333,8 +1542,8 @@ static DEVICE_ATTR_WO(gear);
 
 static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
-	&dev_attr_flash_partition.attr,
 	&dev_attr_flash_enable.attr,
+	&dev_attr_flash_file.attr,
 	&dev_attr_apba_enable.attr,
 	&dev_attr_apba_baud.attr,
 	&dev_attr_apba_log.attr,
@@ -1626,6 +1835,10 @@ void apba_disable(void)
 static int apba_ctrl_probe(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl;
+	u32 unipro_mid = APBA_FIRMWARE_UNIPRO_MID;
+	u32 unipro_pid = APBA_FIRMWARE_UNIPRO_PID;
+	u32 ara_vid = APBA_FIRMWARE_ARA_VID;
+	u32 ara_pid = APBA_FIRMWARE_ARA_PID;
 	int ret;
 
 	/* we depend on the muc_core for transports and pinctrls */
@@ -1747,7 +1960,27 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		goto reset_global;
 	}
 
-	ret = request_firmware_nowait(THIS_MODULE, true, APBA_FIRMWARE_NAME,
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-unipro-mid", &unipro_mid))
+		dev_warn(&pdev->dev, "unipro-mid missing\n");
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-unipro-pid", &unipro_pid))
+		dev_warn(&pdev->dev, "unipro-pid missing\n");
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-ara-vid", &ara_vid))
+		dev_warn(&pdev->dev, "ara-vid missing\n");
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-ara-pid", &ara_pid))
+		dev_warn(&pdev->dev, "ara-pid missing\n");
+
+	snprintf(ctrl->firmware_name, sizeof(ctrl->firmware_name),
+		 "ara:%08x:%08x:%08x:%08x:%02x.tftf",
+		 unipro_mid, unipro_pid,
+		 ara_vid, ara_pid,
+		 APBA_FIRMWARE_STAGE);
+	pr_debug("%s: requesting fw %s\n", __func__, ctrl->firmware_name);
+
+	ret = request_firmware_nowait(THIS_MODULE, true, ctrl->firmware_name,
 				      g_ctrl->dev, GFP_KERNEL, g_ctrl,
 				      apba_firmware_callback);
 	if (ret) {
