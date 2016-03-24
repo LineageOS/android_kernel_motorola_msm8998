@@ -133,6 +133,8 @@ void muc_svc_exit(void);
 int mods_ap_init(void);
 void mods_ap_exit(void);
 
+struct dentry *mods_debugfs_get(void);
+
 /* Indicates whether the muc's core can force flash via hardware */
 static inline bool muc_can_force_flash(u8 root_ver)
 {
