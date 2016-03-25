@@ -77,6 +77,7 @@ struct apba_ctrl {
 	struct apba_seq flash_end_seq;
 	void *mods_uart;
 	int desired_on;
+	int on;
 	struct mutex log_mutex;
 	struct completion comp;
 	struct completion baud_comp;
@@ -632,8 +633,12 @@ static void apba_seq(struct apba_ctrl *ctrl, struct apba_seq *seq)
 
 static void apba_on(struct apba_ctrl *ctrl, bool on)
 {
-	pr_info("%s: %s\n", __func__, on ? "on" : "off");
+	if (on == ctrl->on) {
+		pr_warn("%s: already %s\n", __func__, on ? "on" : "off");
+		return;
+	}
 
+	pr_info("%s: %s\n", __func__, on ? "on" : "off");
 	mods_ext_bus_vote(on);
 
 	if (on) {
@@ -642,14 +647,17 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 		apba_seq(ctrl, &ctrl->enable_seq);
 		if (ctrl->mods_uart)
 			mods_uart_pm_on(ctrl->mods_uart, true);
+		enable_irq(ctrl->irq);
 	} else {
 		ctrl->mode = 0;
+		disable_irq(ctrl->irq);
 		apba_seq(ctrl, &ctrl->disable_seq);
 		if (ctrl->mods_uart) {
 			mods_uart_pm_on(ctrl->mods_uart, false);
 			mods_uart_close(ctrl->mods_uart);
 		}
 	}
+	ctrl->on = on;
 }
 
 static void populate_transports_node(struct apba_ctrl *ctrl)
@@ -1415,6 +1423,7 @@ static int apba_int_setup(struct apba_ctrl *ctrl,
 	ctrl->irq = gpio_to_irq(gpio);
 	dev_dbg(dev, "irq: gpio=%d irq=%d\n", gpio, ctrl->irq);
 
+	irq_set_status_flags(ctrl->irq, IRQ_NOAUTOEN);
 	ret = devm_request_threaded_irq(dev, ctrl->irq, NULL /* handler */,
 		apba_isr, flags, "apba_ctrl", ctrl);
 	if (ret) {
@@ -1697,6 +1706,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	ctrl->pinctrl_state_default = pinctrl_lookup_state(ctrl->pinctrl,
 							   PINCTRL_STATE_DEFAULT);
+
 	if (IS_ERR(ctrl->pinctrl_state_default)) {
 		dev_err(&pdev->dev, "Pinctrl lookup failed for default\n");
 		ret = PTR_ERR(ctrl->pinctrl_state_default);
@@ -1723,7 +1733,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	}
 
 	/* start with APBA turned OFF */
-	apba_on(ctrl, false);
+	apba_seq(ctrl, &ctrl->disable_seq);
 
 	g_ctrl = ctrl;
 
