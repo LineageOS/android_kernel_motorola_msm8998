@@ -37,9 +37,11 @@ static int muc_attach_notifier_call_chain(unsigned long val)
 	int ret;
 
 	/* Log the new state and interrupts since last change in state */
-	pr_info("muc_attach_state: val = %lu intr_count = %d\n",
-		val, muc_misc_data->intr_count);
-	muc_misc_data->intr_count = 0;
+	if (muc_misc_data) {
+		pr_info("muc_attach_state: val = %lu intr_count = %d\n",
+				val, muc_misc_data->intr_count);
+		muc_misc_data->intr_count = 0;
+	}
 
 	ret  = blocking_notifier_call_chain(&muc_attach_chain_head,
 			val, NULL);
