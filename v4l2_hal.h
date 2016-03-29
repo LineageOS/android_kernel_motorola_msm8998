@@ -71,34 +71,29 @@ struct misc_set_handler {
 #define V4L2_HAL_IN_SNAPSHOT_STREAM	3
 #define V4L2_HAL_IN_METADATA_STREAM	4
 
-/* Below are the CIDs used in G_CTRL/S_CTRL to pass around
-   ION memory mapped content */
-enum {
-	V4L2_HAL_EXT_CTRLS,
-	V4L2_HAL_MAX_NUM_MMAP_CID,
-};
+/* CIDs for S/G_CTRL */
+#define V4L2_HAL_CID_SET_PARAMS_MEM	(V4L2_CID_PRIVATE_BASE + 0)
+#define V4L2_HAL_CID_SET_CAPS_MEM	(V4L2_CID_PRIVATE_BASE + 1)
 
-#define V4L2_HAL_CID_SET_EXT_CTRLS_MEM	(V4L2_CID_PRIVATE_BASE + 0)
+#define V4L2_HAL_MAX_NUM_MMAP_CID	2
 
-#define V4L2_HAL_CID_MMAP_MIN		(V4L2_HAL_CID_SET_EXT_CTRLS_MEM + 1)
+/* Class and CID definitions for EXT_CTRLS */
+#define V4L2_CTRL_CLASS_HAL		0x00f10000
+#define CID_V4L2_HAL_CLASS_BASE		(0x00f10000 | 0xf000)
 
-#define V4L2_HAL_CID_EXT_CTRLS		(V4L2_HAL_CID_MMAP_MIN + \
-					 V4L2_HAL_EXT_CTRLS)
+/* integer type */
+#define V4L2_HAL_EXT_CID_PARAMS		(CID_V4L2_HAL_CLASS_BASE + 0)
 
-#define V4L2_HAL_CID_MMAP_MAX	V4L2_HAL_CID_EXT_CTRLS
+/* integer type */
+#define V4L2_HAL_EXT_CID_CAPS		(CID_V4L2_HAL_CLASS_BASE + 1)
+
 
 static inline bool v4l2_hal_is_set_mapping_cid(__u32 id) {
-	if (id == V4L2_HAL_CID_SET_EXT_CTRLS_MEM)
+	if (id == V4L2_HAL_CID_SET_PARAMS_MEM ||
+	    id == V4L2_HAL_CID_SET_CAPS_MEM)
 		return true;
 
 	return false;
-}
-
-static inline bool v4l2_hal_is_mmap_cid(__u32 id) {
-	if (id < V4L2_HAL_CID_MMAP_MIN || id > V4L2_HAL_CID_MMAP_MAX)
-		return false;
-
-	return true;
 }
 
 /* structure used for V4L2_hal -> misc direction */
