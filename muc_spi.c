@@ -730,23 +730,48 @@ static const struct file_operations muc_spi_stats_fops = {
 	.read	= muc_spi_stats_read,
 };
 
+
+static __u8 *tx_pkt;
+static __u8 *rx_pkt;
+static __u8 *rx_datagram;
+
 static int allocate_buffers(struct muc_spi_data *dd)
 {
-	struct device *dev = &dd->spi->dev;
-
-	dd->tx_pkt = devm_kzalloc(dev, PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
-	if (!dd->tx_pkt)
-		return -ENOMEM;
-
-	dd->rx_pkt = devm_kzalloc(dev, PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
-	if (!dd->rx_pkt)
-		return -ENOMEM;
-
-	dd->rx_datagram = devm_kzalloc(dev, MAX_DATAGRAM_SZ, GFP_KERNEL);
-	if (!dd->rx_datagram)
-		return -ENOMEM;
+	dd->tx_pkt = tx_pkt;
+	dd->rx_pkt = rx_pkt;
+	dd->rx_datagram = rx_datagram;
 
 	return 0;
+}
+
+static int _allocate_buffers(void)
+{
+	tx_pkt = kzalloc(PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
+	if (!tx_pkt)
+		return -ENOMEM;
+
+	rx_pkt = kzalloc(PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
+	if (!rx_pkt)
+		goto free_tx;
+
+	rx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL);
+	if (!rx_datagram)
+		goto free_rx;
+
+	return 0;
+free_rx:
+	kfree(rx_pkt);
+free_tx:
+	kfree(tx_pkt);
+
+	return -ENOMEM;
+}
+
+static void _deallocate_buffers(void)
+{
+	kfree(tx_pkt);
+	kfree(rx_pkt);
+	kfree(rx_datagram);
 }
 
 static void muc_spi_quirks_init(struct muc_spi_data *dd)
@@ -880,9 +905,17 @@ int __init muc_spi_init(void)
 {
 	int err;
 
+	err = _allocate_buffers();
+	if (err) {
+		pr_err("muc_spi buffer allocation failed\n");
+		return err;
+	}
+
 	err = spi_register_driver(&muc_spi_driver);
-	if (err != 0)
+	if (err != 0) {
+		_deallocate_buffers();
 		pr_err("muc_spi initialization failed\n");
+	}
 
 	return err;
 }
@@ -890,4 +923,5 @@ int __init muc_spi_init(void)
 void __exit muc_spi_exit(void)
 {
 	spi_unregister_driver(&muc_spi_driver);
+	_deallocate_buffers();
 }
