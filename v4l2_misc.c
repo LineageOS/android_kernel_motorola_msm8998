@@ -186,20 +186,6 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 						       tgt_fd);
 		}
 		ctrl->value = tgt_fd;
-	} else if (target_cmd->cmd == VIDIOC_G_CTRL ||
-		   target_cmd->cmd == VIDIOC_S_CTRL) {
-		ctrl = target_cmd->data;
-		if (v4l2_hal_is_mmap_cid(ctrl->id)) {
-			tgt_fd = v4l2_hal_get_mapped_fd_for_cid(
-				g_data->v4l2_hal_data,
-				target_cmd->stream,
-				ctrl->id);
-
-			if (tgt_fd < 0)
-				goto errout;
-
-			ctrl->value = tgt_fd;
-		}
 	}
 
 	if (target_cmd->cmd == VIDIOC_G_EXT_CTRLS ||

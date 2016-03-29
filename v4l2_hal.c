@@ -261,22 +261,7 @@ static int streamoff(struct file *file, void *fh, enum v4l2_buf_type buf_type)
 }
 
 static __u32 v4l2_hal_mmap_cid_index(__u32 id) {
-	if (id == V4L2_HAL_CID_SET_EXT_CTRLS_MEM ||
-	    id == V4L2_HAL_CID_EXT_CTRLS)
-		return V4L2_HAL_EXT_CTRLS;
-
-	return V4L2_HAL_MAX_NUM_MMAP_CID;
-}
-
-static bool is_mapping_exists(struct v4l2_stream_data *strm,
-			     struct v4l2_control *ctrl) {
-	__u32 idx;
-
-	idx = v4l2_hal_mmap_cid_index(ctrl->id);
-	if (strm->cid_map[idx].orig_fd == -1) {
-		return false;
-	}
-	return true;
+	return id - V4L2_CID_PRIVATE_BASE;
 }
 
 static bool validate_mapping(struct v4l2_stream_data *strm,
@@ -300,12 +285,7 @@ static int get_ctrl(struct file *file, void *fh,
 	__u32 idx;
 	struct v4l2_stream_data *strm = file->private_data;
 
-	if (v4l2_hal_is_mmap_cid(ctrl->id)) {
-		if (!is_mapping_exists(strm, ctrl)) {
-			pr_err("%s: No mapping. S_CTRL first\n", __func__);
-			return -EINVAL;
-		}
-	} else if (v4l2_hal_is_set_mapping_cid(ctrl->id))
+	if (v4l2_hal_is_set_mapping_cid(ctrl->id))
 		/* No "get" for setup mapping request */
 		return -EINVAL;
 
@@ -323,12 +303,7 @@ static int set_ctrl(struct file *file, void *fh,
 	int ret;
 	struct v4l2_stream_data *strm = file->private_data;
 
-	if (v4l2_hal_is_mmap_cid(ctrl->id)) {
-		if (!is_mapping_exists(strm, ctrl)) {
-			pr_err("%s: No mapping. S_CTRL first\n", __func__);
-			return -EINVAL;
-		}
-	} else if (v4l2_hal_is_set_mapping_cid(ctrl->id)) {
+	if (v4l2_hal_is_set_mapping_cid(ctrl->id)) {
 		if (!validate_mapping(strm, ctrl)) {
 			pr_err("%s: cannot override fd mapping\n", __func__);
 			return -EINVAL;
