@@ -1257,17 +1257,17 @@ static struct v4l2_ctrl_config start_capture = {
 	.type = V4L2_CTRL_TYPE_BITMASK,
 	.name = "start capture",
 	.max = CAM_EXT_CID_CAPTURE_MAX,
-	.step = 1,
-	.flags = V4L2_CTRL_FLAG_WRITE_ONLY,
 };
 
+/* TODO:
+ *      will remove later when change firmware
+ *      after start_capture can stop video and preview
+ */
 static struct v4l2_ctrl_config abort_capture = {
 	.id = CAM_EXT_CID_ABORT_CAPTURE,
 	.type = V4L2_CTRL_TYPE_BITMASK,
 	.name = "abort capture",
 	.max = CAM_EXT_CID_CAPTURE_MAX,
-	.step = 1,
-	.flags = V4L2_CTRL_FLAG_WRITE_ONLY,
 };
 
 static const u64 iso_items[] = {
