@@ -858,6 +858,10 @@ static int muc_spi_remove(struct spi_device *spi)
 
 	device_wakeup_disable(&spi->dev);
 
+	unregister_muc_attach_notifier(&dd->attach_nb);
+	if (dd->present)
+		devm_free_irq(&spi->dev, spi->irq, dd);
+
 	flush_work(&dd->attach_work);
 	if (dd->attached) {
 		mods_dl_dev_detached(dd->dld);
@@ -870,7 +874,6 @@ static int muc_spi_remove(struct spi_device *spi)
 	 */
 	set_bus_speed(dd, dd->default_speed_hz);
 
-	unregister_muc_attach_notifier(&dd->attach_nb);
 	mods_remove_dl_device(dd->dld);
 	debugfs_remove(dd->stats_dentry);
 	spi_set_drvdata(spi, NULL);
