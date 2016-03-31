@@ -173,6 +173,7 @@ free_hd:
 remove_dl:
 	mods_remove_dl_device(ap_data->dld);
 err:
+	gb_hd_put(g_hd);
 	g_hd = NULL;
 	return err;
 
@@ -185,6 +186,7 @@ static int mods_ap_remove(struct platform_device *pdev)
 	mods_dl_dev_detached(ap_data->dld);
 	mods_remove_dl_device(ap_data->dld);
 	gb_hd_del(ap_data->hd);
+	gb_hd_put(g_hd);
 
 	return 0;
 }
