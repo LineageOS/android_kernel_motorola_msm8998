@@ -166,6 +166,7 @@ struct apba_ctrl {
 	uint32_t apbe_status;
 	uint32_t last_unipro_value;
 	uint32_t last_unipro_status;
+	struct platform_device *pdev;
 } *g_ctrl;
 
 #define APBA_LOG_SIZE	SZ_16K
@@ -740,6 +741,7 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 static void populate_transports_node(struct apba_ctrl *ctrl)
 {
 	struct device_node *np;
+	struct device_node *spi_np;
 
 	np = of_find_node_by_name(ctrl->dev->of_node, "transports");
 	if (!np) {
@@ -747,18 +749,25 @@ static void populate_transports_node(struct apba_ctrl *ctrl)
 		return;
 	}
 
-	np = of_find_compatible_node(np, NULL, "moto,apba-spi-transfer");
-	if (!np) {
+	spi_np = of_find_compatible_node(np, NULL, "moto,apba-spi-transfer");
+	if (!spi_np) {
 		dev_warn(ctrl->dev, "SPI transport device not present\n");
-		return;
+		goto put_np;
 	}
 
 	dev_dbg(ctrl->dev, "%s: creating platform device\n", __func__);
-	if (!of_platform_device_create(np, NULL, ctrl->dev)) {
+	ctrl->pdev = of_platform_device_create(spi_np, NULL, ctrl->dev);
+	if (!ctrl->pdev) {
 		dev_warn(ctrl->dev, "failed to populate transport devices\n");
-	} else {
-		ctrl->flash_dev_populated = true;
+		goto put_spi_np;
 	}
+
+	ctrl->flash_dev_populated = true;
+
+put_spi_np:
+	of_node_put(spi_np);
+put_np:
+	of_node_put(np);
 }
 
 /*
@@ -799,6 +808,8 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 	} else {
 		if (ctrl->flash_dev_populated) {
 			of_platform_depopulate(ctrl->dev);
+			of_dev_put(ctrl->pdev);
+			ctrl->pdev = NULL;
 			ctrl->flash_dev_populated = false;
 		}
 
@@ -2002,6 +2013,10 @@ disable_irq:
 free_gpios:
 	apba_gpio_free(ctrl, &pdev->dev);
 
+	of_platform_depopulate(ctrl->dev);
+	if (ctrl->pdev)
+		of_dev_put(ctrl->pdev);
+
 	/* Let muc core finish probe even if we bombed out. */
 	muc_enable_det();
 	return ret;
@@ -2018,6 +2033,10 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 	disable_irq_wake(ctrl->irq);
 	apba_disable();
 	apba_gpio_free(ctrl, &pdev->dev);
+
+	of_platform_depopulate(ctrl->dev);
+	if (ctrl->pdev)
+		of_dev_put(ctrl->pdev);
 
 	g_ctrl = NULL;
 
