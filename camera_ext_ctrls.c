@@ -1388,6 +1388,39 @@ static struct v4l2_ctrl_config face_detection = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config uvc_snapshot = {
+	.id = CAM_EXT_CID_MOD_CAPS_UVC_SNAPSHOT,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "uvc snapshot",
+	.dims = {3},
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config meta_data_path = {
+	.id = CAM_EXT_CID_MOD_META_DATA_PATH,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "meta data path",
+	.min = 0,
+	.max = CAM_EXT_CID_MOD_META_DATA_PATH_MAX,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config meta_data_size = {
+	.id = CAM_EXT_CID_MOD_META_DATA_SIZE,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "meta data size",
+	.min = 0,
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1501,6 +1534,9 @@ __ITEM(TIME_SYNC, time_sync),
 __ITEM(JPEG_GPS_TIMESTAMP, jpeg_gps_timestamp),
 __ITEM(JPEG_GPS_PROC_METHOD, jpeg_gps_proc_method),
 __ITEM(FACE_DETECTION, face_detection),
+__ITEM(MOD_CAPS_UVC_SNAPSHOT, uvc_snapshot),
+__ITEM(MOD_META_DATA_PATH, meta_data_path),
+__ITEM(MOD_META_DATA_SIZE, meta_data_size),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
