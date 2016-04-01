@@ -91,7 +91,7 @@ static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master);
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
 
-static void muc_svc_send_uevent(const char *event)
+static void muc_svc_send_kobj_uevent(struct kobject *kobj, const char *event)
 {
 	struct kobj_uevent_env *env;
 
@@ -101,8 +101,13 @@ static void muc_svc_send_uevent(const char *event)
 
 	add_uevent_var(env, event);
 
-	kobject_uevent_env(&svc_dd->pdev->dev.kobj, KOBJ_CHANGE, env->envp);
+	kobject_uevent_env(kobj, KOBJ_CHANGE, env->envp);
 	kfree(env);
+}
+
+static inline void muc_svc_send_uevent(const char *event)
+{
+	muc_svc_send_kobj_uevent(&svc_dd->pdev->dev.kobj, event);
 }
 
 static void _do_muc_recovery_level(void)
@@ -1041,7 +1046,8 @@ muc_svc_capability_changed(struct mods_dl_device *dld, struct gb_message *msg,
 	dld->capability.reason = req->reason;
 	dld->capability.vendor = le16_to_cpu(req->vendor);
 
-	muc_svc_send_uevent("MOD_EVENT=CAPABILITY_CHANGED");
+	muc_svc_send_kobj_uevent(&mods_dev->intf_kobj,
+				"MOD_EVENT=CAPABILITY_CHANGED");
 
 	mutex_unlock(&svc_list_lock);
 	return 0;
