@@ -109,60 +109,86 @@ void muc_register_spi(void)
 {
 	struct device *dev = muc_misc_data->dev;
 	struct device_node *np;
+	struct device_node *spi_np;
 
 	if (muc_misc_data->spi_transport_done)
 		return;
 
 	muc_misc_data->i2c_transport_done = false;
+
 	of_platform_depopulate(dev);
+	if (muc_misc_data->i2c_pdev) {
+		of_dev_put(muc_misc_data->i2c_pdev);
+		muc_misc_data->i2c_pdev = NULL;
+	}
 
 	np = of_find_node_by_name(dev->of_node, "transports");
 	if (!np) {
 		dev_warn(dev, "Transport node not present\n");
-		goto skip_transports;
+		muc_misc_data->spi_transport_done = true;
+		return;
 	}
 
-	np = of_find_compatible_node(np, NULL, "moto,mod-spi-transfer");
-	if (!np) {
+	spi_np = of_find_compatible_node(np, NULL, "moto,mod-spi-transfer");
+	if (!spi_np) {
 		dev_warn(dev, "SPI transport device not present\n");
-		goto skip_transports;
+		goto put_np;
 	}
 
-	if (!of_platform_device_create(np, NULL, dev))
+	muc_misc_data->spi_pdev = of_platform_device_create(spi_np, NULL, dev);
+	if (!muc_misc_data->spi_pdev) {
 		dev_err(dev, "Failed to populate SPI transport devices\n");
+		goto put_spi_np;
+	}
 
-skip_transports:
 	muc_misc_data->spi_transport_done = true;
-};
+put_spi_np:
+	of_node_put(spi_np);
+put_np:
+	of_node_put(np);
+}
 
 void muc_register_i2c(void)
 {
 	struct device *dev = muc_misc_data->dev;
 	struct device_node *np;
+	struct device_node *i2c_np;
 
 	if (muc_misc_data->i2c_transport_done)
 		return;
 
 	muc_misc_data->spi_transport_done = false;
 	of_platform_depopulate(dev);
+	if (muc_misc_data->spi_pdev) {
+		of_dev_put(muc_misc_data->spi_pdev);
+		muc_misc_data->spi_pdev = NULL;
+	}
 
 	np = of_find_node_by_name(dev->of_node, "transports");
 	if (!np) {
 		dev_warn(dev, "Transport node not present\n");
-		goto skip_transports;
+		muc_misc_data->i2c_transport_done = true;
+		return;
 	}
 
-	np = of_find_compatible_node(np, NULL, "moto,mod-i2c-transfer");
-	if (!np) {
+	i2c_np = of_find_compatible_node(np, NULL, "moto,mod-i2c-transfer");
+	if (!i2c_np) {
 		dev_warn(dev, "I2C transport device not present\n");
-		goto skip_transports;
+		goto put_np;
 	}
 
-	if (!of_platform_device_create(np, NULL, dev))
+	muc_misc_data->i2c_pdev = of_platform_device_create(i2c_np, NULL, dev);
+	if (!muc_misc_data->i2c_pdev) {
 		dev_err(dev, "Failed to populate I2C transport devices\n");
+		goto put_i2c_np;
+	}
 
-skip_transports:
 	muc_misc_data->i2c_transport_done = true;
+
+put_i2c_np:
+	of_node_put(i2c_np);
+put_np:
+	of_node_put(np);
 };
 
 static int muc_remove(struct platform_device *pdev)
@@ -171,6 +197,10 @@ static int muc_remove(struct platform_device *pdev)
 	struct muc_data *ps_muc = muc_misc_data;
 
 	of_platform_depopulate(dev);
+	if (ps_muc->spi_pdev)
+		of_dev_put(ps_muc->spi_pdev);
+	if (ps_muc->i2c_pdev)
+		of_dev_put(ps_muc->i2c_pdev);
 	if (ps_muc->det_irq_enabled)
 		muc_intr_destroy(ps_muc, dev);
 	muc_gpio_exit(dev, ps_muc);
