@@ -39,11 +39,38 @@ struct gb_display_device {
 #define GB_DISPLAY_STATE_OFF			0x00
 #define GB_DISPLAY_STATE_ON			0x01
 
+#define GB_DISPLAY_NOTIFY_INVALID		0x00
 #define GB_DISPLAY_NOTIFY_FAILURE		0x01
 #define GB_DISPLAY_NOTIFY_AVAILABLE		0x02
 #define GB_DISPLAY_NOTIFY_UNAVAILABLE		0x03
 #define GB_DISPLAY_NOTIFY_CONNECT		0x04
 #define GB_DISPLAY_NOTIFY_DISCONNECT		0x05
+#define GB_DISPLAY_NOTIFY_NUM_EVENTS		0x06
+
+/* Helper Functions */
+
+char* display_event_values[] = {
+	"DISPLAY_EXT=unknown",
+	"DISPLAY_EXT=failure",
+	"DISPLAY_EXT=available",
+	"DISPLAY_EXT=unavailable",
+	"DISPLAY_EXT=connect",
+	"DISPLAY_EXT=disconnect",
+};
+
+void report_display_event(struct device *dev,
+	enum mod_display_notification event)
+{
+	char *envp[2];
+
+	envp[0] = display_event_values[event < GB_DISPLAY_NOTIFY_NUM_EVENTS ?
+		event : GB_DISPLAY_NOTIFY_INVALID];
+	envp[1] = NULL;
+
+	kobject_uevent_env(&dev->kobj, KOBJ_CHANGE, envp);
+}
+
+/* Protocol Handlers */
 
 /* host ready request has no payload */
 /* host ready request has no response */
@@ -235,23 +262,30 @@ static DEVICE_ATTR_RO(config);
 static ssize_t notification_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
+	u8 event = MOD_NOTIFY_INVALID;
+
 	if (!strncmp(buf, "connect", 7)) {
 		dev_dbg(dev, "%s: Forcing connect\n", __func__);
-		mod_display_notification(MOD_NOTIFY_CONNECT);
+		event = MOD_NOTIFY_CONNECT;
 	} else if (!strncmp(buf, "disconnect", 10)) {
 		dev_dbg(dev, "%s: Forcing disconnect\n", __func__);
-		mod_display_notification(MOD_NOTIFY_DISCONNECT);
+		event = MOD_NOTIFY_DISCONNECT;
 	} else if (!strncmp(buf, "available", 9)) {
 		dev_dbg(dev, "%s: Forcing available\n", __func__);
-		mod_display_notification(MOD_NOTIFY_AVAILABLE);
+		event = MOD_NOTIFY_AVAILABLE;
 	} else if (!strncmp(buf, "unavailable", 11)) {
 		dev_dbg(dev, "%s: Forcing unavailable\n", __func__);
-		mod_display_notification(MOD_NOTIFY_UNAVAILABLE);
+		event = MOD_NOTIFY_UNAVAILABLE;
 	} else if (!strncmp(buf, "failure", 7)) {
 		dev_dbg(dev, "%s: Forcing failure\n", __func__);
-		mod_display_notification(MOD_NOTIFY_FAILURE);
+		event = MOD_NOTIFY_FAILURE;
 	} else
 		dev_err(dev, "%s: Unknown notification: %s\n", __func__, buf);
+
+	if (event != MOD_NOTIFY_INVALID) {
+		if (!mod_display_notification(event))
+			report_display_event(dev, event);
+	}
 
 	return count;
 }
@@ -325,52 +359,59 @@ static int gb_display_event_recv(u8 type, struct gb_operation *op)
 {
 	struct gb_connection *connection = op->connection;
 	struct gb_display_notification_request *request;
+	struct gb_display_device *disp = connection->private;
+	int ret = -EINVAL;
 
 	/* By convention, the AP initiates the version operation */
 	switch (type) {
 	case GB_REQUEST_TYPE_PROTOCOL_VERSION:
 		dev_err(&connection->bundle->dev,
 			"module-initiated version operation\n");
-		return -EINVAL;
+		goto exit;
 	case GB_DISPLAY_NOTIFICATION:
 		request = op->request->payload;
 		switch(request->event) {
 		case GB_DISPLAY_NOTIFY_FAILURE:
 			dev_err(&connection->bundle->dev,
 				"GB_DISPLAY_NOTIFY_FAILURE\n");
-			mod_display_notification(MOD_NOTIFY_FAILURE);
+			ret = mod_display_notification(MOD_NOTIFY_FAILURE);
 			break;
 		case GB_DISPLAY_NOTIFY_AVAILABLE:
 			dev_dbg(&connection->bundle->dev,
 				"GB_DISPLAY_NOTIFY_AVAILABLE\n");
-			mod_display_notification(MOD_NOTIFY_AVAILABLE);
+			ret = mod_display_notification(MOD_NOTIFY_AVAILABLE);
 			break;
 		case GB_DISPLAY_NOTIFY_UNAVAILABLE:
 			dev_dbg(&connection->bundle->dev,
 				"GB_DISPLAY_NOTIFY_UNAVAILABLE\n");
-			mod_display_notification(MOD_NOTIFY_UNAVAILABLE);
+			ret = mod_display_notification(MOD_NOTIFY_UNAVAILABLE);
 			break;
 		case GB_DISPLAY_NOTIFY_CONNECT:
 			dev_dbg(&connection->bundle->dev,
 				"GB_DISPLAY_NOTIFY_CONNECT\n");
-			mod_display_notification(MOD_NOTIFY_CONNECT);
+			ret = mod_display_notification(MOD_NOTIFY_CONNECT);
 			break;
 		case GB_DISPLAY_NOTIFY_DISCONNECT:
 			dev_dbg(&connection->bundle->dev,
 				"GB_DISPLAY_NOTIFY_DISCONNECT\n");
-			mod_display_notification(MOD_NOTIFY_DISCONNECT);
+			ret = mod_display_notification(MOD_NOTIFY_DISCONNECT);
 			break;
 		default:
 			dev_err(&connection->bundle->dev,
 				"unsupported event: %u\n", request->event);
-			return -EINVAL;
+			goto exit;
 		}
-		return 0;
 	default:
 		dev_err(&connection->bundle->dev,
 			"unsupported request: %hhu\n", type);
-		return -EINVAL;
+		goto exit;
 	}
+
+	if (!ret)
+		report_display_event(disp->dev, request->event);
+
+exit:
+	return ret;
 }
 
 struct mod_display_comm_ops mod_display_comm_ops = {
