@@ -124,7 +124,7 @@ static void mods_codec_work(struct work_struct *work)
 	if (!gb_codec || !gb_codec->mgmt_connection) {
 		/* Always clear the rx/tx port active status
 		 * when greybus connection down
- 		 */
+		 */
 		priv->rx_active = false;
 		priv->tx_active = false;
 		return;
@@ -412,31 +412,36 @@ static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
 
 	return 0;
 }
+
 static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params,
 				 struct snd_soc_dai *dai)
 {
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
-	int rate, chans, bytes_per_chan, is_le;
-	int err;
+	uint32_t rate, format;
+	uint8_t chans;
+	int bytes_per_chan, is_le;
+	int err = 0;
+
 	if (priv->is_params_set == 1) {
-		pr_debug("%s: params already set \n", __func__);
-		return 0;
+		pr_debug("%s: params already set\n", __func__);
+		return err;
 	}
 	rate = params_rate(params);
 	chans = params_channels(params);
+	format = params_format(params);
 	bytes_per_chan = snd_pcm_format_width(params_format(params)) / 8;
 	is_le = snd_pcm_format_little_endian(params_format(params));
 
 	if (gb_codec && gb_codec->mgmt_connection) {
-		err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans,
+		err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans, format,
 						bytes_per_chan, is_le);
 		if (!err)
 			priv->is_params_set = true;
 	}
 
-	return 0;
+	return err;
 }
 
 static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
