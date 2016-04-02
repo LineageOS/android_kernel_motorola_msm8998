@@ -27,7 +27,6 @@
 #define GB_AUDIO_MGMT_DRIVER_NAME		"gb_audio_mgmt"
 #define GB_MODS_AUDIO_DRIVER_NAME		"gb_mods_audio"
 
-
 static struct gb_snd_codec	snd_codec;
 /*
  * XXX this is sort of cruddy but I get warnings if
@@ -41,7 +40,6 @@ static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 {
 	int ret;
 
-
 	mutex_lock(&snd_codec.lock);
 	snd_codec.mgmt_connection = connection;
 	connection->private = &snd_codec;
@@ -52,18 +50,10 @@ static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 		goto err;
 	}
 
-	ret = gb_i2s_mgmt_set_samples_per_message(snd_codec.mgmt_connection,
-						  CONFIG_SAMPLES_PER_MSG);
-	if (ret) {
-		pr_err("set_samples_per_msg failed: %d\n", ret);
-		goto err_free_i2s_configs;
-	}
 	mutex_unlock(&snd_codec.lock);
 
 	return 0;
 
-err_free_i2s_configs:
-	gb_i2s_mgmt_free_cfgs(&snd_codec);
 err:
 	snd_codec.mgmt_connection = NULL;
 	mutex_unlock(&snd_codec.lock);
@@ -306,8 +296,8 @@ static int gb_audio_register_mods_codec(struct platform_driver *plat)
 static struct gb_protocol gb_i2s_mgmt_protocol = {
 	.name			= GB_AUDIO_MGMT_DRIVER_NAME,
 	.id			= GREYBUS_PROTOCOL_I2S_MGMT,
-	.major			= 0,
-	.minor			= 1,
+	.major			= GB_I2S_MGMT_VERSION_MAJOR,
+	.minor			= GB_I2S_MGMT_VERSION_MINOR,
 	.connection_init	= gb_i2s_mgmt_connection_init,
 	.connection_exit	= gb_i2s_mgmt_connection_exit,
 	.request_recv		= gb_i2s_mgmt_report_event_recv,

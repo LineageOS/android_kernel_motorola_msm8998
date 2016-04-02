@@ -19,15 +19,25 @@
 
 #include "greybus.h"
 
-#define GB_SAMPLE_RATE				48000
-#define GB_RATES				SNDRV_PCM_RATE_48000
-#define GB_FMTS					SNDRV_PCM_FMTBIT_S16_LE
+#define GB_RATES (SNDRV_PCM_RATE_5512 | SNDRV_PCM_RATE_8000 |\
+		SNDRV_PCM_RATE_11025 | SNDRV_PCM_RATE_16000 |\
+		SNDRV_PCM_RATE_22050 | SNDRV_PCM_RATE_32000 |\
+		SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000 |\
+		SNDRV_PCM_RATE_64000 | SNDRV_PCM_RATE_96000 |\
+		SNDRV_PCM_RATE_176400 | SNDRV_PCM_RATE_192000)
 
-#define CONFIG_COUNT_MAX			5
-#define CONFIG_SAMPLES_PER_MSG                 48L
+#define GB_FMTS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE)
 
 #define MODS_VOL_STEP		50
 #define MODS_MIN_VOL		-12750
+
+#define CONFIG_COUNT_MAX		5
+
+#define GB_I2S_MGMT_VERSION_MAJOR 0
+#define GB_I2S_MGMT_VERSION_MINOR 2
+
+#define GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR 0
+#define GB_I2S_MGMT_VERSION_CFG_MASK_MINOR 2
 /*
  * This codec structure will be passed as platform data
  * to mods codec when physical I2S interface is used
@@ -39,7 +49,9 @@ struct gb_snd_codec {
 	struct gb_audio_get_supported_usecases_response *use_cases;
 	struct gb_audio_get_devices_response *aud_devices;
 	struct gb_i2s_mgmt_get_supported_configurations_response
-					*i2s_configs;
+			*i2s_configs; /* table of i2s configurations*/
+	struct gb_i2s_mgmt_get_config_masks_response
+			*i2s_cfg_masks; /* bit mask of i2s configurations */
 	struct gb_connection *mods_aud_connection;
 	struct gb_connection *mgmt_connection;
 	uint32_t playback_use_case;
@@ -68,7 +80,8 @@ int gb_i2s_mgmt_set_samples_per_message(struct gb_connection *connection,
 int gb_i2s_mgmt_get_cfgs(struct gb_snd_codec *snd_codec,
 			 struct gb_connection *connection);
 void gb_i2s_mgmt_free_cfgs(struct gb_snd_codec *snd_codec);
-int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, int rate, int chans,
+int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, uint32_t rate,
+			uint8_t chans, uint32_t format,
 			int bytes_per_chan, int is_le);
 int gb_i2s_mgmt_activate_port(struct gb_connection *connection,
 				uint8_t port_type);
@@ -80,8 +93,8 @@ int gb_mods_aud_get_vol_range(
 			struct gb_audio_get_volume_db_range_response *vol,
 			struct gb_connection *connection);
 int gb_mods_aud_get_supported_usecase(
-			struct gb_audio_get_supported_usecases_response *usecase,
-			struct gb_connection *connection);
+		struct gb_audio_get_supported_usecases_response *usecase,
+		struct gb_connection *connection);
 int gb_mods_aud_set_vol(struct gb_connection *connection,
 			uint32_t vol_step);
 int gb_mods_aud_set_sys_vol(struct gb_connection *connection,

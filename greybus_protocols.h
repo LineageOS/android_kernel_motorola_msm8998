@@ -527,7 +527,7 @@ struct gb_pwm_disable_request {
 } __packed;
 
 /* I2S */
-
+#define GB_I2S_MGMT_TYPE_PROTOCOL_VERSION               0x01
 #define GB_I2S_MGMT_TYPE_GET_SUPPORTED_CONFIGURATIONS	0x02
 #define GB_I2S_MGMT_TYPE_SET_CONFIGURATION		0x03
 #define GB_I2S_MGMT_TYPE_SET_SAMPLES_PER_MESSAGE	0x04
@@ -572,6 +572,26 @@ struct gb_pwm_disable_request {
 #define GB_I2S_MGMT_SPATIAL_LOCATION_BRC		BIT(26)
 #define GB_I2S_MGMT_SPATIAL_LOCATION_RD			BIT(31)
 
+#define GB_I2S_MGMT_PCM_FMT_8                    BIT(0)
+#define GB_I2S_MGMT_PCM_FMT_16                   BIT(1)
+#define GB_I2S_MGMT_PCM_FMT_24                   BIT(2)
+#define GB_I2S_MGMT_PCM_FMT_32                   BIT(3)
+#define GB_I2S_MGMT_PCM_FMT_64                   BIT(4)
+
+#define GB_I2S_MGMT_PCM_RATE_5512                BIT(0)
+#define GB_I2S_MGMT_PCM_RATE_8000                BIT(1)
+#define GB_I2S_MGMT_PCM_RATE_11025               BIT(2)
+#define GB_I2S_MGMT_PCM_RATE_16000               BIT(3)
+#define GB_I2S_MGMT_PCM_RATE_22050               BIT(4)
+#define GB_I2S_MGMT_PCM_RATE_32000               BIT(5)
+#define GB_I2S_MGMT_PCM_RATE_44100               BIT(6)
+#define GB_I2S_MGMT_PCM_RATE_48000               BIT(7)
+#define GB_I2S_MGMT_PCM_RATE_64000               BIT(8)
+#define GB_I2S_MGMT_PCM_RATE_88200               BIT(9)
+#define GB_I2S_MGMT_PCM_RATE_96000               BIT(10)
+#define GB_I2S_MGMT_PCM_RATE_176400              BIT(11)
+#define GB_I2S_MGMT_PCM_RATE_192000              BIT(12)
+
 #define GB_I2S_MGMT_PROTOCOL_PCM			BIT(0)
 #define GB_I2S_MGMT_PROTOCOL_I2S			BIT(1)
 #define GB_I2S_MGMT_PROTOCOL_LR_STEREO			BIT(2)
@@ -599,7 +619,6 @@ struct gb_pwm_disable_request {
 #define GB_I2S_MGMT_PORT_TYPE_RECEIVER		0x1
 #define GB_I2S_MGMT_PORT_TYPE_TRANSMITTER	0x2
 
-
 struct gb_i2s_mgmt_configuration {
 	__le32	sample_frequency;
 	__u8	num_channels;
@@ -618,6 +637,17 @@ struct gb_i2s_mgmt_configuration {
 	__u8	ll_data_offset;
 } __packed;
 
+struct gb_i2s_mgmt_config_masks {
+	__le32	sample_frequency;
+	__u8	num_channels;
+	__le32	format;
+	__u8	protocol;
+	__u8	wclk_polarity;
+	__u8	wclk_change_edge;
+	__u8	wclk_tx_edge;
+	__u8	wclk_rx_edge;
+} __packed;
+
 /* get supported configurations request has no payload */
 struct gb_i2s_mgmt_get_supported_configurations_response {
 	__u8					config_count;
@@ -629,6 +659,14 @@ struct gb_i2s_mgmt_set_configuration_request {
 	struct gb_i2s_mgmt_configuration	config;
 } __packed;
 /* set configuration response has no payload */
+
+struct gb_i2s_mgmt_set_config_masks_request {
+	struct gb_i2s_mgmt_config_masks	config;
+} __packed;
+
+struct gb_i2s_mgmt_get_config_masks_response {
+	struct gb_i2s_mgmt_config_masks config;
+};
 
 struct gb_i2s_mgmt_set_samples_per_message_request {
 	__le16	samples_per_message;
