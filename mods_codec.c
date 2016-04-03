@@ -580,6 +580,121 @@ static ssize_t mods_codec_devices_show(struct device *dev,
 
 static DEVICE_ATTR_RO(mods_codec_devices);
 
+static int mods_codec_convert_gb_rate(uint32_t gb_rate)
+{
+	switch (gb_rate) {
+	case GB_I2S_MGMT_PCM_RATE_5512:
+		return 5512;
+	case GB_I2S_MGMT_PCM_RATE_8000:
+		return 8000;
+	case GB_I2S_MGMT_PCM_RATE_11025:
+		return 11025;
+	case GB_I2S_MGMT_PCM_RATE_16000:
+		return 16000;
+	case GB_I2S_MGMT_PCM_RATE_22050:
+		return 22050;
+	case GB_I2S_MGMT_PCM_RATE_32000:
+		return 32000;
+	case GB_I2S_MGMT_PCM_RATE_44100:
+		return 44100;
+	case GB_I2S_MGMT_PCM_RATE_48000:
+		return 48000;
+	case GB_I2S_MGMT_PCM_RATE_64000:
+		return 64000;
+	case GB_I2S_MGMT_PCM_RATE_88200:
+		return 88200;
+	case GB_I2S_MGMT_PCM_RATE_96000:
+		return 96000;
+	case GB_I2S_MGMT_PCM_RATE_176400:
+		return 176400;
+	case GB_I2S_MGMT_PCM_RATE_192000:
+		return 192000;
+	default:
+		return -EINVAL;
+	}
+}
+
+static uint8_t mods_codec_convert_gb_format(uint8_t gb_fmt)
+{
+	switch (gb_fmt) {
+	case GB_I2S_MGMT_PCM_FMT_8:
+		return 8;
+	case GB_I2S_MGMT_PCM_FMT_16:
+		return 16;
+	case GB_I2S_MGMT_PCM_FMT_24:
+		return 24;
+	case GB_I2S_MGMT_PCM_FMT_32:
+		return 32;
+	case GB_I2S_MGMT_PCM_FMT_64:
+		return 64;
+	default:
+		return -EINVAL;
+	}
+}
+
+static ssize_t mods_codec_caps_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t count;
+	struct gb_snd_codec *codec;
+	struct mods_codec_dai *priv = dev_get_drvdata(dev);
+	uint32_t rate_mask;
+	uint8_t fmt_mask;
+	int i = 0;
+	int rate;
+	int fmt;
+
+	codec = priv->snd_codec;
+	mutex_lock(&codec->lock);
+	if (!mods_codec_check_connection(codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&codec->lock);
+		return 0;
+	}
+	if (!codec->i2s_cfg_masks) {
+		pr_err("%s: audio mods i2s cfg is not init'ed\n",
+				__func__);
+		mutex_unlock(&codec->lock);
+		return 0;
+	}
+	count = scnprintf(buf, PAGE_SIZE, "mods_codec_rates=");
+	rate_mask = le32_to_cpu(codec->i2s_cfg_masks->config.sample_frequency);
+	while (rate_mask > 0) {
+		if (rate_mask & 1) {
+			rate = mods_codec_convert_gb_rate(BIT(i));
+			if (rate > 0)
+				count += scnprintf(buf + count, PAGE_SIZE, "%d",
+								rate);
+		}
+		rate_mask >>= 1;
+		i++;
+	}
+	count += scnprintf(buf + count, PAGE_SIZE,
+					"\nmods_codec_sample_sizes=");
+	i = 0;
+	fmt_mask = codec->i2s_cfg_masks->config.format;
+	while (fmt_mask > 0) {
+		if (fmt_mask & 1) {
+			fmt = mods_codec_convert_gb_format(BIT(i));
+			if (fmt > 0)
+				count += scnprintf(buf + count, PAGE_SIZE, "%d",
+							fmt);
+		}
+		fmt_mask >>= 1;
+		i++;
+	}
+	count += scnprintf(buf + count, PAGE_SIZE,
+				"\nmods_codec_max_channels=%d\n",
+				codec->i2s_cfg_masks->config.num_channels);
+	mutex_unlock(&codec->lock);
+
+	return count;
+}
+
+static DEVICE_ATTR_RO(mods_codec_caps);
+
 static ssize_t mods_codec_usecases_show(struct device *dev,
 			struct device_attribute *attr,
 			char *buf)
@@ -610,6 +725,7 @@ static DEVICE_ATTR_RO(mods_codec_usecases);
 static struct attribute *mods_codec_attrs[] = {
 	&dev_attr_mods_codec_devices.attr,
 	&dev_attr_mods_codec_usecases.attr,
+	&dev_attr_mods_codec_caps.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mods_codec);
