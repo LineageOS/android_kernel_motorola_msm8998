@@ -41,6 +41,30 @@ static struct gb_protocol *gb_protocol_find(u8 id, u8 major, u8 minor)
 	return NULL;
 }
 
+/* Caller must hold gb_protocols_lock */
+static struct gb_protocol *gb_protocol_find_latest(u8 id, u8 major, bool match)
+{
+	struct gb_protocol *protocol;
+
+	list_for_each_entry(protocol, &gb_protocols, links) {
+		if (protocol->id < id)
+			continue;
+		if (protocol->id > id)
+			break;
+
+		if (!match)
+			return protocol;
+
+		if (protocol->major > major)
+			continue;
+		if (protocol->major < major)
+			break;
+
+		return protocol;
+	}
+	return NULL;
+}
+
 int __gb_protocol_register(struct gb_protocol *protocol, struct module *module)
 {
 	struct gb_protocol *existing;
@@ -125,6 +149,31 @@ struct gb_protocol *gb_protocol_get(u8 id, u8 major, u8 minor)
 
 	spin_lock_irq(&gb_protocols_lock);
 	protocol = gb_protocol_find(id, major, minor);
+	if (protocol) {
+		if (!try_module_get(protocol->owner)) {
+			protocol = NULL;
+		} else {
+			protocol_count = protocol->count;
+			if (protocol_count != U8_MAX)
+				protocol->count++;
+		}
+	}
+	spin_unlock_irq(&gb_protocols_lock);
+
+	if (protocol)
+		WARN_ON(protocol_count == U8_MAX);
+
+	return protocol;
+}
+
+/* Returns the latest protocol version supported, or null pointer */
+struct gb_protocol *gb_protocol_get_latest(u8 id, u8 major, bool match)
+{
+	struct gb_protocol *protocol;
+	u8 protocol_count;
+
+	spin_lock_irq(&gb_protocols_lock);
+	protocol = gb_protocol_find_latest(id, major, match);
 	if (protocol) {
 		if (!try_module_get(protocol->owner)) {
 			protocol = NULL;
