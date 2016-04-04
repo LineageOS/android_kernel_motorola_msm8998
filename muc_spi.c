@@ -100,6 +100,12 @@
 
 typedef int (*handler_t)(struct mods_dl_device *from, uint8_t *msg, size_t len);
 
+enum ack {
+	ACK_NEEDED,
+	ACK_NOT_NEEDED,
+	ACK_ERROR,
+};
+
 /*
  * Possible data link layer messages. Responses IDs should be the request ID
  * with the MSB set.
@@ -162,7 +168,7 @@ struct spi_dl_msg {
 	};
 } __packed;
 
-static bool parse_rx_pkt(struct muc_spi_data *dd);
+static enum ack parse_rx_pkt(struct muc_spi_data *dd);
 static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 				  uint8_t *buf, size_t len);
 
@@ -304,7 +310,7 @@ static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
 		},
 	};
 	int ret;
-	bool should_ack;
+	enum ack ack_req;
 	int ack;
 	int intn;
 	int num_tries_remaining = NUM_TRIES;
@@ -359,7 +365,7 @@ retry:
 		}
 	}
 
-	should_ack = parse_rx_pkt(dd);
+	ack_req = parse_rx_pkt(dd);
 
 	if (!dd->ack_supported)
 		return 0;
@@ -367,9 +373,9 @@ retry:
 	/* Set pinmux for ACK'ing */
 	(void)muc_gpio_ack_cfg(true);
 
-	if (should_ack)
+	if (ack_req == ACK_NEEDED)
 		muc_gpio_set_ack(1);
-	else
+	else if (ack_req == ACK_ERROR)
 		dd->no_ack_sent++;
 
 	if (tx_buf) {
@@ -377,7 +383,7 @@ retry:
 			   (intn = muc_gpio_get_int_n()),
 			   ACK_TIMEOUT_JIFFIES, dd);
 		if (!ack && intn) {
-			if (!should_ack) {
+			if (ack_req == ACK_ERROR) {
 				/*
 				 * Since both TX and RX failed, need to spin
 				 * longer to ensure MuC does not see false ACK.
@@ -398,7 +404,7 @@ retry:
 		}
 	}
 
-	if (!should_ack) {
+	if (ack_req == ACK_ERROR) {
 		/* Must block long enough to ensure MuC does not see false
 		 * ACK.
 		 */
@@ -415,7 +421,7 @@ retry:
 	return ret;
 }
 
-static bool parse_rx_pkt(struct muc_spi_data *dd)
+static enum ack parse_rx_pkt(struct muc_spi_data *dd)
 {
 	struct spi_msg_hdr *hdr = (struct spi_msg_hdr *)dd->rx_pkt;
 	uint16_t bitmask = le16_to_cpu(hdr->bitmask);
@@ -439,12 +445,12 @@ static bool parse_rx_pkt(struct muc_spi_data *dd)
 			dd->rx_datagram_ndx = 0;
 			dd->pkts_remaining = 0;
 		}
-		return false;
+		return ACK_ERROR;
 	}
 
 	if (!(bitmask & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
-		return true;
+		return ACK_NOT_NEEDED;
 	}
 
 	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL)) {
@@ -469,7 +475,7 @@ static bool parse_rx_pkt(struct muc_spi_data *dd)
 		else
 			dev_err(&spi->dev, "1st pkt bit not set\n");
 
-		return true;
+		return ACK_NEEDED;
 	}
 
 	if (!dd->pkt1_supported)
@@ -490,7 +496,7 @@ static bool parse_rx_pkt(struct muc_spi_data *dd)
 		if (!dd->rx_datagram_ndx) {
 			dev_warn(&spi->dev, "Ignore non-first packet: "
 				"bitmask=0x%04x\n", bitmask);
-			return true;
+			return ACK_NEEDED;
 		}
 
 		if ((bitmask & HDR_BIT_PKTS) != --dd->pkts_remaining) {
@@ -501,7 +507,7 @@ static bool parse_rx_pkt(struct muc_spi_data *dd)
 			/* Drop the entire message */
 			dd->rx_datagram_ndx = 0;
 			dd->pkts_remaining = 0;
-			return true;
+			return ACK_NEEDED;
 		}
 	}
 
@@ -509,7 +515,7 @@ skip_pkt1:
 	if (unlikely(dd->rx_datagram_ndx >= MAX_DATAGRAM_SZ)) {
 		dev_err(&spi->dev, "Too many packets received!\n");
 		dd->rx_datagram_ndx = 0;
-		return true;
+		return ACK_NEEDED;
 	}
 
 	memcpy(&dd->rx_datagram[dd->rx_datagram_ndx],
@@ -519,13 +525,13 @@ skip_pkt1:
 
 	if (bitmask & HDR_BIT_PKTS) {
 		/* Need additional packets before calling handler */
-		return true;
+		return ACK_NEEDED;
 	}
 
 	handler(dd->dld, dd->rx_datagram, dd->rx_datagram_ndx);
 	dd->rx_datagram_ndx = 0;
 
-	return true;
+	return ACK_NEEDED;
 }
 
 static irqreturn_t muc_spi_isr(int irq, void *data)
