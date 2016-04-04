@@ -1040,9 +1040,10 @@ static ssize_t apba_mode_store(struct device *dev,
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	if (apba_send_diag_mode_req(val))
+	if (apba_send_diag_mode_req(val)) {
 		pr_err("%s: failed to send MODE\n", __func__);
 		return -EIO;
+	}
 
 	if (!wait_for_completion_timeout(
 		    &g_ctrl->mode_comp,
