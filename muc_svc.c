@@ -2368,6 +2368,8 @@ static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit)
 	if (!MB_CONTROL_SUPPORTS(dev, SET_CURRENT_LIMIT))
 		return -ENOENT;
 
+	request.limit = limit;
+
 	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&request,
 			MB_CONTROL_TYPE_SET_CURRENT_LIMIT, sizeof(request),
 			SVC_VENDOR_CTRL_CPORT(dev->intf_id),
