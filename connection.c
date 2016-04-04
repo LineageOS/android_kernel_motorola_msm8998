@@ -550,14 +550,11 @@ static int gb_connection_bind_protocol(struct gb_connection *connection)
 {
 	struct gb_protocol *protocol;
 
-	protocol = gb_protocol_get(connection->protocol_id,
-				   connection->major,
-				   connection->minor);
+	protocol = gb_protocol_get_latest(connection->protocol_id, 0, false);
 	if (!protocol) {
 		dev_err(&connection->hd->dev,
-				"protocol 0x%02x version %u.%u not found\n",
-				connection->protocol_id,
-				connection->major, connection->minor);
+				"protocol 0x%02x not found\n",
+				connection->protocol_id);
 		return -EPROTONOSUPPORT;
 	}
 	connection->protocol = protocol;
