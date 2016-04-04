@@ -596,6 +596,8 @@ static int muc_attach(struct notifier_block *nb,
 				goto set_missing;
 			}
 
+			enable_irq_wake(spi->irq);
+
 			/* First step after attach is to negotiate bus config */
 			err = _muc_spi_negotiate(dd);
 			if (err) {
@@ -603,6 +605,7 @@ static int muc_attach(struct notifier_block *nb,
 				goto free_irq;
 			}
 		} else {
+			disable_irq_wake(spi->irq);
 			devm_free_irq(&spi->dev, spi->irq, dd);
 
 			flush_work(&dd->attach_work);
@@ -632,6 +635,7 @@ static int muc_attach(struct notifier_block *nb,
 	return NOTIFY_OK;
 
 free_irq:
+	disable_irq_wake(spi->irq);
 	devm_free_irq(&spi->dev, spi->irq, dd);
 set_missing:
 	dd->present = 0;
@@ -859,8 +863,10 @@ static int muc_spi_remove(struct spi_device *spi)
 	device_wakeup_disable(&spi->dev);
 
 	unregister_muc_attach_notifier(&dd->attach_nb);
-	if (dd->present)
+	if (dd->present) {
+		disable_irq_wake(spi->irq);
 		devm_free_irq(&spi->dev, spi->irq, dd);
+	}
 
 	flush_work(&dd->attach_work);
 	if (dd->attached) {
