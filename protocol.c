@@ -70,7 +70,6 @@ int __gb_protocol_register(struct gb_protocol *protocol, struct module *module)
 	struct gb_protocol *existing;
 	u8 id = protocol->id;
 	u8 major = protocol->major;
-	u8 minor = protocol->minor;
 
 	protocol->owner = module;
 
@@ -94,13 +93,11 @@ int __gb_protocol_register(struct gb_protocol *protocol, struct module *module)
 		if (existing->major < major)
 			break;
 
-		if (existing->minor > minor)
-			continue;
-		if (existing->minor < minor)
-			break;
-
 		/* A matching protocol has already been registered */
 		spin_unlock_irq(&gb_protocols_lock);
+
+		pr_err("Duplicate %s protocol major v%u\n",
+			protocol->name, protocol->major);
 
 		return -EEXIST;
 	}
@@ -112,7 +109,8 @@ int __gb_protocol_register(struct gb_protocol *protocol, struct module *module)
 	list_add_tail(&protocol->links, &existing->links);
 	spin_unlock_irq(&gb_protocols_lock);
 
-	pr_info("Registered %s protocol.\n", protocol->name);
+	pr_info("Registered %s protocol v%u.%u.\n", protocol->name,
+		protocol->major, protocol->minor);
 
 	return 0;
 }
