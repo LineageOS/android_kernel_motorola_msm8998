@@ -31,6 +31,20 @@
 #include "muc_attach.h"
 #include "muc_svc.h"
 
+/* Protocol version supported by this driver */
+#define PROTO_VER           (2)
+
+/* Protocol version change log */
+#define PROTO_VER_PKT1      (1)     /* Version that added PKT1 bit */
+#define PROTO_VER_ACK       (1)     /* Minimum version for ACK support */
+#define PROTO_VER_DUMMY     (2)     /* Version that added DUMMY bit */
+
+/*
+ * Protocol version support macro for checking if the requested feature (f)
+ * is supported by the attached MuC.
+ */
+#define MUC_SUPPORTS(d, f)  (d->proto_ver >= PROTO_VER_##f)
+
 /*
  * Maximum allowed datagram size (in bytes). A datagram may be split into
  * multiple packets.
@@ -55,8 +69,9 @@
 #define MAX_PKTS_PER_DG     (64)
 
 /* SPI packet header bit definitions */
+#define HDR_BIT_DUMMY  (0x01 << 9)  /* 1 = dummy packet */
 #define HDR_BIT_PKT1   (0x01 << 8)  /* 1 = first packet of message */
-#define HDR_BIT_VALID  (0x01 << 7)  /* 1 = valid packet, 0 = dummy packet */
+#define HDR_BIT_VALID  (0x01 << 7)  /* 1 = packet has valid payload */
 #define HDR_BIT_TYPE   (0x01 << 6)  /* SPI message type */
 #define HDR_BIT_PKTS   (0x3F << 0)  /* How many additional packets to expect */
 
@@ -70,11 +85,14 @@
 /* SPI packet CRC size (in bytes) */
 #define CRC_SIZE       (2)
 
+/* Size of the header in bytes */
+#define HDR_SIZE       sizeof(struct spi_msg_hdr)
+
 /* Macro to determine the payload size from the packet size */
-#define PL_SIZE(pkt_size)  (pkt_size - sizeof(struct spi_msg_hdr) - CRC_SIZE)
+#define PL_SIZE(pkt_size)  (pkt_size - HDR_SIZE - CRC_SIZE)
 
 /* Macro to determine the packet size from the payload size */
-#define PKT_SIZE(pl_size)  (pl_size + sizeof(struct spi_msg_hdr) + CRC_SIZE)
+#define PKT_SIZE(pl_size)  (pl_size + HDR_SIZE + CRC_SIZE)
 
 /* Macro to determine the location of the CRC in the packet */
 #define CRC_NDX(pkt_size)  (pkt_size - CRC_SIZE)
@@ -124,7 +142,7 @@ struct muc_spi_data {
 	struct mutex mutex;                /* Used to serialize SPI transfers */
 	struct work_struct attach_work;    /* Worker to send attach to SVC */
 	__u32 default_speed_hz;            /* Default SPI clock rate to use */
-	bool pkt1_supported;               /* MuC supports setting pkt1 hdr bit */
+	__u8 proto_ver;                    /* Protocol version supported by MuC */
 	bool ack_supported;                /* MuC supports ACK'ing on success */
 
 	size_t pkt_size;                   /* Size of hdr + pl + CRC in bytes */
@@ -152,12 +170,14 @@ struct spi_msg_hdr {
 struct spi_dl_msg_bus_config_req {
 	__le16 max_pl_size;                /* Max payload size base supports */
 	__u8   features;                   /* See DL_BIT_* defines for values */
+	__u8   version;                    /* SPI msg format version supported */
 } __packed;
 
 struct spi_dl_msg_bus_config_resp {
 	__le32 max_speed;                  /* Max bus speed mod supports */
 	__le16 pl_size;                    /* Payload size mod selected */
 	__u8   features;                   /* See DL_BIT_* defines for values */
+	__u8   version;                    /* SPI msg format version of mod */
 } __packed;
 
 struct spi_dl_msg {
@@ -175,6 +195,27 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 static inline struct muc_spi_data *dld_to_dd(struct mods_dl_device *dld)
 {
 	return (struct muc_spi_data *)dld->dl_priv;
+}
+
+static inline bool is_tx_pkt_valid(struct muc_spi_data *dd)
+{
+	struct spi_msg_hdr *hdr = (struct spi_msg_hdr *)dd->tx_pkt;
+
+	return !!(le16_to_cpu(hdr->bitmask) & HDR_BIT_VALID);
+}
+
+static inline void set_tx_pkt_hdr(struct muc_spi_data *dd, uint16_t bitmask)
+{
+	struct spi_msg_hdr *hdr = (struct spi_msg_hdr *)dd->tx_pkt;
+	hdr->bitmask = cpu_to_le16(bitmask);
+}
+
+static inline void set_tx_pkt_crc(struct muc_spi_data *dd)
+{
+	uint16_t *crc = (uint16_t *)&dd->tx_pkt[CRC_NDX(dd->pkt_size)];
+
+	*crc = crc16_calc(0, dd->tx_pkt, CRC_NDX(dd->pkt_size));
+	*crc = cpu_to_le16(*crc);
 }
 
 static void set_bus_speed(struct muc_spi_data *dd, __u32 max_speed_hz)
@@ -273,7 +314,16 @@ static int dl_recv(struct mods_dl_device *dld, uint8_t *msg, size_t len)
 	if (!(resp.bus_resp.features & DL_BIT_ACK))
 		dd->ack_supported = false;
 
-	dev_info(dev, "ack_supported = %d\n", dd->ack_supported);
+	dd->proto_ver = resp.bus_resp.version;
+
+	/* MuCs that support ACKing must use PROTO_VER_ACK or later */
+	if (dd->ack_supported && !MUC_SUPPORTS(dd, ACK)) {
+		dev_warn(dev, "ACK requires newer protocol version\n");
+		dd->proto_ver = PROTO_VER_ACK;
+	}
+
+	dev_info(dev, "proto_ver=%d, ack_supported=%d\n",
+		 dd->proto_ver, dd->ack_supported);
 
 	/* Schedule work to send attach to SVC */
 	schedule_work(&dd->attach_work);
@@ -298,13 +348,12 @@ static void attach_worker(struct work_struct *work)
 	dd->attached = !ret;
 }
 
-static int muc_spi_transfer(struct muc_spi_data *dd, uint8_t *tx_buf,
-			    bool keep_wake)
+static int muc_spi_transfer(struct muc_spi_data *dd, bool keep_wake)
 {
 	struct spi_device *spi = dd->spi;
 	struct spi_transfer t[] = {
 		{
-			.tx_buf = tx_buf,
+			.tx_buf = dd->tx_pkt,
 			.rx_buf = dd->rx_pkt,
 			.len = dd->pkt_size,
 		},
@@ -378,7 +427,7 @@ retry:
 	else if (ack_req == ACK_ERROR)
 		dd->no_ack_sent++;
 
-	if (tx_buf) {
+	if (is_tx_pkt_valid(dd)) {
 		WAIT_WHILE(!(ack = muc_gpio_get_ack()) &&
 			   (intn = muc_gpio_get_int_n()),
 			   ACK_TIMEOUT_JIFFIES, dd);
@@ -448,29 +497,32 @@ static enum ack parse_rx_pkt(struct muc_spi_data *dd)
 		return ACK_ERROR;
 	}
 
-	if (!(bitmask & HDR_BIT_VALID)) {
+	if (MUC_SUPPORTS(dd, DUMMY)) {
+		switch (bitmask & (HDR_BIT_VALID | HDR_BIT_DUMMY)) {
+			case HDR_BIT_VALID:
+				/* Process message below */
+				break;
+
+			case HDR_BIT_DUMMY:
+				/* Received a dummy packet - nothing to do! */
+				return ACK_NOT_NEEDED;
+
+			default:
+				dev_err(&spi->dev, "garbage packet\n");
+				return ACK_ERROR;
+		}
+	} else if (!(bitmask & HDR_BIT_VALID)) {
 		/* Received a dummy packet - nothing to do! */
 		return ACK_NOT_NEEDED;
 	}
 
-	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL)) {
+	if (unlikely((bitmask & HDR_BIT_TYPE) == MSG_TYPE_DL))
 		handler = dl_recv;
-
-		/*
-		 * Check if MuC supports setting the first packet bit. Once
-		 * set, it cannot be reset until next detach. This check is
-		 * only performed on datalink packets since datalink packets
-		 * happen first and are rare.
-		 */
-		if (!dd->pkt1_supported)
-			dd->pkt1_supported = (bitmask & HDR_BIT_PKT1) != 0;
-	}
 
 	/* Check if un-packetizing is not required */
 	if (MAX_DATAGRAM_SZ == pl_size) {
-		if (!dd->pkt1_supported || (bitmask & HDR_BIT_PKT1))
-			handler(dd->dld,
-				&dd->rx_pkt[sizeof(struct spi_msg_hdr)],
+		if (!MUC_SUPPORTS(dd, PKT1) || (bitmask & HDR_BIT_PKT1))
+			handler(dd->dld, &dd->rx_pkt[HDR_SIZE],
 				pl_size);
 		else
 			dev_err(&spi->dev, "1st pkt bit not set\n");
@@ -478,7 +530,7 @@ static enum ack parse_rx_pkt(struct muc_spi_data *dd)
 		return ACK_NEEDED;
 	}
 
-	if (!dd->pkt1_supported)
+	if (!MUC_SUPPORTS(dd, PKT1))
 		goto skip_pkt1;
 
 	if (bitmask & HDR_BIT_PKT1) {
@@ -519,8 +571,7 @@ skip_pkt1:
 	}
 
 	memcpy(&dd->rx_datagram[dd->rx_datagram_ndx],
-	       &dd->rx_pkt[sizeof(struct spi_msg_hdr)],
-	       pl_size);
+	       &dd->rx_pkt[HDR_SIZE], pl_size);
 	dd->rx_datagram_ndx += pl_size;
 
 	if (bitmask & HDR_BIT_PKTS) {
@@ -545,8 +596,12 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	mutex_lock(&dd->mutex);
 	pm_stay_awake(&dd->spi->dev);
 
+	/* Populate the SPI dummy message */
+	set_tx_pkt_hdr(dd, HDR_BIT_DUMMY);
+	set_tx_pkt_crc(dd);
+
 	while (!muc_gpio_get_int_n() && dd->present)
-		muc_spi_transfer(dd, NULL, (dd->pkts_remaining > 1));
+		muc_spi_transfer(dd, (dd->pkts_remaining > 1));
 
 	pm_relax(&dd->spi->dev);
 	mutex_unlock(&dd->mutex);
@@ -564,6 +619,7 @@ static int _muc_spi_negotiate(struct muc_spi_data *dd)
 	memset(&msg, 0, sizeof(msg));
 	msg.id = DL_MSG_ID_BUS_CFG_REQ;
 	msg.bus_req.max_pl_size = U16_MAX;
+	msg.bus_req.version = PROTO_VER;
 
 	if (dd->ack_supported)
 		msg.bus_req.features |= DL_BIT_ACK;
@@ -631,7 +687,7 @@ static int muc_attach(struct notifier_block *nb,
 			set_packet_size(dd, DEFAULT_PKT_SZ);
 			dd->rx_datagram_ndx = 0;
 			dd->pkts_remaining = 0;
-			dd->pkt1_supported = false;
+			dd->proto_ver = 0;
 			dd->ack_supported = muc_gpio_ack_is_supported();
 			dd->no_ack_sent = 0;
 			dd->no_ack_rcvd = 0;
@@ -652,8 +708,6 @@ set_missing:
 static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 				  uint8_t *buf, size_t len)
 {
-	struct spi_msg_hdr *hdr;
-	uint16_t *crc;
 	int remaining = len;
 	size_t pl_size = PL_SIZE(dd->pkt_size);
 	int packets;
@@ -671,9 +725,6 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 	mutex_lock(&dd->mutex);
 	pm_stay_awake(&dd->spi->dev);
 
-	hdr = (struct spi_msg_hdr *)dd->tx_pkt;
-	crc = (uint16_t *)&dd->tx_pkt[CRC_NDX(dd->pkt_size)];
-
 	while ((remaining > 0) && (packets > 0)) {
 		int this_pl;
 		uint16_t bitmask;
@@ -689,13 +740,11 @@ static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
 			bitmask |= HDR_BIT_PKT1;
 
 		/* Populate the SPI message */
-		hdr->bitmask = cpu_to_le16(bitmask);
-		memcpy((dd->tx_pkt + sizeof(*hdr)), buf, this_pl);
+		set_tx_pkt_hdr(dd, bitmask);
+		memcpy((dd->tx_pkt + HDR_SIZE), buf, this_pl);
+		set_tx_pkt_crc(dd);
 
-		*crc = crc16_calc(0, dd->tx_pkt, CRC_NDX(dd->pkt_size));
-		*crc = cpu_to_le16(*crc);
-
-		ret = muc_spi_transfer(dd, dd->tx_pkt, (packets > 0));
+		ret = muc_spi_transfer(dd, (packets > 0));
 		if (ret)
 			break;
 
