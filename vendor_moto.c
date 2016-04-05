@@ -25,7 +25,7 @@ struct gb_vendor_moto {
 
 /* Version of the Greybus protocol we support */
 #define	GB_VENDOR_MOTO_VERSION_MAJOR		0x00
-#define	GB_VENDOR_MOTO_VERSION_MINOR		0x01  // FIXME: Set to 0x02 when supported
+#define	GB_VENDOR_MOTO_VERSION_MINOR		0x03
 
 /* Greybus Motorola vendor specific request types */
 #define	GB_VENDOR_MOTO_TYPE_GET_DMESG		0x02
