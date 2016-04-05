@@ -399,7 +399,7 @@ static int gb_connection_protocol_get_version(struct gb_connection *connection)
 		return 0;
 
 	do {
-		ret = gb_protocol_get_version(connection);
+		ret = gb_protocol_version_negotiate(connection);
 	} while (ret == -ETIMEDOUT && ++retries <= GB_CONN_VERSION_RETRIES);
 
 	if (!ret && retries)

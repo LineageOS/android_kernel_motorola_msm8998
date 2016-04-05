@@ -52,6 +52,7 @@ void gb_protocol_deregister(struct gb_protocol *protocol);
 struct gb_protocol *gb_protocol_get(u8 id, u8 major, u8 minor);
 struct gb_protocol *gb_protocol_get_latest(u8 id, u8 major, bool match);
 int gb_protocol_get_version(struct gb_connection *connection);
+int gb_protocol_version_negotiate(struct gb_connection *connection);
 
 void gb_protocol_put(struct gb_protocol *protocol);
 

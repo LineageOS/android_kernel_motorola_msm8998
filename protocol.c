@@ -226,6 +226,42 @@ int gb_protocol_get_version(struct gb_connection *connection)
 }
 EXPORT_SYMBOL_GPL(gb_protocol_get_version);
 
+int gb_protocol_version_negotiate(struct gb_connection *connection)
+{
+	struct gb_protocol *protocol = connection->protocol;
+	int ret;
+
+	ret = gb_protocol_get_version(connection);
+
+	/* If exact match, we're done */
+	if (!ret && connection->module_major == protocol->major)
+		return 0;
+
+	if (ret && ret != -EPROTONOSUPPORT)
+		return ret;
+
+	dev_info(&connection->hd->dev,
+		"%s: %s (0x%02x) v%u.%u mismatch v%u.%u\n",
+		connection->name, protocol->name, protocol->id,
+		protocol->major, protocol->minor,
+		connection->module_major, connection->module_minor);
+
+	/* Drop reference to the old module */
+	gb_protocol_put(protocol);
+
+	/* Try to find a matching major */
+	protocol = gb_protocol_get_latest(protocol->id,
+					connection->module_major,
+					true);
+	if (!protocol)
+		return -EPROTONOSUPPORT;
+
+	connection->protocol = protocol;
+
+	return gb_protocol_get_version(connection);
+}
+EXPORT_SYMBOL_GPL(gb_protocol_version_negotiate);
+
 void gb_protocol_put(struct gb_protocol *protocol)
 {
 	u8 id;
