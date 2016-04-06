@@ -399,7 +399,7 @@ retry:
 			} else {
 				dev_err(&spi->dev, "Abort: No ACK received\n");
 				dd->no_ack_abort++;
-				return -EIO;
+				return -ETIMEDOUT;
 			}
 		}
 	}
