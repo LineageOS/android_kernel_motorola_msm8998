@@ -251,7 +251,6 @@ static const u64 scene_mode_items[] = {
 	CAM_EXT_SCENE_MODE_PARTY,
 	CAM_EXT_SCENE_MODE_CANDLELIGHT,
 	CAM_EXT_SCENE_MODE_BARCODE,
-	CAM_EXT_SCENE_MODE_HIGHT_SPEED_VIDEO,
 	CAM_EXT_SCENE_MODE_HDR,
 };
 
@@ -1253,21 +1252,26 @@ static const u64 capture_items[] = {
 };
 
 static struct v4l2_ctrl_config start_capture = {
-	.id = CAM_EXT_CID_START_CAPTURE,
+	.id = CAM_EXT_CID_CAPTURE,
 	.type = V4L2_CTRL_TYPE_BITMASK,
 	.name = "start capture",
 	.max = CAM_EXT_CID_CAPTURE_MAX,
 };
 
-/* TODO:
- *      will remove later when change firmware
- *      after start_capture can stop video and preview
- */
-static struct v4l2_ctrl_config abort_capture = {
-	.id = CAM_EXT_CID_ABORT_CAPTURE,
-	.type = V4L2_CTRL_TYPE_BITMASK,
-	.name = "abort capture",
-	.max = CAM_EXT_CID_CAPTURE_MAX,
+static const u64 af_mode_ext_items[] = {
+	CAM_EXT_AF_MODE_EXT_NULL,
+	CAM_EXT_AF_MODE_EXT_INFINITY,
+	CAM_EXT_AF_MODE_EXT_FIXED,
+};
+
+static struct v4l2_ctrl_config af_mode_ext = {
+	.id = CAM_EXT_CID_AF_MODE_EXT,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "af mode extenstion",
+	.max = CAM_EXT_AF_MODE_EXT_MAX,
+	.qmenu_int = af_mode_ext_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 static const u64 iso_items[] = {
@@ -1523,8 +1527,8 @@ __ITEM(SENSOR_PREFERENCE_ILLUMINANT1, sensor_preference_illuminant1),
 __ITEM(SENSOR_PREFERENCE_ILLUMINANT2, sensor_preference_illuminant2),
 __ITEM(STATISTICS_HOT_PIXEL_MAP_MODE, statistics_hot_pixel_map_mode),
 __ITEM(HOT_PIXEL_MAP, hot_pixel_map),
-__ITEM(START_CAPTURE, start_capture),
-__ITEM(ABORT_CAPTURE, abort_capture),
+__ITEM(CAPTURE, start_capture),
+__ITEM(AF_MODE_EXT, af_mode_ext),
 __ITEM(ISO, iso),
 __ITEM(ND_FILTER, nd_filter),
 __ITEM(JPEG_SHARPNESS, jpeg_sharpness),
