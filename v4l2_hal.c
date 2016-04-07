@@ -62,8 +62,8 @@ struct v4l2_format_compat {
 
 static int query_cap(struct file *file, void *fh, struct v4l2_capability *cap)
 {
-	strlcpy(cap->driver, "v4l2 hal", sizeof(cap->driver));
-	strlcpy(cap->card, "v4l2 hal", sizeof(cap->card));
+	strlcpy(cap->driver, HAL_DEV_NAME, sizeof(cap->driver));
+	strlcpy(cap->card, HAL_DEV_NAME, sizeof(cap->card));
 	strlcpy(cap->bus_info, "greybus", sizeof(cap->card));
 	cap->version = V4L2_HAL_DRIVER_VERSION;
 	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE;
@@ -707,6 +707,7 @@ void *v4l2_hal_init()
 		goto error_alloc_vdev;
 	}
 
+	strlcpy(data->vdev->name, HAL_DEV_NAME, sizeof(data->vdev->name));
 	data->vdev->ctrl_handler = NULL;
 	data->vdev->v4l2_dev = &data->v4l2_dev;
 	data->vdev->release = video_device_release;
