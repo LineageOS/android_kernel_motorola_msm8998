@@ -231,6 +231,11 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 void muc_svc_communication_reset(void)
 {
 	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
+
+	/* Increment failure count, and mark the starting time */
+	if (!svc_dd->fail_count++)
+		svc_dd->first_fail = jiffies;
+
 	_do_muc_recovery_level();
 
 	mods_queue_error_event_empty(MUC_SVC_COMMUNICATION_RESET);
