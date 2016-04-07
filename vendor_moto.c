@@ -76,6 +76,41 @@ err:
 	return ret;
 }
 
+static int do_get_uptime(struct gb_vendor_moto *gb, unsigned int *uptime)
+{
+	struct gb_vendor_moto_get_uptime_response rsp;
+	int ret;
+
+	if (gb->connection->module_minor < GB_VENDOR_MOTO_VER_UPTIME)
+		return -EOPNOTSUPP;
+
+	ret = gb_operation_sync(gb->connection,
+				GB_VENDOR_MOTO_TYPE_GET_UPTIME,
+				NULL, 0, &rsp, sizeof(rsp));
+	if (ret)
+		return ret;
+
+	*uptime = le32_to_cpu(rsp.secs);
+
+	return 0;
+}
+
+static int do_get_pwrup(struct gb_vendor_moto *gb, unsigned int *pwrup)
+{
+	struct gb_vendor_moto_pwr_up_reason_response rsp;
+	int ret;
+
+	ret = gb_operation_sync(gb->connection,
+				GB_VENDOR_MOTO_TYPE_GET_PWR_UP_REASON,
+				NULL, 0, &rsp, sizeof(rsp));
+	if (ret)
+		return ret;
+
+	*pwrup = le32_to_cpu(rsp.reason);
+
+	return 0;
+}
+
 static ssize_t dmesg_show(struct device *dev, struct device_attribute *attr,
 			  char *buf)
 {
@@ -94,16 +129,14 @@ static ssize_t pwr_up_reason_show(struct device *dev,
 			          struct device_attribute *attr, char *buf)
 {
 	struct gb_vendor_moto *gb = dev_get_drvdata(dev);
-	struct gb_vendor_moto_pwr_up_reason_response rsp;
+	unsigned int pwrup;
 	int ret;
 
-	ret = gb_operation_sync(gb->connection,
-				GB_VENDOR_MOTO_TYPE_GET_PWR_UP_REASON,
-				NULL, 0, &rsp, sizeof(rsp));
+	ret = do_get_pwrup(gb, &pwrup);
 	if (ret)
 		return ret;
 
-	return scnprintf(buf, PAGE_SIZE, "0x%08X\n", le32_to_cpu(rsp.reason));
+	return scnprintf(buf, PAGE_SIZE, "0x%08X\n", pwrup);
 }
 static DEVICE_ATTR_RO(pwr_up_reason);
 
@@ -111,19 +144,14 @@ static ssize_t uptime_show(struct device *dev,
 			   struct device_attribute *attr, char *buf)
 {
 	struct gb_vendor_moto *gb = dev_get_drvdata(dev);
-	struct gb_vendor_moto_get_uptime_response rsp;
+	unsigned int uptime;
 	int ret;
 
-	if (gb->connection->module_minor < GB_VENDOR_MOTO_VER_UPTIME)
-		return -EOPNOTSUPP;
-
-	ret = gb_operation_sync(gb->connection,
-				GB_VENDOR_MOTO_TYPE_GET_UPTIME,
-				NULL, 0, &rsp, sizeof(rsp));
+	ret = do_get_uptime(gb, &uptime);
 	if (ret)
 		return ret;
 
-	return scnprintf(buf, PAGE_SIZE, "%d sec\n", le32_to_cpu(rsp.secs));
+	return scnprintf(buf, PAGE_SIZE, "%d sec\n", uptime);
 }
 static DEVICE_ATTR_RO(uptime);
 
@@ -145,6 +173,34 @@ static struct class vendor_class = {
 };
 
 static DEFINE_IDA(minors);
+
+static inline void gb_vendor_moto_print_status(struct gb_vendor_moto *gb)
+{
+	unsigned int pwr;
+	unsigned int uptime;
+	int ret;
+
+	ret = do_get_pwrup(gb, &pwr);
+	if (ret) {
+		dev_err(gb->dev, "Failed to read powerup reason: %d\n", ret);
+		return;
+	}
+
+	ret = do_get_uptime(gb, &uptime);
+
+	/* We're done as uptime is not supported. Print the info we have */
+	if (ret == -EOPNOTSUPP) {
+		dev_info(gb->dev, "power up reason: %08X\n", pwr);
+		return;
+	}
+
+	if (ret) {
+		dev_err(gb->dev, "Failed to read uptime: %d\n", ret);
+		return;
+	}
+
+	dev_info(gb->dev, "power up reason: %08X uptime: %us\n", pwr, uptime);
+}
 
 static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 {
@@ -196,6 +252,8 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 		goto err_ida_remove;
 	}
 	gb->dev = dev;
+
+	gb_vendor_moto_print_status(gb);
 
 	return 0;
 
