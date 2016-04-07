@@ -492,6 +492,8 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_alloc_vdev;
 	}
 
+	snprintf(cam_dev->vdev_mod->name, sizeof(cam_dev->vdev_mod->name),
+				"%s", CAMERA_EXT_DEV_NAME);
 	cam_dev->vdev_mod->ctrl_handler = &cam_dev->hdl_ctrls;
 	cam_dev->vdev_mod->v4l2_dev = &cam_dev->v4l2_dev;
 	cam_dev->vdev_mod->release = video_device_release;
