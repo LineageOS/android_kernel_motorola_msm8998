@@ -196,14 +196,15 @@ static int muc_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct muc_data *ps_muc = muc_misc_data;
 
+	if (ps_muc->det_irq_enabled)
+		muc_intr_destroy(ps_muc, dev);
+	muc_gpio_exit(dev, ps_muc);
+
 	of_platform_depopulate(dev);
 	if (ps_muc->spi_pdev)
 		of_dev_put(ps_muc->spi_pdev);
 	if (ps_muc->i2c_pdev)
 		of_dev_put(ps_muc->i2c_pdev);
-	if (ps_muc->det_irq_enabled)
-		muc_intr_destroy(ps_muc, dev);
-	muc_gpio_exit(dev, ps_muc);
 
 	return 0;
 }
