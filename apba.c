@@ -392,7 +392,7 @@ static int apba_send_unipro_write_attr_req(uint16_t attribute, uint16_t selector
 	req.attribute = cpu_to_le16(attribute);
 	req.selector = cpu_to_le16(selector);
 	req.peer = peer;
-	req.value = cpu_to_le16(value);
+	req.value = cpu_to_le32(value);
 
 	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr, (uint8_t *)&req,
 		sizeof(req), 0);
@@ -1386,13 +1386,13 @@ static ssize_t apba_read_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	int ret;
-	int attribute = 0;
-	unsigned int selector = 0;
+	uint16_t attribute = 0;
+	uint16_t selector = 0;
 
 	if (!g_ctrl)
 		return -ENODEV;
 
-	ret = sscanf(buf, "%x %u", &attribute, &selector);
+	ret = sscanf(buf, "%hx %hu", &attribute, &selector);
 	if (ret < 1) /* one required parameter */
 		return -EINVAL;
 
@@ -1425,14 +1425,14 @@ static ssize_t apba_write_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	int ret;
-	int attribute = 0;
+	uint16_t attribute = 0;
 	uint32_t value = 0;
-	unsigned int selector = 0;
+	uint16_t selector = 0;
 
 	if (!g_ctrl)
 		return -ENODEV;
 
-	ret = sscanf(buf, "%x %x %u", &attribute, &value, &selector);
+	ret = sscanf(buf, "%hx %x %hu", &attribute, &value, &selector);
 	if (ret < 2) /* two required parameters */
 		return -EINVAL;
 
@@ -1494,14 +1494,14 @@ static ssize_t apbe_write_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	int ret;
-	int attribute = 0;
-	unsigned int value = 0;
-	unsigned int selector = 0;
+	uint16_t attribute = 0;
+	uint32_t value = 0;
+	uint16_t selector = 0;
 
 	if (!g_ctrl)
 		return -ENODEV;
 
-	ret = sscanf(buf, "%x %x %u", &attribute, &value, &selector);
+	ret = sscanf(buf, "%hx %x %hu", &attribute, &value, &selector);
 	if (ret < 2) /* two required parameters */
 		return -EINVAL;
 
