@@ -141,6 +141,12 @@ struct apba_ctrl {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pinctrl_state_default;
 	struct pinctrl_state *pinctrl_state_active;
+	u32 unipro_mid;
+	u32 unipro_pid;
+	u32 ara_vid;
+	u32 ara_pid;
+	u32 fw_version;
+	char fw_package_name[TFTF_NAME_LENGTH];
 	char firmware_name[APBA_FIRMWARE_NAME_LEN];
 	int gpio_cnt;
 	int gpios[APBA_NUM_GPIOS];
@@ -188,6 +194,19 @@ static struct work_struct apba_disable_work;
 static struct work_struct apba_enable_work;
 static struct work_struct apba_dettach_work;
 
+static void apba_send_kobj_uevent(const char *event)
+{
+	struct kobj_uevent_env *env;
+
+	env = kzalloc(sizeof(*env), GFP_KERNEL);
+	if (!env)
+		return;
+
+	add_uevent_var(env, event);
+	kobject_uevent_env(&g_ctrl->dev->kobj, KOBJ_CHANGE, env->envp);
+	kfree(env);
+}
+
 static void apba_handle_pm_status_not(struct mhb_hdr *hdr, uint8_t *payload,
 		size_t len)
 {
@@ -210,6 +229,7 @@ static void apba_handle_pm_status_not(struct mhb_hdr *hdr, uint8_t *payload,
 		pr_info("APBE: on\n");
 		mods_slave_ctrl_power(g_ctrl->master_intf,
 			MB_CONTROL_SLAVE_POWER_ON, MB_CONTROL_SLAVE_MASK_APBE);
+		apba_send_kobj_uevent("APBA_EVENT=BOOT_COMPLETED");
 		break;
 	case MHB_PM_STATUS_PEER_RESET:
 		pr_info("APBE: reset\n");
@@ -939,7 +959,8 @@ static DEVICE_ATTR_WO(erase_partition);
  * Return 0 if the firmware does not need to be flashed
  * Return !0 otherwise
  */
-static int apba_compare_partition(struct mtd_info *mtd_info,
+static int apba_compare_partition(struct apba_ctrl *ctrl,
+	struct mtd_info *mtd_info,
 	const struct firmware *fw)
 {
 	int err;
@@ -971,6 +992,9 @@ static int apba_compare_partition(struct mtd_info *mtd_info,
 			 tftf->timestamp, tftf->name, tftf->package_type,
 			 tftf->unipro_mid, tftf->unipro_pid,
 			 tftf->ara_vid, tftf->ara_pid, tftf->version);
+
+		ctrl->fw_version = tftf->version;
+		strlcpy(ctrl->fw_package_name, tftf->name, TFTF_NAME_LENGTH);
 
 		/* don't overwrite newer fw with older fw */
 		if (tftf->version > fsfw->version) {
@@ -1065,7 +1089,7 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 	 * If they match, skip the process.  If anything fails during the
 	 * comparison, then flash.
 	 */
-	compare_result = apba_compare_partition(mtd_info, fw);
+	compare_result = apba_compare_partition(ctrl, mtd_info, fw);
 	if (compare_result == 0) {
 		pr_info("%s: firmware unchanged or newer, skipping flash\n",
 			__func__);
@@ -1118,7 +1142,7 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 		err = mtd_write(mtd_info, offset, s, &retlen, buffer);
 		if (err < 0) {
 			pr_err("%s: write error %d\n", __func__, err);
-			break;
+			goto free_mem;
 		}
 
 		data += s;
@@ -1126,7 +1150,13 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 		count -= s;
 	}
 
-	pr_debug("%s: %s complete %d\n", __func__, partition, err);
+	pr_debug("%s: %s write complete\n", __func__, partition);
+
+	/* Since fw file version is now in flash, store that version */
+	ctrl->fw_version = ((tftf_header *)fw->data)->version;
+	strlcpy(ctrl->fw_package_name, ((tftf_header *)fw->data)->name,
+		TFTF_NAME_LENGTH);
+
 free_mem:
 	kfree(buffer);
 
@@ -1223,6 +1253,26 @@ static ssize_t apba_enable_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", g_ctrl->desired_on);
 }
 
+static ssize_t apba_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 10, &val) < 0)
+		return -EINVAL;
+	else if (val != 0 && val != 1)
+		return -EINVAL;
+
+	if (val)
+		apba_enable();
+	else
+		apba_disable();
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(apba_enable);
+
 static ssize_t flash_enable_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1248,26 +1298,6 @@ static ssize_t flash_enable_store(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(flash_enable);
-
-static ssize_t apba_enable_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	unsigned long val;
-
-	if (kstrtoul(buf, 10, &val) < 0)
-		return -EINVAL;
-	else if (val != 0 && val != 1)
-		return -EINVAL;
-
-	if (val)
-		apba_enable();
-	else
-		apba_disable();
-
-	return count;
-}
-
-static DEVICE_ATTR_RW(apba_enable);
 
 static ssize_t apba_mode_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -1580,6 +1610,75 @@ static ssize_t gear_store(struct device *dev,
 
 static DEVICE_ATTR_WO(gear);
 
+static ssize_t unipro_mid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%08x\n", g_ctrl->unipro_mid);
+}
+
+static DEVICE_ATTR_RO(unipro_mid);
+
+static ssize_t unipro_pid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%08x\n", g_ctrl->unipro_pid);
+}
+
+static DEVICE_ATTR_RO(unipro_pid);
+
+static ssize_t vid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%08x\n", g_ctrl->ara_vid);
+}
+
+static DEVICE_ATTR_RO(vid);
+
+static ssize_t pid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%08x\n", g_ctrl->ara_pid);
+}
+
+static DEVICE_ATTR_RO(pid);
+
+static ssize_t fw_version_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%08x\n", g_ctrl->fw_version);
+}
+
+static DEVICE_ATTR_RO(fw_version);
+
+static ssize_t fw_version_str_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return scnprintf(buf, PAGE_SIZE, "%d.%d %s\n",
+			 g_ctrl->fw_version >> 16,
+			 g_ctrl->fw_version & 0x0000FFFF,
+			 g_ctrl->fw_package_name);
+}
+
+static DEVICE_ATTR_RO(fw_version_str);
+
 static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
 	&dev_attr_flash_enable.attr,
@@ -1595,6 +1694,12 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_apbe_read.attr,
 	&dev_attr_apbe_write.attr,
 	&dev_attr_gear.attr,
+	&dev_attr_unipro_mid.attr,
+	&dev_attr_unipro_pid.attr,
+	&dev_attr_vid.attr,
+	&dev_attr_pid.attr,
+	&dev_attr_fw_version.attr,
+	&dev_attr_fw_version_str.attr,
 	NULL,
 };
 
@@ -1793,11 +1898,13 @@ int apba_uart_register(void *mods_uart)
 static void apba_disable_work_func(struct work_struct *work)
 {
 	apba_disable();
+	apba_send_kobj_uevent("APBA_EVENT=SLAVE_DISABLED");
 }
 
 static void apba_enable_work_func(struct work_struct *work)
 {
 	apba_enable();
+	apba_send_kobj_uevent("APBA_EVENT=SLAVE_ENABLED");
 }
 
 static void apba_dettach_work_func(struct work_struct *work)
@@ -1881,10 +1988,6 @@ void apba_disable(void)
 static int apba_ctrl_probe(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl;
-	u32 unipro_mid = APBA_FIRMWARE_UNIPRO_MID;
-	u32 unipro_pid = APBA_FIRMWARE_UNIPRO_PID;
-	u32 ara_vid = APBA_FIRMWARE_ARA_VID;
-	u32 ara_pid = APBA_FIRMWARE_ARA_PID;
 	int ret;
 
 	/* we depend on the muc_core for transports and pinctrls */
@@ -1986,6 +2089,24 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	init_completion(&ctrl->mode_comp);
 	init_completion(&ctrl->unipro_comp);
 
+	ctrl->unipro_mid = APBA_FIRMWARE_UNIPRO_MID;
+	ctrl->unipro_pid = APBA_FIRMWARE_UNIPRO_PID;
+	ctrl->ara_vid = APBA_FIRMWARE_ARA_VID;
+	ctrl->ara_pid = APBA_FIRMWARE_ARA_PID;
+
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-unipro-mid", &ctrl->unipro_mid))
+		dev_warn(&pdev->dev, "unipro-mid missing\n");
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-unipro-pid", &ctrl->unipro_pid))
+		dev_warn(&pdev->dev, "unipro-pid missing\n");
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-ara-vid", &ctrl->ara_vid))
+		dev_warn(&pdev->dev, "ara-vid missing\n");
+	if (of_property_read_u32(pdev->dev.of_node,
+				 "mmi,apba-ara-pid", &ctrl->ara_pid))
+		dev_warn(&pdev->dev, "ara-pid missing\n");
+
 	ret = sysfs_create_groups(&pdev->dev.kobj, apba_groups);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to create sysfs attr\n");
@@ -2016,23 +2137,10 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		goto remove_wq;
 	}
 
-	if (of_property_read_u32(pdev->dev.of_node,
-				 "mmi,apba-unipro-mid", &unipro_mid))
-		dev_warn(&pdev->dev, "unipro-mid missing\n");
-	if (of_property_read_u32(pdev->dev.of_node,
-				 "mmi,apba-unipro-pid", &unipro_pid))
-		dev_warn(&pdev->dev, "unipro-pid missing\n");
-	if (of_property_read_u32(pdev->dev.of_node,
-				 "mmi,apba-ara-vid", &ara_vid))
-		dev_warn(&pdev->dev, "ara-vid missing\n");
-	if (of_property_read_u32(pdev->dev.of_node,
-				 "mmi,apba-ara-pid", &ara_pid))
-		dev_warn(&pdev->dev, "ara-pid missing\n");
-
 	snprintf(ctrl->firmware_name, sizeof(ctrl->firmware_name),
 		 "upd-%08x-%08x-%08x-%08x-%02x.tftf",
-		 unipro_mid, unipro_pid,
-		 ara_vid, ara_pid,
+		 ctrl->unipro_mid, ctrl->unipro_pid,
+		 ctrl->ara_vid, ctrl->ara_pid,
 		 APBA_FIRMWARE_STAGE);
 	pr_debug("%s: requesting fw %s\n", __func__, ctrl->firmware_name);
 
