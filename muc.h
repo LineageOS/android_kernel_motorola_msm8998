@@ -152,20 +152,33 @@ static inline bool muc_can_detect_reset(u8 root_ver)
 	return root_ver >= MUC_ROOT_V2 && root_ver != MUC_ROOT_VER_NA;
 }
 
+/* This helper function fixes up the reported ROOT version to indicate proper
+ * level of force flash and reset support. This works-around the issue where
+ * some mods are required to report ROOT_V1 in order to correctly enter flash
+ * mode.
+ */
+static inline u8 muc_root_ver_fixup(u8 root, u8 phone)
+{
+	if (root == MUC_ROOT_V1 && phone >= MUC_ROOT_V2)
+		return phone;
+
+	return root;
+}
+
 /* The caller must ensure software control to enter flash modes are
  * performed prior to calling this when the hardware does not support
  * hardware force-flashing.
  */
-static inline void muc_reset(u8 root_ver, bool force_flash)
+static inline void muc_reset(u8 root_ver, u8 phone_ver, bool force_flash)
 {
 	/* If the device can be reset via hardware, do that */
 	if (!force_flash)
-		muc_hard_reset(root_ver);
+		muc_hard_reset(muc_root_ver_fixup(root_ver, phone_ver));
 	else if (force_flash && muc_can_force_flash(root_ver))
 		muc_force_flash(root_ver);
 
 	/* If the device can't detect a reset, simulate one */
-	if (!muc_can_detect_reset(root_ver))
+	if (!muc_can_detect_reset(muc_root_ver_fixup(root_ver, phone_ver)))
 		muc_simulate_reset();
 }
 
