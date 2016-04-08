@@ -57,7 +57,7 @@ struct muc_svc_data {
 	enum muc_svc_recover recovery_level;
 
 	u8 mod_root_ver;
-	u8 default_root_ver;
+	u8 def_root_ver;
 };
 struct muc_svc_data *svc_dd;
 
@@ -114,7 +114,7 @@ static void _do_muc_recovery_level(void)
 {
 	switch (svc_dd->recovery_level) {
 	case MUC_SVC_RECOVERY_FULL:
-		muc_reset(svc_dd->mod_root_ver, false);
+		muc_reset(svc_dd->mod_root_ver, svc_dd->def_root_ver, false);
 		break;
 	case MUC_SVC_RECOVERY_OFF:
 		dev_warn(&svc_dd->pdev->dev, "Recovery reset disabled\n");
@@ -220,7 +220,7 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 		muc_svc_send_uevent("MOD_EVENT=ATTACHED");
 	} else {
 		cancel_delayed_work_sync(&svc_dd->wdog_work);
-		svc_dd->mod_root_ver = svc_dd->default_root_ver;
+		svc_dd->mod_root_ver = svc_dd->def_root_ver;
 		muc_svc_send_uevent("MOD_EVENT=DETACHED");
 	}
 
@@ -1504,10 +1504,10 @@ static int muc_svc_get_root_version(struct mods_dl_device *dld,
 	dev_info(&dd->pdev->dev, "[%d] ROOT_VER: %d\n",
 			mods_dev->intf_id, ver->version);
 
-	if (ver->version < dd->default_root_ver) {
+	if (ver->version < dd->def_root_ver) {
 		dev_warn(&dd->pdev->dev,
 			"[%d] Got ROOT_VER: %d lower than default: %d\n",
-			mods_dev->intf_id, ver->version, dd->default_root_ver);
+			mods_dev->intf_id, ver->version, dd->def_root_ver);
 	}
 
 free_msg:
@@ -2176,7 +2176,7 @@ svc_filter_ready_to_boot(struct mods_dl_device *orig_dev,
 
 	if (!slave_present) {
 		dev_info(dev, "[%d] Force a reboot\n", orig_dev->intf_id);
-		muc_reset(svc_dd->mod_root_ver, false);
+		muc_reset(svc_dd->mod_root_ver, svc_dd->def_root_ver, false);
 		return 0;
 	}
 
@@ -2342,9 +2342,9 @@ static int muc_svc_of_parse(struct muc_svc_data *dd, struct device *dev)
 	}
 	dd->endo_mask = (u16)val;
 
-	dd->default_root_ver = MB_CONTROL_ROOT_VER_INVALID;
+	dd->def_root_ver = MB_CONTROL_ROOT_VER_INVALID;
 	ret = of_property_read_u8(np, "mmi,default-root-ver",
-			&dd->default_root_ver);
+			&dd->def_root_ver);
 	if (ret)
 		dev_warn(dev, "No default-root-ver present...\n");
 
@@ -2415,7 +2415,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	mutex_unlock(&svc_list_lock);
 
 	/* Reset the muc, to trigger the tear-down and re-init */
-	muc_reset(svc_dd->mod_root_ver, true);
+	muc_reset(svc_dd->mod_root_ver, svc_dd->def_root_ver, true);
 
 	return 0;
 }
@@ -2456,7 +2456,7 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	dev_info(dev, "Reset via userspace\n");
-	muc_reset(svc_dd->mod_root_ver, false);
+	muc_reset(svc_dd->mod_root_ver, svc_dd->def_root_ver, false);
 
 	return count;
 }
