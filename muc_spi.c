@@ -344,8 +344,8 @@ static void attach_worker(struct work_struct *work)
 	ret = mods_dl_dev_attached(dd->dld);
 	if (ret)
 		dev_err(&dd->spi->dev, "Error (%d) attaching to SVC\n", ret);
-
-	dd->attached = !ret;
+	else
+		dd->attached = true;
 }
 
 static int muc_spi_transfer(struct muc_spi_data *dd, bool keep_wake)
