@@ -157,6 +157,7 @@ static void gb_mods_audio_connection_exit(struct gb_connection *connection)
 	struct gb_snd_codec	*codec =
 			(struct gb_snd_codec *)connection->private;
 
+	mutex_lock(&snd_codec.lock);
 	kfree(codec->vol_range);
 	codec->vol_range = NULL;
 	kfree(codec->use_cases);
@@ -164,6 +165,7 @@ static void gb_mods_audio_connection_exit(struct gb_connection *connection)
 	kfree(codec->aud_devices);
 	codec->aud_devices = NULL;
 	codec->mods_aud_connection = NULL;
+	mutex_unlock(&snd_codec.lock);
 }
 
 static void gb_i2s_mgmt_connection_exit(struct gb_connection *connection)
