@@ -72,27 +72,6 @@ enum {
 /* Found in tty_io.c */
 extern struct mutex tty_mutex;
 
-static ssize_t ldisc_rel_store(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
-{
-	struct mods_uart_data *mud = dev_get_drvdata(dev);
-
-	dev_info(dev, "%s: Releasing mods_uart ldisc\n", __func__);
-
-	/*
-	 * Set the line discipline to the default ldisc. This will allow this
-	 * driver module to be removed from the system.
-	 */
-	if (mud->tty) {
-		if (tty_set_ldisc(mud->tty, N_TTY))
-			dev_err(dev, "%s: Failed to set ldisc\n", __func__);
-	}
-
-	return count;
-}
-static DEVICE_ATTR_WO(ldisc_rel);
-
 static ssize_t uart_stats_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
@@ -108,7 +87,6 @@ static ssize_t uart_stats_show(struct device *dev,
 static DEVICE_ATTR_RO(uart_stats);
 
 static struct attribute *uart_attrs[] = {
-	&dev_attr_ldisc_rel.attr,
 	&dev_attr_uart_stats.attr,
 	NULL,
 };
@@ -447,6 +425,9 @@ int mods_uart_close(void *uart_data)
 		mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
 		mud->mods_uart_pm_data = NULL;
 	}
+
+	if (tty_set_ldisc(tty, N_TTY))
+		dev_err(&mud->pdev->dev, "%s: Failed to set ldisc\n", __func__);
 
 	/* TTY must be locked to close the connection */
 	tty_lock(tty);
