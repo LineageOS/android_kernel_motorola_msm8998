@@ -61,7 +61,7 @@
 
 /* Version of the Greybus control protocol we support */
 #define MB_CONTROL_VERSION_MAJOR              0x00
-#define MB_CONTROL_VERSION_MINOR              0x06
+#define MB_CONTROL_VERSION_MINOR              0x07
 
 /* Greybus control request types */
 #define MB_CONTROL_TYPE_INVALID               0x00
@@ -76,6 +76,7 @@
 #define MB_CONTROL_TYPE_SLAVE_STATE           0x09
 #define MB_CONTROL_TYPE_SET_CURRENT_LIMIT     0x0a
 #define MB_CONTROL_TYPE_CAPABLITY_CHANGED     0x0b
+#define MB_CONTROL_TYPE_GET_PWRUP_REASON      0x0c
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -105,6 +106,14 @@
 #define MB_CONTROL_ROOT_VER_INVALID           0x00
 #define MB_CONTROL_ROOT_VER_NOT_APPLICABLE    0xff
 
+#define MB_CONTROL_PWRUP_REASON_NORMAL                   0
+#define MB_CONTROL_PWRUP_REASON_BOOTMODE                 1
+#define MB_CONTROL_PWRUP_REASON_FLASHING                 2
+#define MB_CONTROL_PWRUP_REASON_FLASHPIN                 3
+#define MB_CONTROL_PWRUP_REASON_INVALID_HDR              4
+#define MB_CONTROL_PWRUP_REASON_INVALID_SIGN             5
+#define MB_CONTROL_PWRUP_REASON_INVALID_ADDR             6
+
 #define MB_CONTROL_SUPPORT_GET_ROOT_VER_MAJOR         0x00
 #define MB_CONTROL_SUPPORT_GET_ROOT_VER_MINOR         0x02
 
@@ -113,6 +122,9 @@
 
 #define MB_CONTROL_SUPPORT_SET_CURRENT_LIMIT_MAJOR    0x00
 #define MB_CONTROL_SUPPORT_SET_CURRENT_LIMIT_MINOR    0x06
+
+#define MB_CONTROL_SUPPORT_GET_PWRUP_REASON_MAJOR     0x00
+#define MB_CONTROL_SUPPORT_GET_PWRUP_REASON_MINOR     0x07
 
 /* Version Support Macros */
 #define MB_CONTROL_SUPPORTS(mods_dev, name) \
@@ -187,5 +199,10 @@ struct mb_control_capability_changed_request {
 	__le16 vendor;
 } __packed;
 /* Control protocol functionality limit has no response */
+
+/* Control protocol get powerup reason request */
+struct mb_control_get_pwrup_reason_response {
+	__le32  reason;
+} __packed;
 
 #endif /* __MODS_PROTOCOLS_H */
