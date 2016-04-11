@@ -1539,6 +1539,50 @@ clean_route1:
 	return ret;
 }
 
+static inline const char *muc_svc_pwrup_to_string(uint32_t reason)
+{
+	static const char *reasons[] = {
+		"Normal",
+		"Flashing barker",
+		"Flashing interrupted",
+		"Flashing pin asserted",
+		"Invalid header",
+		"Invalid signature",
+		"Invalid code at boot address",
+	};
+
+	if (reason < ARRAY_SIZE(reasons))
+		return reasons[reason];
+	else
+		return "Unknown reason";
+}
+
+static void muc_svc_get_pwrup_reason(struct mods_dl_device *dld,
+		struct mods_dl_device *mods_dev)
+{
+	struct mb_control_get_pwrup_reason_response *resp;
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct gb_message *msg;
+	uint32_t mod_pwrup_reason;
+
+	msg = svc_gb_msg_send_sync(dld, NULL, MB_CONTROL_TYPE_GET_PWRUP_REASON,
+				0, SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
+	if (IS_ERR(msg)) {
+		dev_warn(&dd->pdev->dev, "[%d] Failed to get PWRUP_REASON\n",
+			mods_dev->intf_id);
+		return;
+	}
+
+	resp = msg->payload;
+	mod_pwrup_reason = le32_to_cpu(resp->reason);
+	dev_info(&dd->pdev->dev, "[%d] PWRUP_REASON: %s [%d]\n",
+		 mods_dev->intf_id,
+		 muc_svc_pwrup_to_string(mod_pwrup_reason),
+		 mod_pwrup_reason);
+
+	svc_gb_msg_free(msg);
+}
+
 static void muc_svc_destroy_control_route(u8 intf_id, u16 src, u16 dest)
 {
 	mods_nw_del_route(MODS_INTF_SVC, src, intf_id, dest);
@@ -1762,6 +1806,9 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 		if (ret)
 			goto free_route;
 	}
+
+	if (MB_CONTROL_SUPPORTS(mods_dev, GET_PWRUP_REASON))
+		muc_svc_get_pwrup_reason(svc_dd->dld, mods_dev);
 
 	ret = muc_svc_get_manifest(mods_dev, mods_dev->intf_id);
 	if (ret)
