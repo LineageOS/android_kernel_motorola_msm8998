@@ -39,6 +39,7 @@
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
 #include "muc.h"
+#include "muc_attach.h"
 
 #define MAX_PARTITION_NAME           (16)
 
@@ -167,6 +168,8 @@ struct apba_ctrl {
 	uint32_t last_unipro_value;
 	uint32_t last_unipro_status;
 	struct platform_device *pdev;
+	struct notifier_block attach_nb;
+	unsigned long present;
 } *g_ctrl;
 
 #define APBA_LOG_SIZE	SZ_16K
@@ -186,6 +189,7 @@ struct apbe_attach_work_struct {
 };
 
 static struct delayed_work apba_disable_work;
+static struct work_struct apba_dettach_work;
 
 static void apba_handle_pm_status_not(struct mhb_hdr *hdr, uint8_t *payload,
 		size_t len)
@@ -712,7 +716,9 @@ static void apba_seq(struct apba_ctrl *ctrl, struct apba_seq *seq)
 static void apba_on(struct apba_ctrl *ctrl, bool on)
 {
 	if (on == ctrl->on) {
-		pr_warn("%s: already %s\n", __func__, on ? "on" : "off");
+		if (on)
+			pr_warn("%s: already  on\n", __func__);
+
 		return;
 	}
 
@@ -744,6 +750,24 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 		clk_disable_unprepare(g_ctrl->mclk);
 	}
 	ctrl->on = on;
+}
+
+static int apba_attach_notifier(struct notifier_block *nb,
+		unsigned long now_present, void *not_used)
+{
+	struct apba_ctrl *ctrl = container_of(nb, struct apba_ctrl, attach_nb);
+
+	if (now_present != ctrl->present) {
+		ctrl->present = now_present;
+
+		flush_work(&apba_dettach_work);
+		if (!now_present) {
+			pr_debug("%s: disable apba\n", __func__);
+			schedule_work(&apba_dettach_work);
+		}
+	}
+
+	return NOTIFY_OK;
 }
 
 static void populate_transports_node(struct apba_ctrl *ctrl)
@@ -1774,6 +1798,17 @@ static void apba_disable_work_func(struct work_struct *work)
 	apba_disable();
 }
 
+static void apba_dettach_work_func(struct work_struct *work)
+{
+	if (!g_ctrl)
+		return;
+
+	g_ctrl->desired_on = 0;
+	g_ctrl->apbe_status = MHB_PM_STATUS_PEER_NONE;
+
+	apba_on(g_ctrl, false);
+}
+
 /*
  * muc is informing us through this callback that it has a slave present,
  * likely APBE. If it is an APBE, we should enable the APBA so that the two
@@ -1962,6 +1997,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ctrl);
 	INIT_DELAYED_WORK(&apba_disable_work, apba_disable_work_func);
+	INIT_WORK(&apba_dettach_work, apba_dettach_work_func);
 
 	ret = mods_register_slave_ctrl_driver(&apbe_ctrl_drv);
 	if (ret) {
@@ -1997,6 +2033,9 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		goto unregister_slave_ctrl;
 	}
 
+	ctrl->attach_nb.notifier_call = apba_attach_notifier;
+	register_muc_attach_notifier(&ctrl->attach_nb);
+
 	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
 
 	return 0;
@@ -2023,6 +2062,9 @@ free_gpios:
 static int apba_ctrl_remove(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
+
+	unregister_muc_attach_notifier(&ctrl->attach_nb);
+	flush_work(&apba_dettach_work);
 
 	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 
