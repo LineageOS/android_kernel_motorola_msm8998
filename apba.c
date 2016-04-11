@@ -569,7 +569,7 @@ static int apba_send_uart_config_req(unsigned long val)
 	return ret;
 }
 
-static int apba_send_diag_mode_req(__u8 mode)
+static int apba_send_diag_mode_req(__u32 mode)
 {
 	int ret;
 	struct mhb_hdr req_hdr;
@@ -579,7 +579,7 @@ static int apba_send_diag_mode_req(__u8 mode)
 	req_hdr.addr = MHB_ADDR_DIAG;
 	req_hdr.type = MHB_TYPE_DIAG_MODE_REQ;
 
-	req.mode = mode;
+	req.mode = cpu_to_le32(mode);
 
 	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr,
 		(uint8_t *)&req, sizeof(req), 0);
