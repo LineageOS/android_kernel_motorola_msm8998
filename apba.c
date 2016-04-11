@@ -720,6 +720,12 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 	mods_ext_bus_vote(on);
 
 	if (on) {
+		if (clk_prepare_enable(g_ctrl->mclk)) {
+			dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
+				__func__);
+			return;
+		}
+
 		if (ctrl->mods_uart)
 			mods_uart_open(ctrl->mods_uart);
 		apba_seq(ctrl, &ctrl->enable_seq);
@@ -734,6 +740,8 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 			mods_uart_pm_on(ctrl->mods_uart, false);
 			mods_uart_close(ctrl->mods_uart);
 		}
+
+		clk_disable_unprepare(g_ctrl->mclk);
 	}
 	ctrl->on = on;
 }
@@ -1810,17 +1818,8 @@ static struct mods_slave_ctrl_driver apbe_ctrl_drv = {
 
 int apba_enable(void)
 {
-	int ret;
-
 	if (!g_ctrl)
 		return -ENODEV;
-
-	ret = clk_prepare_enable(g_ctrl->mclk);
-	if (ret) {
-		dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
-			__func__);
-		return ret;
-	}
 
 	g_ctrl->desired_on = 1;
 
@@ -1839,7 +1838,6 @@ void apba_disable(void)
 	g_ctrl->desired_on = 0;
 	g_ctrl->apbe_status = MHB_PM_STATUS_PEER_NONE;
 
-	clk_disable_unprepare(g_ctrl->mclk);
 	apba_on(g_ctrl, false);
 }
 
