@@ -67,7 +67,44 @@ void report_display_event(struct device *dev,
 		event : GB_DISPLAY_NOTIFY_INVALID];
 	envp[1] = NULL;
 
+	dev_dbg(dev, "%s: %s\n", __func__, envp[0]);
+
 	kobject_uevent_env(&dev->kobj, KOBJ_CHANGE, envp);
+}
+
+int handle_notification(struct device *dev, enum mod_display_notification event)
+{
+	int ret = -EINVAL;
+
+	switch(event) {
+	case GB_DISPLAY_NOTIFY_FAILURE:
+		dev_err(dev, "GB_DISPLAY_NOTIFY_FAILURE\n");
+		ret = mod_display_notification(MOD_NOTIFY_FAILURE);
+		break;
+	case GB_DISPLAY_NOTIFY_AVAILABLE:
+		dev_dbg(dev, "GB_DISPLAY_NOTIFY_AVAILABLE\n");
+		ret = mod_display_notification(MOD_NOTIFY_AVAILABLE);
+		break;
+	case GB_DISPLAY_NOTIFY_UNAVAILABLE:
+		dev_dbg(dev, "GB_DISPLAY_NOTIFY_UNAVAILABLE\n");
+		ret = mod_display_notification(MOD_NOTIFY_UNAVAILABLE);
+		break;
+	case GB_DISPLAY_NOTIFY_CONNECT:
+		dev_dbg(dev, "GB_DISPLAY_NOTIFY_CONNECT\n");
+		ret = mod_display_notification(MOD_NOTIFY_CONNECT);
+		break;
+	case GB_DISPLAY_NOTIFY_DISCONNECT:
+		dev_dbg(dev, "GB_DISPLAY_NOTIFY_DISCONNECT\n");
+		ret = mod_display_notification(MOD_NOTIFY_DISCONNECT);
+		break;
+	default:
+		dev_err(dev, "unsupported event: %u\n", event);
+	}
+
+	if (!ret)
+		report_display_event(dev, event);
+
+	return ret;
 }
 
 /* Protocol Handlers */
@@ -367,50 +404,17 @@ static int gb_display_event_recv(u8 type, struct gb_operation *op)
 	case GB_REQUEST_TYPE_PROTOCOL_VERSION:
 		dev_err(&connection->bundle->dev,
 			"module-initiated version operation\n");
-		goto exit;
+		break;
 	case GB_DISPLAY_NOTIFICATION:
+		dev_dbg(&connection->bundle->dev, "GB_DISPLAY_NOTIFICATION\n");
 		request = op->request->payload;
-		switch(request->event) {
-		case GB_DISPLAY_NOTIFY_FAILURE:
-			dev_err(&connection->bundle->dev,
-				"GB_DISPLAY_NOTIFY_FAILURE\n");
-			ret = mod_display_notification(MOD_NOTIFY_FAILURE);
-			break;
-		case GB_DISPLAY_NOTIFY_AVAILABLE:
-			dev_dbg(&connection->bundle->dev,
-				"GB_DISPLAY_NOTIFY_AVAILABLE\n");
-			ret = mod_display_notification(MOD_NOTIFY_AVAILABLE);
-			break;
-		case GB_DISPLAY_NOTIFY_UNAVAILABLE:
-			dev_dbg(&connection->bundle->dev,
-				"GB_DISPLAY_NOTIFY_UNAVAILABLE\n");
-			ret = mod_display_notification(MOD_NOTIFY_UNAVAILABLE);
-			break;
-		case GB_DISPLAY_NOTIFY_CONNECT:
-			dev_dbg(&connection->bundle->dev,
-				"GB_DISPLAY_NOTIFY_CONNECT\n");
-			ret = mod_display_notification(MOD_NOTIFY_CONNECT);
-			break;
-		case GB_DISPLAY_NOTIFY_DISCONNECT:
-			dev_dbg(&connection->bundle->dev,
-				"GB_DISPLAY_NOTIFY_DISCONNECT\n");
-			ret = mod_display_notification(MOD_NOTIFY_DISCONNECT);
-			break;
-		default:
-			dev_err(&connection->bundle->dev,
-				"unsupported event: %u\n", request->event);
-			goto exit;
-		}
+		ret = handle_notification(disp->dev, request->event);
+		break;
 	default:
 		dev_err(&connection->bundle->dev,
 			"unsupported request: %hhu\n", type);
-		goto exit;
 	}
 
-	if (!ret)
-		report_display_event(disp->dev, request->event);
-
-exit:
 	return ret;
 }
 
