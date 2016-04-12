@@ -133,6 +133,7 @@ int gb_camera_ext_input_enum(struct gb_connection *conn, struct v4l2_input *inp)
 		memcpy(inp->name, input.name, sizeof(inp->name));
 		inp->type = le32_to_cpu(input.type);
 		inp->status = le32_to_cpu(input.status);
+		inp->capabilities = le32_to_cpu(input.capabilities);
 	}
 	return retval;
 }
