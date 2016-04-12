@@ -29,10 +29,14 @@
 #ifndef __CAMERA_EXT_DEFS_H
 #define __CAMERA_EXT_DEFS_H
 
+#include <uapi/video/v4l2_camera_ext_defs.h>
+
 /*
  * These structs defined here are transferred via greybus.
  * This file is used by AP and MOD. Modify both at the same time and keep
  * them same.
+ * At the AP side, some defs need to be used by user space. They are moved
+ * to uapi/video/v4l2_camera_ext_defs.h
  */
 
 #define CAM_EXT_INPUT_TYPE_TUNER  1
@@ -50,6 +54,7 @@ struct camera_ext_input {
 	char name[32];
 	__le32 type;
 	__le32 status;
+	__le32 capabilities;
 } __packed;
 
 /* from v4l2_fmtdesc */
