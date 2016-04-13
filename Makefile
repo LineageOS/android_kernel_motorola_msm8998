@@ -50,6 +50,7 @@ gb-ptp-y := ptp.o
 gb-camera_ext-y := camera_ext_gb.o camera_ext_mod_v4l2.o camera_ext_ctrls.o
 gb-usb_ext-y := usb-ext.o
 gb-display-y := display.o
+gb-sensors_ext-y := sensors_ext.o sensors_ext_iio.o
 
 obj-m += greybus.o
 obj-m += gb-phy.o
@@ -69,6 +70,7 @@ obj-m += gb-ptp.o
 obj-m += gb-camera_ext.o
 obj-m += gb-display.o
 obj-m += gb-usb_ext.o
+obj-m += gb-sensors_ext.o
 
 KERNELVER		?= $(shell uname -r)
 KERNELDIR 		?= /lib/modules/$(KERNELVER)/build
