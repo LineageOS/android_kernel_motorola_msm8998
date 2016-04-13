@@ -180,6 +180,9 @@ static inline void muc_reset(u8 root_ver, u8 phone_ver, bool force_flash)
 	/* If the device can't detect a reset, simulate one */
 	if (!muc_can_detect_reset(muc_root_ver_fixup(root_ver, phone_ver)))
 		muc_simulate_reset();
+	/* force flash ROOT_VER=1 quirk workaround */
+	else if (force_flash && !muc_can_detect_reset(root_ver))
+		muc_simulate_reset();
 }
 
 /* Shared GPIO APIs */
