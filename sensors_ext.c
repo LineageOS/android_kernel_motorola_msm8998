@@ -107,7 +107,7 @@ static int gb_sensors_ext_event_receive(u8 type, struct gb_operation *op)
 	payload = request->payload;
 
 	if (payload->reporting_sensors_num)
-		dev_dbg(&connection->bundle->dev, "Report ID - %d\n",
+		dev_dbg(&connection->bundle->dev, "Sensor ID - %d\n",
 			payload->sensor[0].sensor_id);
 
 	ret = gb_sensors_rcv_data(request->payload);
