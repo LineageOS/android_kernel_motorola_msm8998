@@ -86,7 +86,6 @@ struct gb_sensor *get_sensor_from_id(uint8_t sensor_id)
 static int gb_sensors_ext_event_receive(u8 type, struct gb_operation *op)
 {
 	struct gb_connection *connection = op->connection;
-	struct gb_sensors_ext_report_hdr *payload;
 	struct gb_message *request;
 	int ret;
 
@@ -104,13 +103,7 @@ static int gb_sensors_ext_event_receive(u8 type, struct gb_operation *op)
 	dev_dbg(&connection->bundle->dev,
 		"payload size received %zu\n", request->payload_size);
 
-	payload = request->payload;
-
-	if (payload->reporting_sensors_num)
-		dev_dbg(&connection->bundle->dev, "Sensor ID - %d\n",
-			payload->sensor[0].sensor_id);
-
-	ret = gb_sensors_rcv_data(request->payload);
+	ret = gb_sensors_rcv_data(request->payload, request->payload_size);
 
 error:
 	mutex_unlock(&sensors_ext->mlock);

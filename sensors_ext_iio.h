@@ -74,7 +74,7 @@ struct gb_sensor {
 
 int gb_sensors_mod_attached(uint16_t count, struct list_head *sensors_list);
 int gb_sensors_mod_detached(void);
-int gb_sensors_rcv_data(struct gb_sensors_ext_report_hdr *report);
+int gb_sensors_rcv_data(struct gb_sensors_ext_report_hdr *report, size_t size);
 
 /* Prototypes */
 struct gb_sensor *iio_dev_to_sensor(struct iio_dev *);
