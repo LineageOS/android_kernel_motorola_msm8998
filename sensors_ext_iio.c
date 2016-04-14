@@ -12,6 +12,7 @@
  * GNU General Public License for more details.
  *
  */
+#define pr_fmt(fmt) "%s: " fmt, __func__
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/list.h>
@@ -472,7 +473,8 @@ buffer_full:
 }
 
 /** This function processes data from a single sensor. */
-size_t gb_sensors_rcv_data_sensor(struct gb_sensors_ext_report_data *report)
+static size_t gb_sensors_rcv_data_sensor(
+		struct gb_sensors_ext_report_data *report, size_t size)
 {
 	struct gb_sensor *sensor;
 	struct iio_dev *indio_dev;
@@ -481,39 +483,58 @@ size_t gb_sensors_rcv_data_sensor(struct gb_sensors_ext_report_data *report)
 	int dest, src, data_sz;
 	int32_t *out_data;
 
+	/* The sensor-specific header size. */
+	const size_t sensor_hdr_sz =
+		offsetof(struct gb_sensors_ext_report_data, reading);
+
 	struct sensor_reading {
 		uint16_t time_delta;
 		int32_t value[];
 	} __packed;
 	struct sensor_reading *s_reading = NULL;
 
+	/* Make sure we have at least the header fields to start off with. */
+	if (size < sensor_hdr_sz) {
+		pr_err("Expected at least %zu bytes. Got only %zu.\n",
+				sensor_hdr_sz, size);
+		return -EINVAL;
+	}
+
+	report->readings       = le16_to_cpu(report->readings);
+	report->reference_time = le64_to_cpu(report->reference_time);
+
 	pr_debug("SensorID=%d, readings=%d flags=%d\n",
 			report->sensor_id, report->readings, report->flags);
 
-	if (report->sensor_id >= gb_drv.sensors_cnt) {
+	sensor = get_sensor_from_id(report->sensor_id);
+	if (sensor == NULL) {
 		pr_err("Invalid sensor ID (%d)", report->sensor_id);
 		return -EINVAL;
 	}
-	sensor = get_sensor_from_id(report->sensor_id);
-	if (sensor == NULL)
+
+	size -= sensor_hdr_sz;
+	data_sz = sensor->channels * sizeof(int32_t);
+
+	if (size < (data_sz + 2) * report->readings) {
+		pr_err("Insufficient data (%zu bytes for %d readings)\n",
+				size, report->readings);
 		return -EINVAL;
-	indio_dev = sensor->iio;
+	}
 
 	mutex_lock(&gb_drv.ilock);
+	indio_dev = sensor->iio;
 	out_data = sensor->out_data;
 
 	if (!out_data) {
 		mutex_unlock(&gb_drv.ilock);
-		/* This could happen if the mod reports the wrong sensor_id */
+		/* This could happen if the mod reports the wrong sensor_id and
+		then we try to publish data for a sensor that is not enabled. */
 		pr_err("Sensor out_data is NULL\n");
 		return -EIO;
 	}
 
-	data_sz = sensor->channels * sizeof(int32_t);
-
-	report->readings       = le16_to_cpu(report->readings);
-	report->reference_time = le64_to_cpu(report->reference_time);
 	data_offset = 0;
+
 	for (r = 0; r < report->readings; ++r) {
 		s_reading = (struct sensor_reading *)
 			&(report->reading[data_offset]);
@@ -570,26 +591,40 @@ size_t gb_sensors_rcv_data_sensor(struct gb_sensors_ext_report_data *report)
 
 /** This function is called by the Greybus code when it receives sensor data
  * from a mod. All the endian conversions must be done here. */
-int gb_sensors_rcv_data(struct gb_sensors_ext_report_hdr *event_report)
+int gb_sensors_rcv_data(struct gb_sensors_ext_report_hdr *event_report,
+		size_t size)
 {
 	char *sensor_data_ptr;
 	uint16_t s;
 	size_t sensor_data_offset, bytes_consumed;
 	struct gb_sensors_ext_report_data *sensor_data;
+	const size_t hdr_size =
+		offsetof(struct gb_sensors_ext_report_hdr, sensor);
 
-	pr_info("Sensors: %d\n", event_report->reporting_sensors_num);
+	if (size < hdr_size) {
+		pr_err("Not enough data. Expecting >= %zu bytes\n", hdr_size);
+		return -EINVAL;
+	}
 
 	sensor_data_ptr = (char *)&(event_report->sensor[0]);
 	sensor_data_offset = 0;
+	size -= hdr_size;
 
-	for (s = 0; s < event_report->reporting_sensors_num; ++s) {
+	pr_debug("Sensors: %d, sz=%zu\n",
+			event_report->reporting_sensors_count, size);
+
+	for (s = 0; s < event_report->reporting_sensors_count; ++s) {
 		sensor_data = (struct gb_sensors_ext_report_data *)
 			(sensor_data_ptr + sensor_data_offset);
-		bytes_consumed = gb_sensors_rcv_data_sensor(sensor_data);
+		bytes_consumed = gb_sensors_rcv_data_sensor(sensor_data, size);
 		if (bytes_consumed < 0)
 			return bytes_consumed;
 		sensor_data_offset += bytes_consumed;
+		size -= bytes_consumed;
 	}
+
+	if (size)
+		pr_warn("Extra (unparsed) data present");
 
 	return 0;
 }

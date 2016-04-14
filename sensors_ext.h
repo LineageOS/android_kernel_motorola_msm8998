@@ -59,7 +59,7 @@ struct gb_sensors_ext_report_data {
 } __packed;
 
 struct gb_sensors_ext_report_hdr {
-	__u8	reporting_sensors_num;
+	__u8	reporting_sensors_count;
 	__u8	reserved;
 	struct gb_sensors_ext_report_data sensor[];
 } __packed;
