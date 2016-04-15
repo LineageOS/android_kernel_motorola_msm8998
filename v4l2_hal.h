@@ -87,6 +87,8 @@ struct misc_set_handler {
 /* integer type */
 #define V4L2_HAL_EXT_CID_CAPS		(CID_V4L2_HAL_CLASS_BASE + 1)
 
+/* Metadata type */
+#define V4L2_PIX_FMT_MODS_META		v4l2_fourcc('M','E','T','A')
 
 static inline bool v4l2_hal_is_set_mapping_cid(__u32 id) {
 	if (id == V4L2_HAL_CID_SET_PARAMS_MEM ||
