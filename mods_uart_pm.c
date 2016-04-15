@@ -168,6 +168,9 @@ void mods_uart_pm_post_tx(void *uart_pm_data, int flag)
 	struct mods_uart_pm_data *data;
 
 	data = (struct mods_uart_pm_data *)uart_pm_data;
+	if (!data)
+		return;
+
 	/*
 	 * Notifyied to wake interrupt from APBA. Consider APBA
 	 * is wake so we don't start wake up handshake.
@@ -183,6 +186,8 @@ static void idle_timeout_work_func(struct work_struct *work)
 	struct mods_uart_pm_data *data;
 
 	data = container_of(work, struct mods_uart_pm_data, idle_timer_work);
+	if (!data)
+		return;
 
 	pr_debug("%s: idle timeout\n", __func__);
 	/*
