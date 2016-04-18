@@ -19,6 +19,7 @@
 #include <linux/videodev2.h>
 #include "v4l2_hal.h"
 
+#ifdef CONFIG_COMPAT
 struct v4l2_ext_controls32 {
 	__u32 ctrl_class;
 	__u32 count;
@@ -29,6 +30,10 @@ struct v4l2_ext_controls32 {
 
 #define VIDIOC_G_EXT_CTRLS32	_IOWR('V', 71, struct v4l2_ext_controls32)
 #define VIDIOC_S_EXT_CTRLS32	_IOWR('V', 72, struct v4l2_ext_controls32)
+#else
+#define VIDIOC_G_EXT_CTRLS32 VIDIOC_G_EXT_CTRLS
+#define VIDIOC_S_EXT_CTRLS32 VIDIOC_S_EXT_CTRLS
+#endif
 
 bool v4l2_misc_compat_mode(void);
 int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,

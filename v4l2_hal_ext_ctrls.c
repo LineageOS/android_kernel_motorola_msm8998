@@ -85,6 +85,7 @@ int v4l2_hal_ext_ctrl_restore_private(void *data, void *priv)
 	return 0;
 }
 
+#ifdef CONFIG_COMPAT
 /* compat APIs */
 struct v4l2_ext_control32 {
 	__u32 id;
@@ -269,6 +270,25 @@ int v4l2_hal_get_ext_controls32(struct v4l2_ext_controls *kp,
 
 	return 0;
 }
+
+#else /* CONFIG_COMPAT */
+size_t v4l2_hal_get_required_size32(struct v4l2_ext_controls *kp)
+{
+	 return v4l2_hal_get_required_size(kp);
+}
+
+int v4l2_hal_put_ext_controls32(struct v4l2_ext_controls *kp,
+				void __user *uctrls, void *priv)
+{
+	return v4l2_hal_put_ext_controls(kp, uctrls, priv);
+}
+
+int v4l2_hal_get_ext_controls32(struct v4l2_ext_controls *kp,
+			      void __user *uctrls, void *priv)
+{
+	return v4l2_hal_get_ext_controls(kp, uctrls, priv);
+}
+#endif
 
 /* non-compat APIs */
 size_t v4l2_hal_get_required_size(struct v4l2_ext_controls *kp)

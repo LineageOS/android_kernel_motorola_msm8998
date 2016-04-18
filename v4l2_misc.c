@@ -300,6 +300,7 @@ static int misc_process_v4l2_ioctl(struct v4l2_misc_command *target_cmd, void *a
 	if (copy_from_user(&ioctl_resp, arg, sizeof(ioctl_resp)))
 		return -EFAULT;
 
+#ifdef CONFIG_COMPAT
 	if (g_data->compat) {
 		data_ptr = compat_ptr((compat_uptr_t)ioctl_resp.data);
 		if (ioctl_resp.cmd == VIDIOC_G_EXT_CTRLS32)
@@ -307,7 +308,8 @@ static int misc_process_v4l2_ioctl(struct v4l2_misc_command *target_cmd, void *a
 		else if (ioctl_resp.cmd == VIDIOC_S_EXT_CTRLS32)
 			ioctl_resp.cmd = VIDIOC_S_EXT_CTRLS;
 	} else
-		data_ptr = (void *)ioctl_resp.data;
+#endif
+		data_ptr = (void *)(uintptr_t)ioctl_resp.data;
 
 	if (!atomic_read(&target_cmd->pending_resp)) {
 		pr_err("%s: No ioctl in progress\n", __func__);
