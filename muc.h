@@ -27,15 +27,19 @@ enum {
 	MUC_GPIO_FORCE_FLASH = 5,
 	MUC_GPIO_SPI_MOSI = 6,
 	MUC_GPIO_SPI_MISO = 7,
+	MUC_GPIO_BPLUS_ISET = 8,
+	MUC_GPIO_BPLUS_DISCHARG = 9,
 	MUC_MAX_GPIOS
 };
 
-/* The force flash pin is optional depending on specific
+/* Some GPIOs are optional depending on specific
  * hardware version.
  */
 static inline bool muc_gpio_optional(int index)
 {
-	return index == MUC_GPIO_FORCE_FLASH;
+	return ((index == MUC_GPIO_FORCE_FLASH) ||
+		(index == MUC_GPIO_BPLUS_ISET) ||
+		(index == MUC_GPIO_BPLUS_DISCHARG));
 }
 
 #define MUC_ROOT_VER_UNKNOWN     0x00 /* For not implemented */
@@ -204,6 +208,14 @@ static inline int muc_gpio_get_ready_n(void)
 static inline int muc_gpio_get_int_n(void)
 {
 	return gpio_get_value(muc_misc_data->gpios[MUC_GPIO_INT_N]);
+}
+
+static inline void muc_current_limit_ctrl(u8 limit)
+{
+	if (muc_misc_data->gpios[MUC_GPIO_BPLUS_ISET] == -ENODEV)
+		return;
+
+	gpio_set_value(muc_misc_data->gpios[MUC_GPIO_BPLUS_ISET], limit);
 }
 
 /* ACKing APIs */

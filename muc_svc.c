@@ -2424,10 +2424,19 @@ static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit)
 
 	request.limit = limit;
 
+	if (limit == MB_CONTROL_CURRENT_LIMIT_FULL)
+		/* Set Limit on Device side */
+		muc_current_limit_ctrl(limit);
+
 	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&request,
 			MB_CONTROL_TYPE_SET_CURRENT_LIMIT, sizeof(request),
 			SVC_VENDOR_CTRL_CPORT(dev->intf_id),
 			SVC_CURRENT_LIMIT_TIMEOUT_MS);
+
+	if (limit != MB_CONTROL_CURRENT_LIMIT_FULL)
+		/* Set Limit on Device side */
+		muc_current_limit_ctrl(limit);
+
 	if (IS_ERR(msg)) {
 		dev_err(&svc_dd->pdev->dev,
 			"[%d] Failed to set current limit\n", dev->intf_id);
