@@ -1462,14 +1462,10 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 			mods_dev->intf_id, mods_dev->fw_version_str);
 
 	mods_dev->slave_mask = le32_to_cpu(ids->slave_mask);
-	/* GET_IDs does not include the slave_state.  For backwards
-	   compatibility, use the presence of the slave_mask to specify
-	   the slave_state.
+	/* GET_IDs does not include the slave_state.  The slave_state
+	   will be driven by slave power control messages later.
 	*/
-	if (mods_dev->slave_mask)
-		mods_dev->slave_state = SLAVE_STATE_ENABLED;
-	else
-		mods_dev->slave_state = SLAVE_STATE_DISABLED;
+	mods_dev->slave_state = SLAVE_STATE_DISABLED;
 	muc_svc_broadcast_slave_notification(mods_dev);
 
 	svc_gb_msg_free(msg);
