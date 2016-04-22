@@ -2030,7 +2030,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		dev_warn(&pdev->dev, "ara-pid missing\n");
 
 	snprintf(ctrl->firmware_name, sizeof(ctrl->firmware_name),
-		 "ara:%08x:%08x:%08x:%08x:%02x.tftf",
+		 "upd-%08x-%08x-%08x-%08x-%02x.tftf",
 		 unipro_mid, unipro_pid,
 		 ara_vid, ara_pid,
 		 APBA_FIRMWARE_STAGE);
