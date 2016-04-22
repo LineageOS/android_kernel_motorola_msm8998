@@ -83,7 +83,7 @@ static int download_firmware(struct gb_firmware *firmware, u8 stage)
 	 * XXX Name it properly..
 	 */
 	snprintf(firmware_name, sizeof(firmware_name),
-		 "ara:%08x:%08x:%08x:%08x:%02x.tftf",
+		 "upd-%08x-%08x-%08x-%08x-%02x.tftf",
 		 intf->unipro_mfg_id, intf->unipro_prod_id,
 		 firmware->vendor_id, firmware->product_id, stage);
 
