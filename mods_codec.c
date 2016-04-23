@@ -21,7 +21,7 @@ struct mods_codec_dai {
 	struct mods_codec_device *m_dev;
 	atomic_t playback_pcm_triggered;
 	atomic_t capture_pcm_triggered;
-	int is_params_set;
+	bool is_params_set;
 	struct workqueue_struct	*workqueue;
 	struct work_struct work;
 	struct snd_pcm_substream *substream;
@@ -161,6 +161,7 @@ static void mods_codec_work(struct work_struct *work)
 				__func__, port_type);
 		else
 			*port_active = false;
+		priv->is_params_set = false;
 	}
 
 }
