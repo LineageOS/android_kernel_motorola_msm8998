@@ -91,10 +91,10 @@ static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
 				mods_codec_get_usecase,
 				mods_codec_set_usecase),
 	SOC_SINGLE_EXT("Mods Enable Output Devices", SND_SOC_NOPM,
-				0, 0x80000000, 0, mods_codec_get_out_enabled_devices,
+				0, 0x7fffffff, 0, mods_codec_get_out_enabled_devices,
 				mods_codec_set_out_enabled_devices),
 	SOC_SINGLE_EXT("Mods Enable Input Devices", SND_SOC_NOPM,
-				0, 0x80000000, 0, mods_codec_get_in_enabled_devices,
+				0, 0x7fffffff, 0, mods_codec_get_in_enabled_devices,
 				mods_codec_set_in_enabled_devices),
 };
 
