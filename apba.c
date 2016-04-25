@@ -170,6 +170,7 @@ struct apba_ctrl {
 	struct platform_device *pdev;
 	struct notifier_block attach_nb;
 	unsigned long present;
+	struct workqueue_struct *wq;
 } *g_ctrl;
 
 #define APBA_LOG_SIZE	SZ_16K
@@ -183,12 +184,8 @@ static char fifo_overflow[MHB_MAX_MSG_SIZE];
 #define APBA_BAUD_REQ_TIMEOUT	1000 /* ms */
 #define APBA_UNIPRO_REQ_TIMEOUT	1000 /* ms */
 
-struct apbe_attach_work_struct {
-	struct work_struct work;
-	int present;
-};
-
-static struct delayed_work apba_disable_work;
+static struct work_struct apba_disable_work;
+static struct work_struct apba_enable_work;
 static struct work_struct apba_dettach_work;
 
 static void apba_handle_pm_status_not(struct mhb_hdr *hdr, uint8_t *payload,
@@ -763,7 +760,7 @@ static int apba_attach_notifier(struct notifier_block *nb,
 		flush_work(&apba_dettach_work);
 		if (!now_present) {
 			pr_debug("%s: disable apba\n", __func__);
-			schedule_work(&apba_dettach_work);
+			queue_work(ctrl->wq, &apba_dettach_work);
 		}
 	}
 
@@ -1798,6 +1795,11 @@ static void apba_disable_work_func(struct work_struct *work)
 	apba_disable();
 }
 
+static void apba_enable_work_func(struct work_struct *work)
+{
+	apba_enable();
+}
+
 static void apba_dettach_work_func(struct work_struct *work)
 {
 	if (!g_ctrl)
@@ -1836,10 +1838,10 @@ static void apba_slave_notify(uint8_t master_intf, uint32_t slave_mask,
 		 * operation failures as we are not done handling
 		 * slave state gb message yet.
 		 */
-		schedule_delayed_work(&apba_disable_work, HZ);
+		queue_work(g_ctrl->wq, &apba_disable_work);
 		break;
 	case SLAVE_STATE_ENABLED:
-		apba_enable();
+		queue_work(g_ctrl->wq, &apba_enable_work);
 		break;
 	default:
 		pr_err("%s: Invalid slave state=%d.\n", __func__, slave_state);
@@ -1996,13 +1998,22 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	g_ctrl = ctrl;
 
 	platform_set_drvdata(pdev, ctrl);
-	INIT_DELAYED_WORK(&apba_disable_work, apba_disable_work_func);
+
+	ctrl->wq = alloc_workqueue("apba", WQ_UNBOUND, 1);
+	if (!ctrl->wq) {
+		dev_err(&pdev->dev, "Failed to create workqueue\n");
+		ret = -ENOMEM;
+		goto reset_global;
+	}
+
+	INIT_WORK(&apba_disable_work, apba_disable_work_func);
+	INIT_WORK(&apba_enable_work, apba_enable_work_func);
 	INIT_WORK(&apba_dettach_work, apba_dettach_work_func);
 
 	ret = mods_register_slave_ctrl_driver(&apbe_ctrl_drv);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to register slave driver\n");
-		goto reset_global;
+		goto remove_wq;
 	}
 
 	if (of_property_read_u32(pdev->dev.of_node,
@@ -2042,6 +2053,8 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 unregister_slave_ctrl:
 	mods_unregister_slave_ctrl_driver(&apbe_ctrl_drv);
+remove_wq:
+	destroy_workqueue(ctrl->wq);
 reset_global:
 	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 	g_ctrl = NULL;
@@ -2069,6 +2082,11 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 	sysfs_remove_groups(&pdev->dev.kobj, apba_groups);
 
 	mods_unregister_slave_ctrl_driver(&apbe_ctrl_drv);
+
+	cancel_work_sync(&apba_disable_work);
+	cancel_work_sync(&apba_enable_work);
+	cancel_work_sync(&apba_dettach_work);
+	destroy_workqueue(ctrl->wq);
 
 	disable_irq_wake(ctrl->irq);
 	apba_disable();
