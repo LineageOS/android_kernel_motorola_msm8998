@@ -39,7 +39,7 @@ bool v4l2_misc_compat_mode(void);
 int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 			      size_t size, void *data);
 int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream,
-			  int fd, unsigned int length,
+			  int fd, unsigned int length, unsigned int seq,
 			  enum misc_buffer_state state);
 int v4l2_hal_get_mapped_fd(void *hal_data, unsigned int stream, int index);
 void v4l2_hal_set_mapped_fd(void *hal_data, unsigned int stream,

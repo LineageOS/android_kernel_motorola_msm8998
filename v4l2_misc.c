@@ -374,6 +374,7 @@ static int misc_process_dequeue_request(void *arg)
 					dq_cmd.stream,
 					dq_cmd.index,
 					dq_cmd.length,
+					dq_cmd.seq,
 					dq_cmd.state);
 }
 

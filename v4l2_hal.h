@@ -34,6 +34,7 @@ struct misc_dequeue_cmd {
 	__u32 stream;
 	__u32 index;
 	__u32 length;
+	__u32 seq;
 	enum misc_buffer_state state;
 } __packed;
 
