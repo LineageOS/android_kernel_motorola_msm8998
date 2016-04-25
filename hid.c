@@ -412,7 +412,7 @@ static int gb_hid_init(struct gb_hid *ghid)
 	hid->hid_get_raw_report = gb_hid_get_raw_report;
 	hid->hid_output_raw_report = gb_hid_output_raw_report;
 #endif
-//	hid->bus = BUS_GREYBUS; /* Need a bustype for GREYBUS in <linux/input.h> */
+	hid->bus = BUS_GREYBUS;
 
 	/* Set HID device's name */
 	snprintf(hid->name, sizeof(hid->name), "%s %04X:%04X",
