@@ -250,14 +250,15 @@ static void muc_handle_detection(bool force_removal)
 
 	/* Send enable sequence when detected and in disabled. */
 	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED) {
-		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con))
-			pr_warn("%s: select SPI active pinctrl failed\n",
-				__func__);
 		muc_register_spi();
 
 		cdata->bplus_state = MUC_BPLUS_ENABLING;
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
 		cdata->bplus_state = MUC_BPLUS_ENABLED;
+
+		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con))
+			pr_warn("%s: select SPI active pinctrl failed\n",
+				__func__);
 
 		/* Re-read state after BPLUS settle time */
 		detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
@@ -271,12 +272,12 @@ static void muc_handle_detection(bool force_removal)
 			__func__, err, detected ? "true" : "false");
 
 	if (!detected && cdata->bplus_state == MUC_BPLUS_ENABLED) {
-		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
-		cdata->bplus_state = MUC_BPLUS_DISABLED;
-
 		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_discon))
 			pr_warn("%s: select disconnected pinctrl failed\n",
 				__func__);
+
+		muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
+		cdata->bplus_state = MUC_BPLUS_DISABLED;
 	}
 }
 
@@ -726,6 +727,12 @@ static void do_muc_ff_reset(struct work_struct *work)
 		pr_warn("%s: force notify fail: %d\n", __func__, ret);
 	cd->muc_detected = false;
 
+	/* During reset, drive CS_N asserted to ensure the mod
+	 * cannot drive back ready or int preventing us from
+	 * asserting force flash pin.
+	 */
+	pinctrl_select_state(cd->pinctrl, cd->pins_discon);
+
 	if (cd->need_det_output)
 		gpio_direction_output(cd->gpios[MUC_GPIO_DET_N], 0);
 
@@ -764,11 +771,14 @@ static void do_muc_ff_reset(struct work_struct *work)
 
 	/* If the gpio is still de-asserted, the device is gone */
 	if (gpio_get_value(cd->gpios[MUC_GPIO_DET_N])) {
+		pinctrl_select_state(cd->pinctrl, cd->pins_discon);
 		muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
 		cd->bplus_state = MUC_BPLUS_DISABLED;
-		pinctrl_select_state(cd->pinctrl, cd->pins_discon);
-	} else
+	} else {
+		if (cd->bplus_state == MUC_BPLUS_ENABLED)
+			pinctrl_select_state(cd->pinctrl, cd->pins_spi_con);
 		muc_handle_detection(false);
+	}
 
 	kfree(dwork);
 }
@@ -852,6 +862,7 @@ static void do_muc_soft_reset(struct work_struct *work)
 	muc_attach_notifier_call_chain(0);
 	cd->muc_detected = false;
 
+	pinctrl_select_state(cd->pinctrl, cd->pins_discon);
 	muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
 	cd->bplus_state = MUC_BPLUS_DISABLED;
 
