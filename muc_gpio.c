@@ -38,8 +38,10 @@ static int muc_attach_notifier_call_chain(unsigned long val)
 
 	/* Log the new state and interrupts since last change in state */
 	if (muc_misc_data) {
-		pr_info("muc_attach_state: val = %lu intr_count = %d\n",
-				val, muc_misc_data->intr_count);
+		pr_info("muc_attach_state: val = %lu intr = %d b+fault = %d\n",
+				val, muc_misc_data->intr_count,
+				muc_misc_data->bplus_fault_cnt);
+		muc_misc_data->bplus_fault_cnt = 0;
 		muc_misc_data->intr_count = 0;
 	}
 
@@ -297,6 +299,12 @@ static void attach_work(struct work_struct *work)
 
 	muc_handle_detection(force);
 }
+static irqreturn_t muc_bplus_fault(int irq, void *data)
+{
+	muc_misc_data->bplus_fault_cnt++;
+
+	return IRQ_HANDLED;
+}
 
 static irqreturn_t muc_isr(int irq, void *data)
 {
@@ -350,6 +358,22 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 		return ret;
 	}
 
+	gpio = cdata->gpios[MUC_GPIO_BPLUS_FAULT_N];
+	if (gpio_is_valid(gpio)) {
+		cdata->bplus_fault_irq = gpio_to_irq(gpio);
+		ret = devm_request_threaded_irq(dev, cdata->bplus_fault_irq,
+					NULL, muc_bplus_fault,
+					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+					"muc_bplus_fault_n", cdata);
+		if (ret) {
+			dev_err(dev, "%s:%d bplus fault irq failed: %d\n",
+				__func__, __LINE__, ret);
+			cdata->gpios[MUC_GPIO_BPLUS_FAULT_N] = -ENODEV;
+			return ret;
+		}
+		enable_irq_wake(cdata->bplus_fault_irq);
+	}
+
 	enable_irq_wake(cdata->irq);
 
 	/* Handle initial detection state. */
@@ -363,6 +387,11 @@ void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
 {
 	disable_irq_wake(cdata->irq);
 	disable_irq(cdata->irq);
+
+	if (gpio_is_valid(cdata->gpios[MUC_GPIO_BPLUS_FAULT_N])) {
+		disable_irq_wake(cdata->bplus_fault_irq);
+		disable_irq(cdata->bplus_fault_irq);
+	}
 }
 
 int muc_gpio_ack_cfg(bool en)
