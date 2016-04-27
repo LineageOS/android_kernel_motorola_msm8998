@@ -38,7 +38,8 @@
 #include <uapi/video/v4l2_camera_ext_events.h>
 #include "camera_ext.h"
 
-#define CAM_EXT_CTRL_NUM_HINT 100
+#define CAM_EXT_CTRL_NUM_HINT   100
+#define MAX_RETRY_TIMES         50
 
 #define CAM_DEV_FROM_V4L2_CTRL(ctrl) \
 	container_of(ctrl->handler, struct camera_ext, hdl_ctrls)
@@ -246,6 +247,7 @@ static int mod_v4l2_open(struct file *file)
 	int rc;
 	struct camera_ext_fh *camera_fh;
 	struct camera_ext *cam_dev = video_drvdata(file);
+	int retry_count = 0;
 
 	camera_fh = kzalloc(sizeof(*camera_fh), GFP_KERNEL);
 	if (!camera_fh)
@@ -267,7 +269,9 @@ static int mod_v4l2_open(struct file *file)
 			goto err_power_on;
 
 		/* reset all none readonly controls */
-		rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
+		do {
+			rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
+		} while (rc == -EAGAIN && ++retry_count < MAX_RETRY_TIMES);
 		if (rc != 0) {
 			v4l2_err(&cam_dev->v4l2_dev,
 				"failed to apply contrl default value\n");
