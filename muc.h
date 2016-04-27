@@ -29,6 +29,7 @@ enum {
 	MUC_GPIO_SPI_MISO = 7,
 	MUC_GPIO_BPLUS_ISET = 8,
 	MUC_GPIO_BPLUS_DISCHARG = 9,
+	MUC_GPIO_BPLUS_FAULT_N = 10,
 	MUC_MAX_GPIOS
 };
 
@@ -39,7 +40,8 @@ static inline bool muc_gpio_optional(int index)
 {
 	return ((index == MUC_GPIO_FORCE_FLASH) ||
 		(index == MUC_GPIO_BPLUS_ISET) ||
-		(index == MUC_GPIO_BPLUS_DISCHARG));
+		(index == MUC_GPIO_BPLUS_DISCHARG) ||
+		(index == MUC_GPIO_BPLUS_FAULT_N));
 }
 
 #define MUC_ROOT_VER_UNKNOWN     0x00 /* For not implemented */
@@ -108,6 +110,10 @@ struct muc_data {
 	struct platform_device *i2c_pdev;
 
 	u32 intr_count;
+
+	/* BPLUS Fault Interrupts */
+	int bplus_fault_irq;
+	int bplus_fault_cnt;
 };
 
 /* Global functions */
