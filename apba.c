@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Motorola Mobility LLC
+ * Copyright (C) 2016 Motorola Mobility LLC
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -164,15 +164,18 @@ struct apba_ctrl {
 	int on;
 	struct mutex log_mutex;
 	struct completion comp;
+	struct completion apbe_log_comp;
 	struct completion baud_comp;
 	struct completion mode_comp;
 	struct completion unipro_comp;
+	struct completion unipro_stats_comp;
 	uint8_t master_intf;
 	uint8_t mode;
 	bool flash_dev_populated;
 	uint32_t apbe_status;
 	uint32_t last_unipro_value;
 	uint32_t last_unipro_status;
+	uint32_t unipro_stats[32];
 	struct platform_device *pdev;
 	struct notifier_block attach_nb;
 	unsigned long present;
@@ -182,10 +185,14 @@ struct apba_ctrl {
 #define APBA_LOG_SIZE	SZ_16K
 static DEFINE_KFIFO(apba_log_fifo, char, APBA_LOG_SIZE);
 
-/* used as temporary buffer to pop out content from FIFO */
+#define APBE_LOG_SIZE	SZ_16K
+static DEFINE_KFIFO(apbe_log_fifo, char, APBE_LOG_SIZE);
+
+/* used as temporary buffer to pop out content from FIFOs */
 static char fifo_overflow[MHB_MAX_MSG_SIZE];
 
 #define APBA_LOG_REQ_TIMEOUT	1000 /* ms */
+#define APBE_LOG_REQ_TIMEOUT	1000 /* ms */
 #define APBA_MODE_REQ_TIMEOUT	1000 /* ms */
 #define APBA_BAUD_REQ_TIMEOUT	1000 /* ms */
 #define APBA_UNIPRO_REQ_TIMEOUT	1000 /* ms */
@@ -478,6 +485,44 @@ static void apba_handle_unipro_write_attr_rsp(struct mhb_hdr *hdr,
 	complete(&g_ctrl->unipro_comp);
 }
 
+static int apba_send_unipro_stats_req(void)
+{
+	int ret;
+	struct mhb_hdr req_hdr;
+
+	memset(&req_hdr, 0, sizeof(req_hdr));
+	req_hdr.addr = MHB_ADDR_UNIPRO;
+	req_hdr.type = MHB_TYPE_UNIPRO_STATS_REQ;
+
+	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr, NULL,	0, 0);
+	if (ret)
+		pr_err("%s: failed to send\n", __func__);
+
+	return ret;
+}
+
+static void apba_handle_unipro_stats_not(struct mhb_hdr *hdr,
+                uint8_t *payload, size_t len)
+{
+        uint32_t *src = (uint32_t *)payload;
+        uint32_t *dst = g_ctrl->unipro_stats;
+
+        len = min(len, sizeof(g_ctrl->unipro_stats));
+        len /= sizeof(uint32_t);
+
+        while (len--)
+                *dst++ += le32_to_cpu(*src++);
+}
+
+static void apba_handle_unipro_stats_rsp(struct mhb_hdr *hdr,
+		uint8_t *payload, size_t len)
+{
+	if (hdr->result == MHB_RESULT_SUCCESS)
+		apba_handle_unipro_stats_not(hdr, payload, len);
+
+	complete(&g_ctrl->unipro_stats_comp);
+}
+
 static void apba_handle_unipro_message(struct mhb_hdr *hdr, uint8_t *payload,
 		size_t len)
 {
@@ -495,6 +540,12 @@ static void apba_handle_unipro_message(struct mhb_hdr *hdr, uint8_t *payload,
 	case MHB_TYPE_UNIPRO_STATUS_RSP:
 		/* ignore */
 		break;
+	case MHB_TYPE_UNIPRO_STATS_RSP:
+		apba_handle_unipro_stats_rsp(hdr, payload, len);
+		break;
+	case MHB_TYPE_UNIPRO_STATS_NOT:
+		apba_handle_unipro_stats_not(hdr, payload, len);
+		break;
 	default:
 		pr_err("%s: Invalid type=0x%02x.\n", __func__, hdr->type);
 		break;
@@ -502,24 +553,21 @@ static void apba_handle_unipro_message(struct mhb_hdr *hdr, uint8_t *payload,
 }
 
 /* Diag */
-static void apba_handle_diag_log_rsp(struct mhb_hdr *hdr, uint8_t *payload,
-		size_t len)
+static void save_log_data(struct kfifo *fifo, uint8_t *payload, size_t len)
 {
-	int of;
+	int overflow;
 
 	mutex_lock(&g_ctrl->log_mutex);
 
-	of = kfifo_len(&apba_log_fifo) + len - APBA_LOG_SIZE;
-	if (of > 0) {
+	overflow = kfifo_len(fifo) + len - kfifo_size(fifo);
+	if (overflow > 0) {
 		/* pop out from older content if buffer is full */
-		of = kfifo_out(&apba_log_fifo, fifo_overflow,
-			       min(of, MHB_MAX_MSG_SIZE));
+		overflow = kfifo_out(fifo, fifo_overflow,
+				     min(overflow, MHB_MAX_MSG_SIZE));
 	}
-	kfifo_in(&apba_log_fifo, payload, len);
+	kfifo_in(fifo, payload, len);
 
 	mutex_unlock(&g_ctrl->log_mutex);
-
-	complete(&g_ctrl->comp);
 }
 
 static void apba_handle_diag_mode_rsp(struct mhb_hdr *hdr, uint8_t *payload,
@@ -533,7 +581,15 @@ static void apba_handle_diag_message(struct mhb_hdr *hdr, uint8_t *payload,
 {
 	switch (hdr->type) {
 	case MHB_TYPE_DIAG_LOG_RSP:
-		apba_handle_diag_log_rsp(hdr, payload, len);
+		if (hdr->addr == MHB_ADDR_DIAG) {
+			save_log_data((struct kfifo *)&apba_log_fifo,
+				      payload, len);
+			complete(&g_ctrl->comp);
+		} else if (hdr->addr == MHB_ADDR_PEER_DIAG) {
+			save_log_data((struct kfifo *)&apbe_log_fifo,
+				      payload, len);
+			complete(&g_ctrl->apbe_log_comp);
+		}
 		break;
 	case MHB_TYPE_DIAG_MODE_RSP:
 		apba_handle_diag_mode_rsp(hdr, payload, len);
@@ -610,13 +666,13 @@ static int apba_send_diag_mode_req(__u32 mode)
 	return ret;
 }
 
-static int apba_send_diag_log_req(void)
+static int apba_send_diag_log_req(uint8_t addr)
 {
 	int ret;
 	struct mhb_hdr req_hdr;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
-	req_hdr.addr = MHB_ADDR_DIAG;
+	req_hdr.addr = addr;
 	req_hdr.type = MHB_TYPE_DIAG_LOG_REQ;
 
 	ret = mods_uart_send(g_ctrl->mods_uart, &req_hdr,
@@ -1387,7 +1443,7 @@ static ssize_t apba_log_show(struct device *dev,
 	if (!g_ctrl)
 		return -ENODEV;
 
-	if (apba_send_diag_log_req())
+	if (apba_send_diag_log_req(MHB_ADDR_DIAG))
 		return -EIO;
 
 	if (!wait_for_completion_timeout(
@@ -1405,6 +1461,33 @@ static ssize_t apba_log_show(struct device *dev,
 }
 
 static DEVICE_ATTR_RO(apba_log);
+
+static ssize_t apbe_log_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int count;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	if (apba_send_diag_log_req(MHB_ADDR_PEER_DIAG))
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->apbe_log_comp,
+		    msecs_to_jiffies(APBE_LOG_REQ_TIMEOUT))) {
+		pr_err("%s: timeout from LOG REQUEST\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	mutex_lock(&g_ctrl->log_mutex);
+	count = kfifo_out(&apbe_log_fifo, buf, PAGE_SIZE - 1);
+	mutex_unlock(&g_ctrl->log_mutex);
+
+	return count;
+}
+
+static DEVICE_ATTR_RO(apbe_log);
 
 static ssize_t apbe_power_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
@@ -1679,6 +1762,38 @@ static ssize_t fw_version_str_show(struct device *dev,
 
 static DEVICE_ATTR_RO(fw_version_str);
 
+static ssize_t unipro_stats_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int i;
+	int count = 0;
+
+	if (!g_ctrl)
+		return -ENODEV;
+
+	if (apba_send_unipro_stats_req())
+		return -EIO;
+
+	if (!wait_for_completion_timeout(
+		    &g_ctrl->unipro_stats_comp,
+		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
+		pr_err("%s: timeout\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(g_ctrl->unipro_stats); i++) {
+		count += scnprintf(buf + count, PAGE_SIZE, "%08x\n",
+				   g_ctrl->unipro_stats[i]);
+
+		/* Clear counter */
+		g_ctrl->unipro_stats[i] = 0;
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR_RO(unipro_stats);
+
 static struct attribute *apba_attrs[] = {
 	&dev_attr_erase_partition.attr,
 	&dev_attr_flash_enable.attr,
@@ -1687,6 +1802,7 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_apba_baud.attr,
 	&dev_attr_apba_log.attr,
 	&dev_attr_apba_mode.attr,
+	&dev_attr_apbe_log.attr,
 	&dev_attr_apbe_power.attr,
 	&dev_attr_apbe_status.attr,
 	&dev_attr_apba_read.attr,
@@ -1700,6 +1816,7 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_pid.attr,
 	&dev_attr_fw_version.attr,
 	&dev_attr_fw_version_str.attr,
+	&dev_attr_unipro_stats.attr,
 	NULL,
 };
 
@@ -2085,9 +2202,11 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	mutex_init(&ctrl->log_mutex);
 	init_completion(&ctrl->comp);
+	init_completion(&ctrl->apbe_log_comp);
 	init_completion(&ctrl->baud_comp);
 	init_completion(&ctrl->mode_comp);
 	init_completion(&ctrl->unipro_comp);
+	init_completion(&ctrl->unipro_stats_comp);
 
 	ctrl->unipro_mid = APBA_FIRMWARE_UNIPRO_MID;
 	ctrl->unipro_pid = APBA_FIRMWARE_UNIPRO_PID;
