@@ -1425,6 +1425,17 @@ static struct v4l2_ctrl_config meta_data_size = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config zoom_lock_1x = {
+	.id = CAM_EXT_CID_ZOOM_LOCK_1X,
+	.type = V4L2_CTRL_TYPE_BOOLEAN,
+	.name = "zoom lock 1x",
+	.max = 1,
+	.min = 0,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1541,6 +1552,7 @@ __ITEM(FACE_DETECTION, face_detection),
 __ITEM(MOD_CAPS_UVC_SNAPSHOT, uvc_snapshot),
 __ITEM(MOD_META_DATA_PATH, meta_data_path),
 __ITEM(MOD_META_DATA_SIZE, meta_data_size),
+__ITEM(ZOOM_LOCK_1X, zoom_lock_1x),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
