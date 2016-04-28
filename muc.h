@@ -14,6 +14,7 @@
 #ifndef __MUC_H__
 #define __MUC_H__
 
+#include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/workqueue.h>
@@ -240,5 +241,14 @@ static inline int muc_gpio_get_ack(void)
 static inline void muc_gpio_set_ack(int value)
 {
 	gpio_set_value(muc_misc_data->gpios[MUC_GPIO_SPI_MOSI], value);
+}
+
+static inline void muc_gpio_toggle_spi_mux(void)
+{
+	pinctrl_select_state(muc_misc_data->pinctrl,
+				muc_misc_data->pins_discon);
+	usleep_range(10000, 11000);
+	pinctrl_select_state(muc_misc_data->pinctrl,
+				muc_misc_data->pins_spi_con);
 }
 #endif  /* __MUC_H__ */
