@@ -397,6 +397,7 @@ retry:
 		return -ENODEV;
 	if (unlikely(ret != 0)) {
 		dev_err(&spi->dev, "Timeout waiting for rdy to assert\n");
+		muc_gpio_toggle_spi_mux();
 		if (--num_tries_remaining > 0)
 			goto retry;
 		return -ETIMEDOUT;
