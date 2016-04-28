@@ -73,7 +73,7 @@ enum MHB_FUNC {
 };
 
 #define MHB_ADDR(peer, inst, func) \
-	((peer << MHB_PEER_SHIFT)    | \
+	((peer << MHB_PEER_SHIFT)     | \
 	(inst << MHB_INSTANCE_SHIFT) | \
 	(func << MHB_FUNC_SHIFT))
 
@@ -154,6 +154,10 @@ enum MHB_ADDR {
 #define MHB_TYPE_UNIPRO_WRITE_ATTR_RSP \
 	(MHB_RSP_MASK|MHB_TYPE_UNIPRO_WRITE_ATTR_REQ)
 
+#define MHB_TYPE_UNIPRO_STATS_REQ (5)
+#define MHB_TYPE_UNIPRO_STATS_RSP (MHB_RSP_MASK|MHB_TYPE_UNIPRO_STATS_REQ)
+#define MHB_TYPE_UNIPRO_STATS_NOT (MHB_NOT_MASK|MHB_TYPE_UNIPRO_STATS_REQ)
+
 /* CDSI */
 #define MHB_TYPE_CDSI_CONFIG_REQ (0)
 #define MHB_TYPE_CDSI_CONFIG_RSP (MHB_RSP_MASK|MHB_TYPE_CDSI_CONFIG_REQ)
@@ -174,6 +178,9 @@ enum MHB_ADDR {
 #define MHB_TYPE_CDSI_READ_PANEL_INFO_REQ (5)
 #define MHB_TYPE_CDSI_READ_PANEL_INFO_RSP \
     (MHB_RSP_MASK|MHB_TYPE_CDSI_READ_PANEL_INFO_REQ)
+
+#define MHB_TYPE_CDSI_UNCONFIG_REQ (6)
+#define MHB_TYPE_CDSI_UNCONFIG_RSP (MHB_RSP_MASK|MHB_TYPE_CDSI_UNCONFIG_REQ)
 
 /* I2S */
 #define MHB_TYPE_I2S_CONFIG_REQ (0)
@@ -210,6 +217,15 @@ enum MHB_ADDR {
 
 #define MHB_TYPE_DIAG_LOOP_REQ (3)
 #define MHB_TYPE_DIAG_LOOP_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_LOOP_REQ)
+
+#define MHB_TYPE_DIAG_CONTROL_REQ (4)
+#define MHB_TYPE_DIAG_CONTROL_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_COMMAND_REQ)
+
+#define MHB_TYPE_DIAG_REG_LOG_APBE_REQ (5)
+#define MHB_TYPE_DIAG_REG_LOG_APBE_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_REG_LOG_APBE_REQ)
+
+#define MHB_TYPE_DIAG_REG_LOG_APBA_REQ (6)
+#define MHB_TYPE_DIAG_REG_LOG_APBA_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_REG_LOG_APBA_REQ)
 
 /* result */
 enum MHB_RESULT {
@@ -287,6 +303,50 @@ struct mhb_unipro_write_attr_req {
 	uint32_t value;
 } __attribute__((packed));
 
+struct mhb_unipro_stats {
+	/* L1 */
+	uint32_t phy_lane_err;
+	/* L1.5 */
+	uint32_t pa_lane_reset_tx;
+	uint32_t pa_lane_reset_rx;
+	/* L2 */
+	uint32_t d_nac_received;
+	uint32_t d_tcx_replay_timer_expired;
+	uint32_t d_afcx_request_timer_expired;
+	uint32_t d_fcx_protectiong_timer_expired;
+	uint32_t d_crc_error;
+	uint32_t d_rx_buffer_overflow;
+	uint32_t d_max_frame_length_exceeded;
+	uint32_t d_wrong_sequence_number;
+	uint32_t d_afc_frame_syntax_error;
+	uint32_t d_nac_frame_syntax_error;
+	uint32_t d_eof_syntax_error;
+	uint32_t d_frame_syntax_error;
+	uint32_t d_bad_control_symbol_type;
+	uint32_t d_pa_init_error;
+	uint32_t d_pa_error_ind_received;
+	/* L3 */
+	uint32_t n_unsupported_header_type;
+	uint32_t n_bad_device_id_encoding;
+	uint32_t n_lhdr_trap_packet_dropping;
+	/* L4 */
+	uint32_t t_unsupported_header_type;
+	uint32_t t_unknown_cport_id;
+	uint32_t t_no_connection_rx;
+	uint32_t t_controlled_segment_dropping;
+	uint32_t t_bad_tc;
+	uint32_t t_e2e_credit_overflow;
+	uint32_t t_safety_valve_dropping;
+} __attribute__((packed));
+
+struct mhb_unipro_stats_rsp {
+	struct mhb_unipro_stats stats;
+} __attribute__((packed));
+
+struct mhb_unipro_stats_not {
+	struct mhb_unipro_stats stats;
+} __attribute__((packed));
+
 /* CDSI */
 
 /* config */
@@ -334,7 +394,7 @@ struct mhb_cdsi_config {
 } __attribute__((packed));
 
 struct mhb_cdsi_config_req {
-    struct mhb_cdsi_config cfg;
+	struct mhb_cdsi_config cfg;
 } __attribute__((packed));
 
 /* control */
@@ -345,8 +405,7 @@ enum {
 };
 
 struct mhb_cdsi_control_req {
-	uint8_t local_command;
-	uint8_t peer_command;
+	uint8_t command;
 } __attribute__((packed));
 
 /* DSI and DCS */
@@ -376,53 +435,61 @@ struct mhb_cdsi_control_req {
 
 /* read/write command */
 struct mhb_cdsi_cmd {
-    uint8_t ctype;  /* MHB_CTYPE_* */
-    uint8_t dtype;  /* MHB_DTYPE_* */
-    uint16_t length;
-    uint32_t delay; /* minimum milliseconds to wait after command */
-    union {
-        uint16_t spdata;
-        uint32_t lpdata[2];
-    } u;
+	uint8_t ctype;  /* MHB_CTYPE_* */
+	uint8_t dtype;  /* MHB_DTYPE_* */
+	uint16_t length;
+	uint32_t delay; /* minimum milliseconds to wait after command */
+	union {
+		uint16_t spdata;
+		uint32_t lpdata[2];
+	} u;
 } __attribute__((packed));
 
 struct mhb_cdsi_read_cmds_req {
-    struct mhb_cdsi_cmd cmds[0];
+	struct mhb_cdsi_cmd cmds[0];
 } __attribute__((packed));
 
 struct mhb_cdsi_write_cmds_req {
-    struct mhb_cdsi_cmd cmds[0];
+	struct mhb_cdsi_cmd cmds[0];
 } __attribute__((packed));
 
 /* read panel info */
 struct mhb_dsi_panel_info {
-    uint16_t supplier_id;
-    uint8_t id0;
-    uint8_t id1;
-    uint8_t id2;
+	uint16_t supplier_id;
+	uint8_t id0;
+	uint8_t id1;
+	uint8_t id2;
 } __attribute__((packed));
 
 struct mhb_cdsi_write_cmds_rsp {
-    struct mhb_dsi_panel_info info;
+	struct mhb_dsi_panel_info info;
 } __attribute__((packed));
 
 /* I2S */
-#define MHB_I2S_DIRECTION_IS2_TO_UNIPRO 0
-#define MHB_I2S_DIRECTION_UNIPRO_TO_I2S 1
-
-#define MHB_I2S_ENCODING_PCM 0
-
 #define MHB_I2S_EDGE_RISING  0
 #define MHB_I2S_EDGE_FALLING 1
 
+#define MHB_I2S_WCLK_POLARITY_NORMAL  0
+#define MHB_I2S_WCLK_POLARITY_REVERSE 1
+
+#define MHB_I2S_PROTOCOL_I2S       0
+#define MHB_I2S_PROTOCOL_PCM       1
+#define MHB_I2S_PROTOCOL_LR_STEREO 2
+
+#define MHB_I2S_ROLE_SLAVE   0
+#define MHB_I2S_ROLE_MASTER  1
+
 /* config */
 struct mhb_i2s_config {
-	uint32_t sample_rate; /* in Hz (e.g. 48000) */
-	uint8_t direction;    /* MHB_I2S_DIRECTION_* */
-	uint8_t encoding;     /* MHB_I2S_ENCODING_* */
-	uint8_t sample_size;  /* in bits (e.g. 8, 16) */
-	uint8_t num_channels; /* 1: mono, 2: stereo */
-	uint8_t edge;         /* MHB_I2S_EDGE_* */
+	uint32_t sample_rate;    /* in Hz (e.g. 48000) */
+	uint8_t sample_size;     /* in bits (e.g. 8, 16) */
+	uint8_t num_channels;    /* 1: mono, 2: stereo */
+	uint8_t wclk_polarity;   /* MHB_I2S_WCLK_POLARITY_* */
+	uint8_t protocol;        /* MHB_I2S_PROTOCOL_*/
+	uint8_t rx_edge;         /* MHB_I2S_EDGE_* */
+	uint8_t tx_edge;         /* MHB_I2S_EDGE_* */
+	uint8_t wclk_edge;       /* MHB_I2S_EDGE_* */
+	uint8_t clk_role;        /* MHB_I2S_ROLE_*/
 } __attribute__((packed));
 
 struct mhb_i2s_config_req {
@@ -430,22 +497,53 @@ struct mhb_i2s_config_req {
 } __attribute__((packed));
 
 /* control */
-enum {
-	MHB_I2S_COMMAND_NONE = 0,
-	MHB_I2S_COMMAND_STOP  = 1,
-	MHB_I2S_COMMAND_START = 2,
-};
+#define MHB_I2S_COMMAND_NONE      0
+/*
+ * The following commands are used in normal operation to start and stop
+ * I2S tunneling.
+ */
+#define MHB_I2S_COMMAND_TX_STOP   1  /* Stop transmit and shutdown all clocks. */
+#define MHB_I2S_COMMAND_TX_START  2  /* Enable, Arm, and start transmit. */
+#define MHB_I2S_COMMAND_RX_STOP   3  /* Stop receive and shutdown all clocks. */
+#define MHB_I2S_COMMAND_RX_START  4  /* Enable, Arm, and start receive. */
+/*
+ * The following commands are used in test modes to verify I2S tunneling is
+ * operating as expected on hardware.  They do not need to be used in normal
+ * operation.
+ */
+#define MHB_I2S_COMMAND_ENABLE    5  /* Enable the clock to the module, thus power will be drawn. */
+#define MHB_I2S_COMMAND_DISABLE   6  /* Disable the clock to the module, thus power will be reduced. */
+#define MHB_I2S_COMMAND_ARM       7  /* Arm the system which starts the PLL and it will start
+										 on the first packet or MANUAL_START. */
+#define MHB_I2S_COMMAND_DISARM    8  /* Disarm the system which stops transmitting/receiving and
+										 shuts down the PLL. */
+#define MHB_I2S_COMMAND_TRIGGER   9  /* Starts the system after it has been armed. */
 
 struct mhb_i2s_control_req {
-	uint8_t local_command;
-	uint8_t peer_command;
+	uint8_t command;
 } __attribute__((packed));
 
 /* HSIC */
+
+#define MHB_HSIC_COMMAND_NONE     0
+#define MHB_HSIC_COMMAND_STOP     1  /* Stop USB tunneling over HSIC */
+#define MHB_HSIC_COMMAND_START    2  /* Start USB tunneling over HSIC */
+
+struct mhb_hsic_control_req {
+	uint8_t command;
+} __attribute__((packed));
 
 /* Diag */
 struct mhb_diag_mode_req {
 	uint32_t mode;
 } __attribute__((packed));
+
+struct mhb_diag_control_req {
+	uint8_t command;
+} __attribute__((packed));
+
+#define MHB_DIAG_CONTROL_NONE           0
+#define MHB_DIAG_CONTROL_REGLOG_FIFO    1  /* Set the reglog mode to FIFO. */
+#define MHB_DIAG_CONTROL_REGLOG_STACK   2  /* Set the reglog mode to stack. */
 
 #endif
