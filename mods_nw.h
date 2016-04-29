@@ -83,6 +83,7 @@ struct mods_dl_device {
 	struct kref kref;
 	uint32_t slave_mask;
 	uint32_t slave_state;
+	bool high_current_reserved;
 };
 
 struct mods_nw_msg_filter {

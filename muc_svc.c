@@ -90,6 +90,7 @@ struct muc_svc_hotplug_work {
 static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master);
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
+static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dev);
 
 static void muc_svc_send_kobj_uevent(struct kobject *kobj, const char *event)
 {
@@ -409,6 +410,20 @@ static ssize_t capability_vendor_show(struct mods_dl_device *dev, char *buf)
 	return scnprintf(buf, PAGE_SIZE, "0x%04X", dev->capability.vendor);
 }
 
+static ssize_t
+current_rsv_ack_store(struct mods_dl_device *mods_dev,
+		const char *buf, size_t count)
+{
+	int ret;
+
+	/* any write to this file signals ack */
+	ret = muc_svc_send_current_rsv_ack(mods_dev);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
 struct muc_svc_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
@@ -437,6 +452,7 @@ static MUC_SVC_ATTR(current_limit, 0200, NULL, current_limit_store);
 static MUC_SVC_ATTR(capability_level, 0444,  capability_level_show, NULL);
 static MUC_SVC_ATTR(capability_reason, 0444, capability_reason_show, NULL);
 static MUC_SVC_ATTR(capability_vendor, 0444, capability_vendor_show, NULL);
+static MUC_SVC_ATTR(current_rsv_ack, 0444, NULL, current_rsv_ack_store);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -486,6 +502,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_capability_level.attr,
 	&muc_svc_attr_capability_reason.attr,
 	&muc_svc_attr_capability_vendor.attr,
+	&muc_svc_attr_current_rsv_ack.attr,
 	NULL,
 };
 
@@ -1065,6 +1082,35 @@ muc_svc_capability_changed(struct mods_dl_device *dld, struct gb_message *msg,
 }
 
 static int
+muc_svc_current_rsv(struct mods_dl_device *dld, struct gb_message *msg,
+			  uint16_t cport)
+{
+	struct muc_svc_data *dd = dld_get_dd(dld);
+	struct mods_dl_device *mods_dev;
+	struct mb_control_current_rsv_request *req = msg->payload;
+	u8 intf_id;
+
+	mutex_lock(&svc_list_lock);
+	intf_id = SVC_VENDOR_CTRL_INTF(cport);
+	mods_dev = dev_from_intf(intf_id);
+	if (!mods_dev) {
+		dev_err(&dd->pdev->dev, "Interface not found: %d\n", intf_id);
+		mutex_unlock(&svc_list_lock);
+		return -EINVAL;
+	}
+	dld->high_current_reserved = !!req->rsv;
+
+	/* If the current limit is being reserved - tell the system it */
+	/* should save the power */
+	muc_svc_send_kobj_uevent(&mods_dev->intf_kobj,
+			req->rsv ? "MOD_EVENT=RESERVE_CURRENT" :
+				   "MOD_EVENT=RELEASE_CURRENT");
+
+	mutex_unlock(&svc_list_lock);
+	return 0;
+}
+
+static int
 muc_svc_handle_mods_request(struct mods_dl_device *dld, uint8_t *data,
 			  size_t msg_size, uint16_t cport)
 {
@@ -1087,6 +1133,9 @@ muc_svc_handle_mods_request(struct mods_dl_device *dld, uint8_t *data,
 		break;
 	case MB_CONTROL_TYPE_CAPABILITY_CHANGED:
 		ret = muc_svc_capability_changed(dld, req, cport);
+		break;
+	case MB_CONTROL_TYPE_CURRENT_RSV:
+		ret = muc_svc_current_rsv(dld, req, cport);
 		break;
 	default:
 		dev_err(&dd->pdev->dev, "Unsupported Mods Request type: %d\n",
@@ -1901,6 +1950,7 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	kfree(mods_dev->manifest);
 	kfree(mods_dev->hpw);
 	mods_dev->hpw = NULL;
+	mods_dev->high_current_reserved = false;
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 
@@ -2443,6 +2493,40 @@ static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit)
 		return PTR_ERR(msg);
 	}
 	svc_gb_msg_free(msg);
+
+	return 0;
+}
+
+/* Sent to the mod to acknowledge receipt of high current reservation request */
+static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dld)
+{
+	struct gb_message *msg;
+	struct mb_control_current_rsv_ack_request req;
+
+	if (!MB_CONTROL_SUPPORTS(dld, CURRENT_RSV))
+		return -ENOENT;
+
+	/* Acknowledge the message back to the mod */
+	req.rsv = dld->high_current_reserved ? 1 : 0;
+
+	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&req,
+			MB_CONTROL_TYPE_CURRENT_RSV_ACK, sizeof(req),
+			SVC_VENDOR_CTRL_CPORT(dld->intf_id),
+			SVC_CURRENT_LIMIT_TIMEOUT_MS);
+
+	if (IS_ERR(msg)) {
+		dev_err(&svc_dd->pdev->dev,
+			"[%d] Failed to set current limit\n", dld->intf_id);
+		return PTR_ERR(msg);
+	}
+	svc_gb_msg_free(msg);
+
+	/* If the current reservation was released - the system can now     */
+	/* use all of the power.  Either way the notify the system we are   */
+	/* done.                                                            */
+	muc_svc_send_kobj_uevent(&dld->intf_kobj,
+			req.rsv ? "MOD_EVENT=RESERVE_CURRENT_ACK" :
+				  "MOD_EVENT=RELEASE_CURRENT_ACK");
 
 	return 0;
 }
