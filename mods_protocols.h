@@ -75,7 +75,7 @@
 #define MB_CONTROL_TYPE_RTC_SYNC              0x08
 #define MB_CONTROL_TYPE_SLAVE_STATE           0x09
 #define MB_CONTROL_TYPE_SET_CURRENT_LIMIT     0x0a
-#define MB_CONTROL_TYPE_CAPABLITY_CHANGED     0x0b
+#define MB_CONTROL_TYPE_CAPABILITY_CHANGED    0x0b
 #define MB_CONTROL_TYPE_GET_PWRUP_REASON      0x0c
 
 /* Valid modes for the reboot request */

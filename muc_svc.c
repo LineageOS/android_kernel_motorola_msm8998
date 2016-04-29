@@ -1085,7 +1085,7 @@ muc_svc_handle_mods_request(struct mods_dl_device *dld, uint8_t *data,
 	case MB_CONTROL_TYPE_SLAVE_STATE:
 		ret = mods_slave_state(dld, req, cport);
 		break;
-	case MB_CONTROL_TYPE_CAPABLITY_CHANGED:
+	case MB_CONTROL_TYPE_CAPABILITY_CHANGED:
 		ret = muc_svc_capability_changed(dld, req, cport);
 		break;
 	default:
