@@ -14,7 +14,7 @@
 
 #include "greybus.h"
 
-#define GB_HD_MAX_SEQUENTIAL_TIMEOUTS  30
+#define GB_HD_MAX_SEQUENTIAL_TIMEOUTS  3
 
 static struct ida gb_hd_bus_id_map;
 
