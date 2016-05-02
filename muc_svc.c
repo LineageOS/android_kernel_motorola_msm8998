@@ -93,6 +93,7 @@ static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master);
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
 static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dev);
+static int muc_svc_version_heartbeat(void);
 
 static void muc_svc_send_kobj_uevent(struct kobject *kobj, const char *event)
 {
@@ -241,6 +242,10 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 #define MUC_SVC_COMMUNICATION_RESET "MOD_COMM_RESET"
 void muc_svc_communication_reset(void)
 {
+	/* Try a heartbeat via the version; if it succeeds we are talking */
+	if (!muc_svc_version_heartbeat())
+		return;
+
 	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
 
 	/* Increment failure count, and mark the starting time */
@@ -1705,6 +1710,32 @@ static int muc_svc_control_version(struct mods_dl_device *mods_dev, u8 type,
 	svc_gb_msg_free(msg);
 
 	return 0;
+}
+
+static int muc_svc_version_heartbeat(void)
+{
+	struct mods_dl_device *mods_dev;
+	int ret = -ENODEV;
+	u8 major;
+	u8 minor;
+
+	mutex_lock(&svc_list_lock);
+	list_for_each_entry(mods_dev, &svc_dd->ext_intf, list) {
+		ret = muc_svc_control_version(mods_dev,
+				MB_CONTROL_TYPE_PROTOCOL_VERSION,
+				MB_CONTROL_VERSION_MAJOR,
+				MB_CONTROL_VERSION_MINOR,
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id),
+				&major, &minor);
+		if (ret)
+			break;
+	}
+	mutex_unlock(&svc_list_lock);
+
+	if (!ret)
+		pr_debug("%s: version heartbeats succeeded\n", __func__);
+
+	return ret;
 }
 
 static int
