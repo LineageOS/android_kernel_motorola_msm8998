@@ -490,11 +490,66 @@ static int mods_codec_set_dai_sysclk(struct snd_soc_dai *dai,
 	return 0;
 }
 
+static int mods_codec_start(struct snd_pcm_substream *substream,
+				struct snd_soc_dai *dai)
+{
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+	int ret;
+
+	mutex_lock(&gb_codec->lock);
+	if (!gb_codec->mgmt_connection) {
+		pr_err("%s: audio i2s mgmt connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		ret = gb_i2s_mgmt_send_start(gb_codec,
+				GB_I2S_MGMT_PORT_TYPE_RECEIVER, true);
+	else
+		ret = gb_i2s_mgmt_send_start(gb_codec,
+				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, true);
+
+	if (ret == -ENOTSUPP)
+		ret = 0;
+	mutex_unlock(&gb_codec->lock);
+
+	return ret;
+}
+
+static void mods_codec_shutdown(struct snd_pcm_substream *substream,
+				struct snd_soc_dai *dai)
+{
+	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(dai->codec);
+	struct gb_snd_codec *gb_codec = priv->snd_codec;
+
+	mutex_lock(&gb_codec->lock);
+	if (!gb_codec->mgmt_connection) {
+		pr_err("%s: audio i2s mgmt connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&gb_codec->lock);
+		return;
+	}
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		gb_i2s_mgmt_send_start(gb_codec,
+				GB_I2S_MGMT_PORT_TYPE_RECEIVER, false);
+	else
+		gb_i2s_mgmt_send_start(gb_codec,
+				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, false);
+
+	mutex_unlock(&gb_codec->lock);
+}
+
 static const struct snd_soc_dai_ops mods_codec_dai_ops = {
+	.startup    = mods_codec_start,
 	.hw_params = mods_codec_hw_params,
 	.trigger	= mods_codec_dai_trigger,
 	.set_fmt	= mods_codec_dai_set_fmt,
 	.set_sysclk = mods_codec_set_dai_sysclk,
+	.shutdown = mods_codec_shutdown,
 };
 
 

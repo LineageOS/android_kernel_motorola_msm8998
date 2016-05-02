@@ -538,6 +538,8 @@ struct gb_pwm_disable_request {
 #define GB_I2S_MGMT_TYPE_REPORT_EVENT			0x09
 #define GB_I2S_MGMT_TYPE_ACTIVATE_PORT		0x0a
 #define GB_I2S_MGMT_TYPE_DEACTIVATE_PORT		0x0b
+#define GB_I2S_MGMT_TYPE_START			0x0c
+#define GB_I2S_MGMT_TYPE_STOP			0x0d
 
 #define GB_I2S_MGMT_BYTE_ORDER_NA			BIT(0)
 #define GB_I2S_MGMT_BYTE_ORDER_BE			BIT(1)
@@ -708,14 +710,15 @@ struct gb_i2s_mgmt_deactivate_port_request {
 } __packed;
 /* deactivate port response has no payload */
 
-#define GB_I2S_DATA_TYPE_SEND_DATA			0x02
-
-struct gb_i2s_send_data_request {
-	__le32	sample_number;
-	__le32	size;
-	__u8	data[0];
+struct gb_i2s_mgmt_start_request {
+    __u8    port_type;
 } __packed;
-/* send data has no response at all */
+/* start response has no payload */
+
+struct gb_i2s_mgmt_stop_request {
+    __u8    port_type;
+} __packed;
+/* stop response has no payload */
 
 /* Mods Audio protocol*/
 
