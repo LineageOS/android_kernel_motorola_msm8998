@@ -2568,6 +2568,9 @@ static ssize_t flashmode_store(struct device *dev,
 {
 	unsigned long val;
 
+	if (unlikely(!muc_core_probed()))
+		return -ENODEV;
+
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
@@ -2588,6 +2591,9 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
 	unsigned long val;
+
+	if (unlikely(!muc_core_probed()))
+		return -ENODEV;
 
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
