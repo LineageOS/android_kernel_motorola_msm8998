@@ -94,16 +94,16 @@ int gb_i2s_mgmt_set_samples_per_message(
 				 &request, sizeof(request), NULL, 0);
 }
 
-static bool gb_i2s_cfg_mask_supported(struct gb_snd_codec *snd_codec)
+static bool gb_i2s_is_ver_supported(struct gb_snd_codec *snd_codec,
+				uint32_t major, uint32_t minor)
 {
 	struct gb_connection *conn = snd_codec->mgmt_connection;
 
-	if (conn->module_major < GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR) {
+	if (conn->module_major < major) {
 		pr_debug("%s() mod fw does'nt support cfg masks!\n", __func__);
 		return false;
 	}
-	if (conn->module_minor < GB_I2S_MGMT_VERSION_CFG_MASK_MINOR &&
-		conn->module_major == GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR) {
+	if (conn->module_minor < minor && conn->module_major == major) {
 		pr_debug("%s() mod fw minor version does'nt support cfg masks!\n",
 			__func__);
 		return false;
@@ -120,7 +120,9 @@ int gb_i2s_mgmt_get_cfgs(struct gb_snd_codec *snd_codec,
 	size_t size;
 	int ret;
 
-	if (gb_i2s_cfg_mask_supported(snd_codec)) {
+	if (gb_i2s_is_ver_supported(snd_codec,
+					GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR,
+					GB_I2S_MGMT_VERSION_CFG_MASK_MINOR)) {
 		size = sizeof(*get_cfg_mask);
 
 		get_cfg_mask = kzalloc(size, GFP_KERNEL);
@@ -296,7 +298,9 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, uint32_t rate,
 	int i, ret;
 	u8 byte_order = GB_I2S_MGMT_BYTE_ORDER_NA;
 
-	if (gb_i2s_cfg_mask_supported(snd_codec)) {
+	if (gb_i2s_is_ver_supported(snd_codec,
+					GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR,
+					GB_I2S_MGMT_VERSION_CFG_MASK_MINOR)) {
 		ret = gb_i2s_mgmt_is_cfg_supported(snd_codec,
 						rate, chans, format);
 		if (!ret)
@@ -352,6 +356,40 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, uint32_t rate,
 					&set_cfg);
 	if (ret)
 		pr_err("set_configuration failed: %d\n", ret);
+
+	return ret;
+}
+
+int gb_i2s_mgmt_send_start(struct gb_snd_codec *snd_codec, uint32_t port_type,
+			bool start)
+{
+	int ret;
+	struct gb_i2s_mgmt_start_request req_start;
+	struct gb_i2s_mgmt_stop_request req_stop;
+
+	if (!gb_i2s_is_ver_supported(snd_codec,
+					GB_I2S_MGMT_VERSION_START_MSG_MAJOR,
+					GB_I2S_MGMT_VERSION_START_MSG_MINOR)) {
+		pr_warn("gb i2s start and stop messages not supported by mod\n");
+		return -ENOTSUPP;
+	}
+
+	if (start) {
+		req_start.port_type = port_type;
+		ret = gb_operation_sync(snd_codec->mgmt_connection,
+					GB_I2S_MGMT_TYPE_START,
+					&req_start, sizeof(req_start), NULL, 0);
+		if (ret)
+			pr_err("%s(): gb i2s start failed: %d\n",
+					__func__, ret);
+	} else {
+		req_stop.port_type = port_type;
+		ret = gb_operation_sync(snd_codec->mgmt_connection,
+					GB_I2S_MGMT_TYPE_STOP,
+					&req_stop, sizeof(req_stop), NULL, 0);
+		if (ret)
+			pr_err("%s(): gb i2s stop failed: %d\n", __func__, ret);
+	}
 
 	return ret;
 }

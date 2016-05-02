@@ -34,10 +34,13 @@
 #define CONFIG_COUNT_MAX		5
 
 #define GB_I2S_MGMT_VERSION_MAJOR 0
-#define GB_I2S_MGMT_VERSION_MINOR 2
+#define GB_I2S_MGMT_VERSION_MINOR 3
 
 #define GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR 0
 #define GB_I2S_MGMT_VERSION_CFG_MASK_MINOR 2
+
+#define GB_I2S_MGMT_VERSION_START_MSG_MAJOR 0
+#define GB_I2S_MGMT_VERSION_START_MSG_MINOR 3
 /*
  * This codec structure will be passed as platform data
  * to mods codec when physical I2S interface is used
@@ -87,6 +90,8 @@ int gb_i2s_mgmt_activate_port(struct gb_connection *connection,
 				uint8_t port_type);
 int gb_i2s_mgmt_deactivate_port(struct gb_connection *connection,
 				uint8_t port_type);
+int gb_i2s_mgmt_send_start(struct gb_snd_codec *snd_codec, uint32_t port_type,
+			bool start);
 
 /* GB Mods Audio Cmd functions */
 int gb_mods_aud_get_vol_range(
