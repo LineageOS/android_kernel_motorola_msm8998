@@ -12,6 +12,8 @@
 #include "greybus.h"
 #include "audio.h"
 
+#define AUDIO_GB_CMD_TIME_OUT  2000
+
 /***********************************
  * GB I2S helper functions
  ***********************************/
@@ -76,8 +78,10 @@ int gb_i2s_mgmt_get_supported_configurations(
 int gb_i2s_mgmt_set_configuration(struct gb_connection *connection,
 			struct gb_i2s_mgmt_set_configuration_request *set_cfg)
 {
-	return gb_operation_sync(connection, GB_I2S_MGMT_TYPE_SET_CONFIGURATION,
-				 set_cfg, sizeof(*set_cfg), NULL, 0);
+	return gb_operation_sync_timeout(connection,
+				GB_I2S_MGMT_TYPE_SET_CONFIGURATION, set_cfg,
+				sizeof(*set_cfg), NULL, 0,
+				AUDIO_GB_CMD_TIME_OUT);
 }
 
 int gb_i2s_mgmt_set_samples_per_message(
@@ -281,9 +285,10 @@ static int gb_i2s_mgmt_set_cfg_masks(struct gb_snd_codec *snd_codec,
 	set_cfg.config.wclk_tx_edge = GB_I2S_MGMT_EDGE_FALLING;
 	set_cfg.config.wclk_rx_edge = GB_I2S_MGMT_EDGE_RISING;
 
-	ret = gb_operation_sync(snd_codec->mgmt_connection,
+	ret = gb_operation_sync_timeout(snd_codec->mgmt_connection,
 				GB_I2S_MGMT_TYPE_SET_CONFIGURATION,
-				&set_cfg, sizeof(set_cfg), NULL, 0);
+				&set_cfg, sizeof(set_cfg), NULL, 0,
+				AUDIO_GB_CMD_TIME_OUT);
 	if (ret)
 		pr_err("set_configuration failed: %d\n", ret);
 
@@ -376,17 +381,19 @@ int gb_i2s_mgmt_send_start(struct gb_snd_codec *snd_codec, uint32_t port_type,
 
 	if (start) {
 		req_start.port_type = port_type;
-		ret = gb_operation_sync(snd_codec->mgmt_connection,
+		ret = gb_operation_sync_timeout(snd_codec->mgmt_connection,
 					GB_I2S_MGMT_TYPE_START,
-					&req_start, sizeof(req_start), NULL, 0);
+					&req_start, sizeof(req_start), NULL, 0,
+					AUDIO_GB_CMD_TIME_OUT);
 		if (ret)
 			pr_err("%s(): gb i2s start failed: %d\n",
 					__func__, ret);
 	} else {
 		req_stop.port_type = port_type;
-		ret = gb_operation_sync(snd_codec->mgmt_connection,
+		ret = gb_operation_sync_timeout(snd_codec->mgmt_connection,
 					GB_I2S_MGMT_TYPE_STOP,
-					&req_stop, sizeof(req_stop), NULL, 0);
+					&req_stop, sizeof(req_stop), NULL, 0,
+					AUDIO_GB_CMD_TIME_OUT);
 		if (ret)
 			pr_err("%s(): gb i2s stop failed: %d\n", __func__, ret);
 	}
