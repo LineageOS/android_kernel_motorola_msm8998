@@ -56,6 +56,8 @@ struct muc_svc_data {
 	u8 fail_count;
 	enum muc_svc_recover recovery_level;
 
+	bool mod_attached;
+
 	u8 mod_root_ver;
 	u8 def_root_ver;
 };
@@ -230,6 +232,8 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 		svc_dd->mod_root_ver = svc_dd->def_root_ver;
 		muc_svc_send_uevent("MOD_EVENT=DETACHED");
 	}
+
+	svc_dd->mod_attached = !!state;
 
 	return 0;
 }
@@ -2023,7 +2027,11 @@ recovery:
 	list_del(&mods_dev->list);
 	mutex_unlock(&svc_list_lock);
 
-	muc_svc_recovery();
+	/* Only do a recovery if the mod still here, if it was removed
+	 * we likely failed due to that.
+	 */
+	if (!svc_dd->mod_attached)
+		muc_svc_recovery();
 
 	return err;
 
