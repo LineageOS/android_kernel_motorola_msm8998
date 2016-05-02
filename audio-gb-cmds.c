@@ -14,6 +14,15 @@
 
 #define AUDIO_GB_CMD_TIME_OUT  2000
 
+/* mods audio will be using standard I2S protocol always */
+static const struct gb_i2s_mgmt_config_masks mods_i2s_cfg = {
+	.protocol = GB_I2S_MGMT_PROTOCOL_I2S,
+	.wclk_polarity = GB_I2S_MGMT_POLARITY_NORMAL,
+	.wclk_change_edge = GB_I2S_MGMT_EDGE_RISING,
+	.wclk_tx_edge = GB_I2S_MGMT_EDGE_FALLING,
+	.wclk_rx_edge = GB_I2S_MGMT_EDGE_RISING,
+};
+
 /***********************************
  * GB I2S helper functions
  ***********************************/
@@ -249,16 +258,16 @@ static int gb_i2s_mgmt_is_cfg_supported(struct gb_snd_codec *snd_codec,
 					(cfg->num_channels != chans) ||
 		((cfg->format & cpu_to_le32(gb_format)) !=
 					cpu_to_le32(gb_format)) ||
-		((cfg->protocol & GB_I2S_MGMT_PROTOCOL_I2S) !=
-					GB_I2S_MGMT_PROTOCOL_I2S) ||
-		((cfg->wclk_polarity & GB_I2S_MGMT_POLARITY_NORMAL) !=
-					GB_I2S_MGMT_POLARITY_NORMAL) ||
-		((cfg->wclk_change_edge & GB_I2S_MGMT_EDGE_FALLING) !=
-					GB_I2S_MGMT_EDGE_FALLING) ||
-		((cfg->wclk_rx_edge & GB_I2S_MGMT_EDGE_RISING) !=
-					GB_I2S_MGMT_EDGE_RISING) ||
-		((cfg->wclk_tx_edge & GB_I2S_MGMT_EDGE_FALLING) !=
-					GB_I2S_MGMT_EDGE_FALLING)) {
+		((cfg->protocol & mods_i2s_cfg.protocol) !=
+					mods_i2s_cfg.protocol) ||
+		((cfg->wclk_polarity & mods_i2s_cfg.wclk_polarity) !=
+					mods_i2s_cfg.wclk_polarity) ||
+		((cfg->wclk_change_edge & mods_i2s_cfg.wclk_change_edge) !=
+					mods_i2s_cfg.wclk_change_edge) ||
+		((cfg->wclk_rx_edge & mods_i2s_cfg.wclk_rx_edge) !=
+					mods_i2s_cfg.wclk_rx_edge) ||
+		((cfg->wclk_tx_edge & mods_i2s_cfg.wclk_tx_edge) !=
+					mods_i2s_cfg.wclk_tx_edge)) {
 		pr_err("%s() config not supported by mods codec", __func__);
 		return -EINVAL;
 	}
@@ -279,11 +288,11 @@ static int gb_i2s_mgmt_set_cfg_masks(struct gb_snd_codec *snd_codec,
 	set_cfg.config.num_channels = chans;
 	set_cfg.config.format = cpu_to_le32(gb_format);
 	set_cfg.config.sample_frequency = cpu_to_le32(gb_rate);
-	set_cfg.config.protocol = GB_I2S_MGMT_PROTOCOL_I2S;
-	set_cfg.config.wclk_polarity = GB_I2S_MGMT_POLARITY_NORMAL;
-	set_cfg.config.wclk_change_edge = GB_I2S_MGMT_EDGE_FALLING;
-	set_cfg.config.wclk_tx_edge = GB_I2S_MGMT_EDGE_FALLING;
-	set_cfg.config.wclk_rx_edge = GB_I2S_MGMT_EDGE_RISING;
+	set_cfg.config.protocol = mods_i2s_cfg.protocol;
+	set_cfg.config.wclk_polarity = mods_i2s_cfg.wclk_polarity;
+	set_cfg.config.wclk_change_edge = mods_i2s_cfg.wclk_change_edge;
+	set_cfg.config.wclk_tx_edge = mods_i2s_cfg.wclk_tx_edge;
+	set_cfg.config.wclk_rx_edge = mods_i2s_cfg.wclk_rx_edge;
 
 	ret = gb_operation_sync_timeout(snd_codec->mgmt_connection,
 				GB_I2S_MGMT_TYPE_SET_CONFIGURATION,
@@ -329,14 +338,15 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, uint32_t rate,
 			(cfg->bytes_per_channel == bytes_per_chan) &&
 			(cfg->byte_order & byte_order) &&
 			(cfg->ll_protocol &
-				 cpu_to_le32(GB_I2S_MGMT_PROTOCOL_I2S)) &&
+					cpu_to_le32(mods_i2s_cfg.protocol)) &&
 			(cfg->ll_mclk_role & GB_I2S_MGMT_ROLE_MASTER) &&
 			(cfg->ll_bclk_role & GB_I2S_MGMT_ROLE_MASTER) &&
 			(cfg->ll_wclk_role & GB_I2S_MGMT_ROLE_MASTER) &&
-			(cfg->ll_wclk_polarity & GB_I2S_MGMT_POLARITY_NORMAL) &&
-			(cfg->ll_wclk_change_edge & GB_I2S_MGMT_EDGE_FALLING) &&
-			(cfg->ll_wclk_tx_edge & GB_I2S_MGMT_EDGE_RISING) &&
-			(cfg->ll_wclk_rx_edge & GB_I2S_MGMT_EDGE_FALLING) &&
+			(cfg->ll_wclk_polarity & mods_i2s_cfg.wclk_polarity) &&
+			(cfg->ll_wclk_change_edge &
+					mods_i2s_cfg.wclk_change_edge) &&
+			(cfg->ll_wclk_tx_edge & mods_i2s_cfg.wclk_tx_edge) &&
+			(cfg->ll_wclk_rx_edge & mods_i2s_cfg.wclk_rx_edge) &&
 			(cfg->ll_data_offset == 1))
 			break;
 	}
@@ -348,14 +358,14 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, uint32_t rate,
 
 	memcpy(&set_cfg, cfg, sizeof(set_cfg));
 	set_cfg.config.byte_order = byte_order;
-	set_cfg.config.ll_protocol = cpu_to_le32(GB_I2S_MGMT_PROTOCOL_I2S);
+	set_cfg.config.ll_protocol = cpu_to_le32(mods_i2s_cfg.protocol);
 	set_cfg.config.ll_mclk_role = GB_I2S_MGMT_ROLE_MASTER;
 	set_cfg.config.ll_bclk_role = GB_I2S_MGMT_ROLE_MASTER;
 	set_cfg.config.ll_wclk_role = GB_I2S_MGMT_ROLE_MASTER;
-	set_cfg.config.ll_wclk_polarity = GB_I2S_MGMT_POLARITY_NORMAL;
-	set_cfg.config.ll_wclk_change_edge = GB_I2S_MGMT_EDGE_FALLING;
-	set_cfg.config.ll_wclk_tx_edge = GB_I2S_MGMT_EDGE_RISING;
-	set_cfg.config.ll_wclk_rx_edge = GB_I2S_MGMT_EDGE_FALLING;
+	set_cfg.config.ll_wclk_polarity = mods_i2s_cfg.wclk_polarity;
+	set_cfg.config.ll_wclk_change_edge = mods_i2s_cfg.wclk_change_edge;
+	set_cfg.config.ll_wclk_tx_edge = mods_i2s_cfg.wclk_tx_edge;
+	set_cfg.config.ll_wclk_rx_edge = mods_i2s_cfg.wclk_rx_edge;
 
 	ret = gb_i2s_mgmt_set_configuration(snd_codec->mgmt_connection,
 					&set_cfg);
