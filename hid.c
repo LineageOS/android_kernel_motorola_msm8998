@@ -16,6 +16,10 @@
 
 #include "greybus.h"
 
+#ifndef BUS_GREYBUS
+#define BUS_GREYBUS BUS_VIRTUAL
+#endif
+
 /* Greybus HID device's structure */
 struct gb_hid {
 	struct gb_connection		*connection;
