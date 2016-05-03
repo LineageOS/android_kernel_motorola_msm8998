@@ -1435,6 +1435,51 @@ static struct v4l2_ctrl_config zoom_lock_1x = {
 	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config shutter_lock = {
+	.id = CAM_EXT_CID_SHUTTER_LOCK,
+	.type = V4L2_CTRL_TYPE_BOOLEAN,
+	.name = "shutter lock",
+	.min = 0,
+	.max = 1,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config model_number = {
+	.id = CAM_EXT_CID_MODEL_NUMBER,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.max = CTRL_STRING_MAX_LEN - 1,
+	.name = "model number",
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config firmware_version = {
+	.id = CAM_EXT_CID_FIRMWARE_VERSION,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.max = CTRL_STRING_MAX_LEN - 1,
+	.name = "firmware version",
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static const u64 ae_mode_ext_items[] = {
+	CAM_EXT_AE_MODE_EXT_NULL,
+	CAM_EXT_AE_MODE_EXT_OFF_FLASH,
+	CAM_EXT_AE_MODE_EXT_OFF_FLASH_REDEYE,
+};
+
+static struct v4l2_ctrl_config ae_mode_ext = {
+	.id = CAM_EXT_CID_AE_MODE_EXT,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "ae mode extension",
+	.max = CAM_EXT_AE_MODE_EXT_MAX,
+	.qmenu_int = ae_mode_ext_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK,
+};
 
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
@@ -1553,6 +1598,10 @@ __ITEM(MOD_CAPS_UVC_SNAPSHOT, uvc_snapshot),
 __ITEM(MOD_META_DATA_PATH, meta_data_path),
 __ITEM(MOD_META_DATA_SIZE, meta_data_size),
 __ITEM(ZOOM_LOCK_1X, zoom_lock_1x),
+__ITEM(SHUTTER_LOCK, shutter_lock),
+__ITEM(MODEL_NUMBER, model_number),
+__ITEM(FIRMWARE_VERSION, firmware_version),
+__ITEM(AE_MODE_EXT, ae_mode_ext),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
