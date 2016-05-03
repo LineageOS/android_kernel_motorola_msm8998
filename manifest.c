@@ -24,6 +24,8 @@ static const char *get_descriptor_type_string(u8 type)
 		return "cport";
 	case GREYBUS_TYPE_BUNDLE:
 		return "bundle";
+	case GREYBUS_TYPE_IDS:
+		return "ids";
 	default:
 		WARN_ON(1);
 		return "unknown";
@@ -72,6 +74,17 @@ static void release_cport_descriptors(struct list_head *head, u8 bundle_id)
 			continue;
 
 		if (desc_cport->bundle == bundle_id)
+			release_manifest_descriptor(desc);
+	}
+}
+
+static void release_ids_descriptors(struct gb_interface *intf)
+{
+	struct manifest_desc *desc;
+	struct manifest_desc *next;
+
+	list_for_each_entry_safe(desc, next, &intf->manifest_descs, links) {
+		if (desc->type == GREYBUS_TYPE_IDS)
 			release_manifest_descriptor(desc);
 	}
 }
@@ -137,6 +150,9 @@ static int identify_descriptor(struct gb_interface *intf,
 		break;
 	case GREYBUS_TYPE_CPORT:
 		expected_size += sizeof(struct greybus_descriptor_cport);
+		break;
+	case GREYBUS_TYPE_IDS:
+		expected_size += sizeof(struct greybus_descriptor_ids);
 		break;
 	case GREYBUS_TYPE_INVALID:
 	default:
@@ -486,6 +502,9 @@ bool gb_manifest_parse(struct gb_interface *intf, void *data, size_t size)
 
 	/* Parse the manifest, starting with the interface descriptor */
 	result = gb_manifest_parse_interface(intf, interface_desc);
+
+	/* We don't do anything with the PID/VID so just clean it up */
+	release_ids_descriptors(intf);
 
 	/*
 	 * We really should have no remaining descriptors, but we
