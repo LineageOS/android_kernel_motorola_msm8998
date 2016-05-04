@@ -54,18 +54,18 @@ gb-display-y := display.o
 gb-sensors_ext-y := sensors_ext.o sensors_ext_iio.o
 
 obj-m += greybus.o
-obj-m += gb-phy.o
+#obj-m += gb-phy.o
 obj-m += gb-audio.o
-obj-m += gb-vibrator.o
+#obj-m += gb-vibrator.o
 obj-m += gb-battery.o
-obj-m += gb-loopback.o
+#obj-m += gb-loopback.o
 obj-m += gb-light.o
 obj-m += gb-hid.o
 obj-m += gb-raw.o
 # Remove the ES1/2 and db3 host device drivers
 #obj-m += gb-es2.o
 #obj-m += gb-db3.o
-obj-m += gb-camera.o
+#obj-m += gb-camera.o
 obj-m += gb-mods.o
 obj-m += gb-vendor-moto.o
 obj-m += gb-ptp.o
