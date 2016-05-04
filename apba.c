@@ -49,7 +49,7 @@
 #define APBA_FIRMWARE_UNIPRO_PID_ES2 (0x00001000)
 #define APBA_FIRMWARE_UNIPRO_PID     (0x00001001)
 #define APBA_FIRMWARE_ARA_VID        (0xfed70128)
-#define APBA_FIRMWARE_ARA_PID        (0xffff0001)
+#define APBA_FIRMWARE_ARA_PID        (0xfffe0001)
 #define APBA_FIRMWARE_STAGE          (2)
 #define APBA_FIRMWARE_NAME_LEN       (48)
 
