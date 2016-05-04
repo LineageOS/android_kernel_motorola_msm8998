@@ -155,6 +155,7 @@ struct mb_control_get_ids_response {
 	__le32    fw_version;
 	__le32    slave_mask;
 	char      fw_version_str[MB_CONTROL_FW_VER_STR_SZ];
+	__u8      fw_vendor_updates;
 } __packed;
 
 /* Control protocol [dis]connected request */

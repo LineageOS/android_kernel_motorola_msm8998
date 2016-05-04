@@ -84,6 +84,7 @@ struct mods_dl_device {
 	uint32_t slave_mask;
 	uint32_t slave_state;
 	bool high_current_reserved;
+	bool fw_vendor_updates;
 };
 
 struct mods_nw_msg_filter {
