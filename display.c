@@ -399,6 +399,13 @@ static int gb_display_event_recv(u8 type, struct gb_operation *op)
 	struct gb_display_device *disp = connection->private;
 	int ret = -EINVAL;
 
+	if (op->request->payload_size != sizeof(*request)) {
+		dev_err(&connection->bundle->dev,
+			"%s: illegal size of gb_display_notification_request (%zu != %zu)\n",
+			__func__, op->request->payload_size, sizeof(*request));
+		goto exit;
+	}
+
 	/* By convention, the AP initiates the version operation */
 	switch (type) {
 	case GB_REQUEST_TYPE_PROTOCOL_VERSION:
@@ -415,6 +422,7 @@ static int gb_display_event_recv(u8 type, struct gb_operation *op)
 			"unsupported request: %hhu\n", type);
 	}
 
+exit:
 	return ret;
 }
 
