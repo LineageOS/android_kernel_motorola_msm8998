@@ -36,7 +36,9 @@
 #include <media/v4l2-event.h>
 #include <uapi/video/v4l2_camera_ext_ctrls.h>
 #include <uapi/video/v4l2_camera_ext_events.h>
+
 #include "camera_ext.h"
+#include "connection.h"
 
 #define CAM_EXT_CTRL_NUM_HINT   100
 #define MAX_RETRY_TIMES         50
@@ -60,6 +62,37 @@ struct camera_ext_fh {
 struct camera_ext_v4l2 *g_v4l2_data;
 
 #define MOD_V4L2_DRIVER_VERSION 1
+
+static DEFINE_SPINLOCK(camera_ext_lock);
+
+static void camera_ext_kref_release(struct kref *kref)
+{
+	struct camera_ext *cam;
+
+	cam = container_of(kref, struct camera_ext, kref);
+	kfree(cam);
+}
+
+static inline void camera_ext_get(struct camera_ext *cam)
+{
+	unsigned long flags;
+
+	gb_connection_get(cam->connection);
+	spin_lock_irqsave(&camera_ext_lock, flags);
+	kref_get(&cam->kref);
+	spin_unlock_irqrestore(&camera_ext_lock, flags);
+}
+
+static inline void camera_ext_put(struct camera_ext *cam)
+{
+	unsigned long flags;
+	struct gb_connection *conn = cam->connection;
+
+	spin_lock_irqsave(&camera_ext_lock, flags);
+	kref_put(&cam->kref, camera_ext_kref_release);
+	spin_unlock_irqrestore(&camera_ext_lock, flags);
+	gb_connection_put(conn);
+}
 
 static int query_cap(struct file *file, void *fh, struct v4l2_capability *cap)
 {
@@ -281,6 +314,7 @@ static int mod_v4l2_open(struct file *file)
 
 	++g_v4l2_data->mod_users;
 	mutex_unlock(&g_v4l2_data->mod_mutex);
+	camera_ext_get(cam_dev);
 
 	return 0;
 
@@ -312,10 +346,12 @@ static int mod_v4l2_close(struct file *file)
 	--g_v4l2_data->mod_users;
 	if (g_v4l2_data->mod_users == 0) {
 		mod_v4l2_reg_control(false);
-		ret = gb_camera_ext_power_off(cam_dev->connection);
+		if (cam_dev->state == CAMERA_EXT_READY)
+			ret = gb_camera_ext_power_off(cam_dev->connection);
 	}
 	mutex_unlock(&g_v4l2_data->mod_mutex);
 
+	camera_ext_put(cam_dev);
 	return ret;
 }
 
@@ -465,6 +501,14 @@ static const struct v4l2_ctrl_config mod_ctrl_class = {
 	.type = V4L2_CTRL_TYPE_CTRL_CLASS,
 };
 
+static void camera_ext_dev_release(struct video_device *dev)
+{
+	struct camera_ext *cam = video_get_drvdata(dev);
+
+	camera_ext_put(cam);
+	video_device_release(dev);
+}
+
 /* TODO: make this function asynchronously if it takes too long */
 int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 {
@@ -500,7 +544,7 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 				"%s", CAMERA_EXT_DEV_NAME);
 	cam_dev->vdev_mod->ctrl_handler = &cam_dev->hdl_ctrls;
 	cam_dev->vdev_mod->v4l2_dev = &cam_dev->v4l2_dev;
-	cam_dev->vdev_mod->release = video_device_release;
+	cam_dev->vdev_mod->release = camera_ext_dev_release;
 	cam_dev->vdev_mod->fops = &camera_ext_mod_v4l2_fops;
 	cam_dev->vdev_mod->ioctl_ops = &camera_ext_v4l2_ioctl_ops;
 	cam_dev->vdev_mod->vfl_type = VFL_TYPE_GRABBER;

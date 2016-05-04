@@ -1115,12 +1115,16 @@ static int gb_camera_ext_connection_init(struct gb_connection *connection)
 	if (!cam)
 		return -ENOMEM;
 
+	kref_init(&cam->kref);
 	cam->connection = connection;
 	connection->private = cam;
+	gb_connection_get(cam->connection);
+	cam->state = CAMERA_EXT_READY;
 
 	retval = camera_ext_mod_v4l2_init(cam);
 	if (retval) {
 		pr_err("failed to init v4l2 for mod control\n");
+		gb_connection_put(cam->connection);
 		kfree(cam);
 	}
 
@@ -1131,8 +1135,8 @@ static void gb_camera_ext_connection_exit(struct gb_connection *connection)
 {
 	struct camera_ext *cam = connection->private;
 
+	cam->state = CAMERA_EXT_DESTROYED;
 	camera_ext_mod_v4l2_exit(cam);
-	kfree(cam);
 }
 
 static struct gb_protocol camera_ext_protocol = {

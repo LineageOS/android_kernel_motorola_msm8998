@@ -38,11 +38,19 @@
 
 #define CAMERA_EXT_DEV_NAME "camera_ext"
 
+enum camera_ext_state {
+	CAMERA_EXT_READY = 0,
+	CAMERA_EXT_DESTROYED,
+};
+
 struct camera_ext {
 	struct gb_connection *connection;
 	struct v4l2_device v4l2_dev;
 	struct video_device *vdev_mod;
 	struct v4l2_ctrl_handler hdl_ctrls;
+
+	struct kref kref;
+	enum camera_ext_state state;
 };
 
 /* gb functions */
