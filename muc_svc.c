@@ -419,6 +419,13 @@ static ssize_t capability_vendor_show(struct mods_dl_device *dev, char *buf)
 	return scnprintf(buf, PAGE_SIZE, "0x%04X", dev->capability.vendor);
 }
 
+static ssize_t vendor_updates_show(struct mods_dl_device *dev, char *buf)
+{
+	const char *supported = dev->fw_vendor_updates ? "yes" : "no";
+
+	return scnprintf(buf, PAGE_SIZE, "%s", supported);
+}
+
 static ssize_t
 current_rsv_ack_store(struct mods_dl_device *mods_dev,
 		const char *buf, size_t count)
@@ -462,6 +469,7 @@ static MUC_SVC_ATTR(capability_level, 0444,  capability_level_show, NULL);
 static MUC_SVC_ATTR(capability_reason, 0444, capability_reason_show, NULL);
 static MUC_SVC_ATTR(capability_vendor, 0444, capability_vendor_show, NULL);
 static MUC_SVC_ATTR(current_rsv_ack, 0444, NULL, current_rsv_ack_store);
+static MUC_SVC_ATTR(vendor_updates, 0444, vendor_updates_show, NULL);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -512,6 +520,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_capability_reason.attr,
 	&muc_svc_attr_capability_vendor.attr,
 	&muc_svc_attr_current_rsv_ack.attr,
+	&muc_svc_attr_vendor_updates.attr,
 	NULL,
 };
 
@@ -1526,6 +1535,8 @@ muc_svc_get_hotplug_data(struct mods_dl_device *dld,
 	mods_dev->slave_state = SLAVE_STATE_DISABLED;
 	muc_svc_broadcast_slave_notification(mods_dev);
 
+	mods_dev->fw_vendor_updates = ids->fw_vendor_updates;
+
 	svc_gb_msg_free(msg);
 	kfree(ids);
 
@@ -1986,6 +1997,7 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	kfree(mods_dev->hpw);
 	mods_dev->hpw = NULL;
 	mods_dev->high_current_reserved = false;
+	mods_dev->fw_vendor_updates = false;
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 
