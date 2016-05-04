@@ -18,8 +18,9 @@ gb-phy-y :=	gpbridge.o	\
 		gpio.o	\
 		i2c.o	\
 		spi.o	\
-		usb.o	\
-		audio.o		\
+		usb.o
+
+gb-audio-y :=   audio.o \
 		audio-gb-cmds.o \
 		mods_codec.o
 
@@ -54,6 +55,7 @@ gb-sensors_ext-y := sensors_ext.o sensors_ext_iio.o
 
 obj-m += greybus.o
 obj-m += gb-phy.o
+obj-m += gb-audio.o
 obj-m += gb-vibrator.o
 obj-m += gb-battery.o
 obj-m += gb-loopback.o

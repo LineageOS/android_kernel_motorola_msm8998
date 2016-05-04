@@ -319,7 +319,7 @@ static struct gb_protocol gb_mods_audio_protocol = {
  * This is the basic hook get things initialized and registered w/ gb
  */
 
-int gb_audio_protocol_init(void)
+static int __init gb_audio_protocol_init(void)
 {
 	int err;
 
@@ -354,11 +354,15 @@ err_unregister_i2s_mgmt:
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);
 	return err;
 }
+module_init(gb_audio_protocol_init);
 
-void gb_audio_protocol_exit(void)
+static void __exit gb_audio_protocol_exit(void)
 {
 	platform_device_unregister(&snd_codec.codec_dev);
 	platform_driver_unregister(&gb_audio_mods_driver);
 	gb_protocol_deregister(&gb_mods_audio_protocol);
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);
 }
+module_exit(gb_audio_protocol_exit);
+
+MODULE_LICENSE("GPL v2");
