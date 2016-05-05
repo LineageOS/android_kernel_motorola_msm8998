@@ -42,11 +42,19 @@ struct v4l2_stream_data {
 	struct v4l2_buffer_data cid_map[V4L2_HAL_MAX_NUM_MMAP_CID];
 };
 
+enum v4l2_hal_state {
+	HAL_READY = 0,
+	HAL_DESTROYED,
+};
+
 struct v4l2_hal_data {
 	struct v4l2_device v4l2_dev;
 	struct video_device *vdev;
 	struct mutex lock;
 	struct v4l2_stream_data strms[V4L2_HAL_MAX_STREAMS];
+
+	struct kref kref;
+	enum v4l2_hal_state state;
 };
 
 struct v4l2_format_compat {
@@ -59,6 +67,32 @@ struct v4l2_format_compat {
 
 #define VIDIOC_G_FMT32		_IOWR('V',	4, struct v4l2_format_compat)
 #define VIDIOC_S_FMT32		_IOWR('V',	5, struct v4l2_format_compat)
+
+static DEFINE_MUTEX(hal_data_lock);
+
+static void hal_data_kref_release(struct kref *kref)
+{
+	struct v4l2_hal_data *hal_data;
+
+	hal_data = container_of(kref, struct v4l2_hal_data, kref);
+	video_unregister_device(hal_data->vdev);
+	v4l2_device_unregister(&hal_data->v4l2_dev);
+	kfree(hal_data);
+}
+
+static inline void hal_data_get(struct v4l2_hal_data *data)
+{
+	mutex_lock(&hal_data_lock);
+	kref_get(&data->kref);
+	mutex_unlock(&hal_data_lock);
+}
+
+static inline void hal_data_put(struct v4l2_hal_data *data)
+{
+	mutex_lock(&hal_data_lock);
+	kref_put(&data->kref, hal_data_kref_release);
+	mutex_unlock(&hal_data_lock);
+}
 
 static int query_cap(struct file *file, void *fh, struct v4l2_capability *cap)
 {
@@ -574,7 +608,7 @@ static int v4l2_hal_open(struct file *file)
 	mutex_unlock(&data->lock);
 
 	if (idx == V4L2_HAL_MAX_STREAMS) {
-		pr_err("%s: No more stream cannot be opened\n", __func__);
+		pr_err("%s: No more stream can be opened\n", __func__);
 		return -EFAULT;
 	}
 
@@ -591,6 +625,7 @@ static int v4l2_hal_open(struct file *file)
 	}
 
 	file->private_data = &data->strms[idx];
+	hal_data_get(data);
 	return 0;
 
 close_misc:
@@ -614,7 +649,6 @@ static int v4l2_hal_close(struct file *file)
 	v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_CLOSED, 0, NULL);
 
 	vb2_queue_release(&strm->vb2_q);
-
 	mutex_lock(&data->lock);
 	kfree(strm->bdata);
 	memset(strm, 0, sizeof(*strm));
@@ -626,7 +660,7 @@ static int v4l2_hal_close(struct file *file)
 	mutex_unlock(&data->lock);
 
 	file->private_data = NULL;
-
+	hal_data_put(data);
 	return 0;
 }
 
@@ -727,6 +761,8 @@ void *v4l2_hal_init()
 
 	video_set_drvdata(data->vdev, data);
 
+	data->state = HAL_READY;
+	kref_init(&data->kref);
 	return data;
 
 error_reg_vdev:
@@ -739,15 +775,19 @@ error_reg_v4l2dev:
 	return NULL;
 }
 
-void v4l2_hal_exit(void *data)
+void v4l2_hal_exit(void *hal_data)
 {
-	struct v4l2_hal_data *hal_data = data;
+	struct v4l2_hal_data *data = hal_data;
 
-	if (data == NULL)
-		return;
+	if (data != NULL) {
+		data->state = HAL_DESTROYED;
+		hal_data_put(data);
+	}
+}
 
-	video_unregister_device(hal_data->vdev);
-	v4l2_device_unregister(&hal_data->v4l2_dev);
+bool v4l2_hal_check_dev_ready(void *hal_data)
+{
+	struct v4l2_hal_data *data = hal_data;
 
-	kfree(data);
+	return data != NULL && data->state == HAL_READY;
 }

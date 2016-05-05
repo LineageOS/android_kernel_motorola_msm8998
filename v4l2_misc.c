@@ -63,7 +63,8 @@ static inline void set_cmd_queue_to_file(struct file *filp,
 		filp->private_data = &g_data->command[idx];
 }
 
-static inline struct v4l2_misc_command *get_cmd_queue_from_file(struct file *filp)
+static inline struct v4l2_misc_command *get_cmd_queue_from_file(
+	struct file *filp)
 {
 	return filp->private_data;
 }
@@ -239,7 +240,7 @@ static int misc_dev_release(struct inode *inodep, struct file *filp)
 }
 
 static unsigned int misc_dev_poll(struct file *filp,
-				   struct poll_table_struct *tbl)
+				  struct poll_table_struct *tbl)
 {
 	unsigned int mask = 0;
 	struct v4l2_misc_command *target_cmd;
@@ -365,17 +366,22 @@ static int misc_process_stream_command(struct v4l2_misc_command *target_cmd,
 
 static int misc_process_dequeue_request(void *arg)
 {
+	void *hal_data;
 	struct misc_dequeue_cmd dq_cmd;
 
 	if (copy_from_user(&dq_cmd, (void *)arg, sizeof(dq_cmd)))
 		return -EFAULT;
 
-	return v4l2_hal_buffer_ready(g_data->v4l2_hal_data,
-					dq_cmd.stream,
-					dq_cmd.index,
-					dq_cmd.length,
-					dq_cmd.seq,
-					dq_cmd.state);
+	hal_data = g_data->v4l2_hal_data;
+	if (!v4l2_hal_check_dev_ready(hal_data))
+		return -ENODEV;
+
+	return v4l2_hal_buffer_ready(hal_data,
+				     dq_cmd.stream,
+				     dq_cmd.index,
+				     dq_cmd.length,
+				     dq_cmd.seq,
+				     dq_cmd.state);
 }
 
 static int misc_process_set_handler(struct file *filp, void *arg)
@@ -411,18 +417,28 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 
 	switch (cmd) {
 	case VIOC_HAL_IFACE_START: {
+		int i;
 		void *data = v4l2_hal_init();
 
 		if (data == NULL)
 			ret = -EFAULT;
 
+		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
+		    init_completion(&g_data->command[i].comp);
 		g_data->v4l2_hal_data = data;
 		break;
 	}
-	case VIOC_HAL_IFACE_STOP:
+	case VIOC_HAL_IFACE_STOP: {
+		int i;
+
+		if (g_data->v4l2_hal_data == NULL)
+			break;
+		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
+			complete(&g_data->command[i].comp);
 		v4l2_hal_exit(g_data->v4l2_hal_data);
 		g_data->v4l2_hal_data = NULL;
 		break;
+	}
 	case VIOC_HAL_STREAM_OPENED:
 	case VIOC_HAL_STREAM_CLOSED:
 	case VIOC_HAL_STREAM_ON:
@@ -473,6 +489,9 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	struct v4l2_hal_qbuf_data *qb;
 	struct v4l2_control *ctrl;
 	void *priv = NULL;
+
+	if (!v4l2_hal_check_dev_ready(g_data->v4l2_hal_data))
+		return -ENODEV;
 
 	/* OPEN request will be sent to monitor.
 	 * Other stream request will be sent to its handler.
@@ -555,7 +574,6 @@ static int v4l2_hal_probe(struct platform_device *pdev)
 
 	for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
 		init_waitqueue_head(&data->command[i].wait);
-		init_completion(&data->command[i].comp);
 		mutex_init(&data->command[i].lock);
 	}
 	mutex_init(&data->users_lock);
