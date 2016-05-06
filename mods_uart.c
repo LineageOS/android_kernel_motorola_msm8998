@@ -421,11 +421,6 @@ int mods_uart_close(void *uart_data)
 
 	dev_dbg(&mud->pdev->dev, "%s: closing uart\n", __func__);
 
-	if (mud->mods_uart_pm_data) {
-		mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
-		mud->mods_uart_pm_data = NULL;
-	}
-
 	if (tty_set_ldisc(tty, N_TTY))
 		dev_err(&mud->pdev->dev, "%s: Failed to set ldisc\n", __func__);
 
@@ -439,6 +434,11 @@ int mods_uart_close(void *uart_data)
 	release_tty(tty, tty->index);
 	mutex_unlock(&tty_mutex);
 	mud->tty = NULL;
+
+	if (mud->mods_uart_pm_data) {
+		mods_uart_pm_uninitialize(mud->mods_uart_pm_data);
+		mud->mods_uart_pm_data = NULL;
+	}
 
 	ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_default);
 	if (ret)
