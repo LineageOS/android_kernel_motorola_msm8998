@@ -233,6 +233,8 @@ exit:
 	return ret;
 }
 
+#define SET_STATE_TIMEOUT (10 * 1000) /* 10 seconds */
+
 struct gb_display_set_display_state_request {
 	__u8	state;
 } __packed;
@@ -246,8 +248,8 @@ static int set_display_state(void *data, u8 state)
 
 	request.state = state;
 
-	ret = gb_operation_sync(disp->connection, GB_DISPLAY_SET_STATE,
-				&request, sizeof(request), NULL, 0);
+	ret = gb_operation_sync_timeout(disp->connection, GB_DISPLAY_SET_STATE,
+				&request, sizeof(request), NULL, 0, SET_STATE_TIMEOUT);
 
 	return ret;
 }
