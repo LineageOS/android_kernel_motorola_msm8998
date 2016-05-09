@@ -60,6 +60,12 @@ enum bplus_state {
 	MUC_BPLUS_SHORTED,
 };
 
+struct muc_reset_work {
+	struct delayed_work work;
+	u8 root_ver;
+	bool do_reset;
+};
+
 struct muc_attach_work {
 	struct delayed_work work;
 	bool force_removal;
@@ -72,6 +78,8 @@ struct muc_data {
 	/* Attach workqueue / delayed work */
 	struct workqueue_struct *attach_wq;
 	struct muc_attach_work isr_work; /* Dedicated work for ISR */
+	struct muc_reset_work ff_work; /* Dedicated work for FF/Reset */
+	struct mutex work_lock;
 	uint8_t bplus_state;
 
 	/* Configuration */
