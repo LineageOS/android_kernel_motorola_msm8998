@@ -25,12 +25,7 @@
 #include "muc.h"
 
 static BLOCKING_NOTIFIER_HEAD(muc_attach_chain_head);
-
-struct muc_reset_work {
-	struct delayed_work work;
-	u8 root_ver;
-	bool do_reset;
-};
+static void do_muc_ff_reset(struct work_struct *work);
 
 static int muc_attach_notifier_call_chain(unsigned long val)
 {
@@ -590,6 +585,10 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 		return -ENOMEM;
 	}
 
+	/* Worker lock and work for force flash / reset */
+	mutex_init(&cdata->work_lock);
+	INIT_DELAYED_WORK(&cdata->ff_work.work, do_muc_ff_reset);
+
 	/* Pin Configuration */
 	ret = muc_pinctrl_setup(cdata, dev);
 	if (ret)
@@ -808,23 +807,28 @@ static void do_muc_ff_reset(struct work_struct *work)
 			pinctrl_select_state(cd->pinctrl, cd->pins_spi_con);
 		muc_handle_detection(false);
 	}
-
-	kfree(dwork);
 }
 
 static void __muc_ff_queue_reset(u8 root_ver, bool reset)
 {
-	struct muc_reset_work *rw;
+	struct muc_data *cd = muc_misc_data;
 
-	rw = kzalloc(sizeof(*rw), GFP_KERNEL);
-	if (!rw)
-		return;
+	mutex_lock(&cd->work_lock);
+	if (work_busy(&cd->ff_work.work.work) && cd->ff_work.do_reset == reset)
+		goto busy;
 
-	rw->root_ver = root_ver;
-	rw->do_reset = reset;
-	INIT_DELAYED_WORK(&rw->work, do_muc_ff_reset);
+	cd->ff_work.root_ver = root_ver;
+	cd->ff_work.do_reset = reset;
 
-	queue_delayed_work(muc_misc_data->attach_wq, &rw->work, 0);
+	queue_delayed_work(cd->attach_wq, &cd->ff_work.work, 0);
+	mutex_unlock(&cd->work_lock);
+
+	return;
+
+busy:
+	mutex_unlock(&cd->work_lock);
+	pr_warn("%s: %s already in progress; skipping\n",
+		__func__, reset ? "reset" : "flashmode");
 }
 
 void muc_force_flash(u8 root_ver)
