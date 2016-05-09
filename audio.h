@@ -62,8 +62,16 @@ struct gb_snd_codec {
 	int sys_vol_mb;
 	int mods_vol_step;
 	struct mutex lock;
+	struct kref mods_aud_kref;
+	struct kref mods_i2s_kref;
 	int (*report_devices)(struct gb_snd_codec *);
 };
+
+/* kref resource counting */
+void gb_mods_audio_get(struct gb_snd_codec *codec);
+void gb_mods_audio_put(struct gb_snd_codec *codec);
+void gb_mods_i2s_get(struct gb_snd_codec *codec);
+void gb_mods_i2s_put(struct gb_snd_codec *codec);
 
 /*
  * GB I2S cmd functions
