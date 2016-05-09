@@ -1462,6 +1462,7 @@ static struct v4l2_ctrl_config firmware_version = {
 	.name = "firmware version",
 	.step = 1,
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| V4L2_CTRL_FLAG_VOLATILE
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
@@ -1477,6 +1478,21 @@ static struct v4l2_ctrl_config ae_mode_ext = {
 	.name = "ae mode extension",
 	.max = CAM_EXT_AE_MODE_EXT_MAX,
 	.qmenu_int = ae_mode_ext_items,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK,
+};
+
+static const u64 scene_mode_items_ext[] = {
+	CAM_EXT_SCENE_MODE_EXT_NULL,
+	CAM_EXT_SCENE_MODE_EXT_AUTO_HDR,
+};
+
+static struct v4l2_ctrl_config scene_mode_ext = {
+	.id = CAM_EXT_CID_SCENE_MODE_EXT,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "scene mode extension",
+	.max = CAM_EXT_SCENE_MODE_EXT_MAX,
+	.qmenu_int = scene_mode_items_ext,
 	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF
 		| CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK,
 };
@@ -1602,6 +1618,7 @@ __ITEM(SHUTTER_LOCK, shutter_lock),
 __ITEM(MODEL_NUMBER, model_number),
 __ITEM(FIRMWARE_VERSION, firmware_version),
 __ITEM(AE_MODE_EXT, ae_mode_ext),
+__ITEM(SCENE_MODE_EXT, scene_mode_ext),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
