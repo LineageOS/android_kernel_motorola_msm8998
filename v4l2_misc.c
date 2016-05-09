@@ -165,6 +165,8 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 					       target_cmd->stream,
 					       qb->index,
 					       target_cmd->orig_fd, tgt_fd);
+			fput(target_cmd->ionfile);
+			target_cmd->ionfile = NULL;
 		}
 
 		qb->fd = tgt_fd;
@@ -185,6 +187,8 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 						       ctrl->id,
 						       target_cmd->orig_fd,
 						       tgt_fd);
+			fput(target_cmd->ionfile);
+			target_cmd->ionfile = NULL;
 		}
 		ctrl->value = tgt_fd;
 	}
@@ -515,7 +519,10 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	target_cmd_queue->size = size;
 	target_cmd_queue->data = data;
 	target_cmd_queue->orig_fd = -1;
-	target_cmd_queue->ionfile = NULL;
+	if (target_cmd_queue->ionfile) {
+		fput(target_cmd_queue->ionfile);
+		target_cmd_queue->ionfile = NULL;
+	}
 	target_cmd_queue->priv = priv;
 
 	if (cmd == VIOC_HAL_STREAM_QBUF) {
