@@ -634,6 +634,7 @@ close_misc:
 release_stream:
 	mutex_lock(&data->lock);
 	data->strms[idx].used = false;
+	data->strms[idx].handled = false;
 	mutex_unlock(&data->lock);
 
 	return ret;
