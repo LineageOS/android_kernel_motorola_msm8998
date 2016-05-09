@@ -116,17 +116,26 @@ static void mods_codec_work(struct work_struct *work)
 	int pcm_triggered;
 	uint16_t port_type;
 
-	if (!priv->is_params_set) {
-		pr_err("%s: params not set returning\n", __func__);
+	if (!gb_codec) {
+		priv->rx_active = false;
+		priv->tx_active = false;
 		return;
 	}
 
-	if (!gb_codec || !gb_codec->mgmt_connection) {
+	mutex_lock(&gb_codec->lock);
+	if (!priv->is_params_set) {
+		pr_err("%s: params not set returning\n", __func__);
+		mutex_unlock(&gb_codec->lock);
+		return;
+	}
+
+	if (!gb_codec->mgmt_connection) {
 		/* Always clear the rx/tx port active status
 		 * when greybus connection down
 		 */
 		priv->rx_active = false;
 		priv->tx_active = false;
+		mutex_unlock(&gb_codec->lock);
 		return;
 	}
 
@@ -138,8 +147,14 @@ static void mods_codec_work(struct work_struct *work)
 		port_active = &priv->tx_active;
 		pcm_triggered = atomic_read(&priv->capture_pcm_triggered);
 		port_type = GB_I2S_MGMT_PORT_TYPE_TRANSMITTER;
-	} else
+	} else {
+		mutex_unlock(&gb_codec->lock);
 		return;
+	}
+
+	gb_mods_i2s_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
+
 
 	if (!(*port_active) && pcm_triggered) {
 		pr_debug("%s(): activate snd dev i2s port: %d\n",
@@ -163,6 +178,10 @@ static void mods_codec_work(struct work_struct *work)
 			*port_active = false;
 		priv->is_params_set = false;
 	}
+
+	mutex_lock(&gb_codec->lock);
+	gb_mods_i2s_put(gb_codec);
+	mutex_unlock(&gb_codec->lock);
 
 }
 
@@ -207,30 +226,29 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
+	gb_mods_audio_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
 
 	if (!strncmp(kcontrol->id.name, "Mods Set Playback Use Case",
 				strlen(kcontrol->id.name))) {
 		ret = gb_mods_aud_set_playback_usecase(
 					gb_codec->mods_aud_connection,
 					BIT(use_case));
-		if (ret) {
+		if (ret)
 			pr_err("%s: failed to set mods codec use case\n", __func__);
-			mutex_unlock(&gb_codec->lock);
-			return -EIO;
-		}
 	} else {
 		ret = gb_mods_aud_set_capture_usecase(
 				gb_codec->mods_aud_connection,
 				BIT(use_case));
-		if (ret) {
+		if (ret)
 			pr_err("%s: failed to set mods codec use case\n", __func__);
-			mutex_unlock(&gb_codec->lock);
-			return -EIO;
-		}
 	}
 
+	mutex_lock(&gb_codec->lock);
+	gb_mods_audio_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
-	return 0;
+
+	return ret;
 }
 
 static int mods_codec_get_vol(struct snd_kcontrol *kcontrol,
@@ -264,20 +282,23 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
+	gb_mods_audio_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
+
 	/* calculate remote codec vol step */
 	mods_vol_step = (vol_step*MODS_VOL_STEP)/(gb_codec->vol_range->vol_range.step);
 	ret = gb_mods_aud_set_vol(gb_codec->mods_aud_connection, mods_vol_step);
-	if (ret) {
+	if (ret)
 		pr_err("%s: failed to set mods codec volume\n", __func__);
-		mutex_unlock(&gb_codec->lock);
-		return -EIO;
-	}
+
 	priv->vol_step = mods_vol_step;
+
+	mutex_lock(&gb_codec->lock);
+	gb_mods_audio_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
-	return 0;
+	return ret;
 }
-
 
 static int mods_codec_get_sys_vol(struct snd_kcontrol *kcontrol,
 					  struct snd_ctl_elem_value *ucontrol)
@@ -308,16 +329,19 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
-	ret = gb_mods_aud_set_sys_vol(gb_codec->mods_aud_connection,
-			sys_vol_mb);
-	if (ret) {
-		pr_err("%s: failed to set mods codec sys volume\n", __func__);
-		mutex_unlock(&gb_codec->lock);
-		return -EIO;
-	}
+	gb_mods_audio_get(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
-	return 0;
+	ret = gb_mods_aud_set_sys_vol(gb_codec->mods_aud_connection,
+			sys_vol_mb);
+	if (ret)
+		pr_err("%s: failed to set mods codec sys volume\n", __func__);
+
+	mutex_lock(&gb_codec->lock);
+	gb_mods_audio_put(gb_codec);
+	mutex_unlock(&gb_codec->lock);
+
+	return ret;
 }
 
 static int mods_codec_get_out_enabled_devices(struct snd_kcontrol *kcontrol,
@@ -353,14 +377,18 @@ static int mods_codec_set_out_enabled_devices(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 	}
 
+	gb_mods_audio_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
+
 	ret = gb_mods_aud_enable_devices(gb_codec->mods_aud_connection,
 			priv->enabled_devices.in_devices, out_mods_devices);
-	if (ret) {
+	if (ret)
 		pr_err("%s: failed to enable mods aud devices out\n", __func__);
-		mutex_unlock(&gb_codec->lock);
-		return -EIO;
-	}
+
 	priv->enabled_devices.out_devices = out_mods_devices;
+
+	mutex_lock(&gb_codec->lock);
+	gb_mods_audio_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
 	return 0;
@@ -400,15 +428,18 @@ static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
+	gb_mods_audio_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
+
 
 	ret = gb_mods_aud_enable_devices(gb_codec->mods_aud_connection,
 			in_mods_devices, priv->enabled_devices.out_devices);
-	if (ret) {
+	if (ret)
 		pr_err("%s: failed to enable mods aud devices in\n", __func__);
-		mutex_unlock(&gb_codec->lock);
-		return -EIO;
-	}
+
 	priv->enabled_devices.in_devices = in_mods_devices;
+	mutex_lock(&gb_codec->lock);
+	gb_mods_audio_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
 	return 0;
@@ -429,18 +460,31 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 		pr_debug("%s: params already set\n", __func__);
 		return err;
 	}
+
+	mutex_lock(&gb_codec->lock);
+	if (!gb_codec->mgmt_connection) {
+		pr_err("%s: audio i2s mgmt connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
+	gb_mods_i2s_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
+
 	rate = params_rate(params);
 	chans = params_channels(params);
 	format = params_format(params);
 	bytes_per_chan = snd_pcm_format_width(params_format(params)) / 8;
 	is_le = snd_pcm_format_little_endian(params_format(params));
 
-	if (gb_codec && gb_codec->mgmt_connection) {
-		err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans, format,
+	err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans, format,
 						bytes_per_chan, is_le);
-		if (!err)
-			priv->is_params_set = true;
-	}
+	if (!err)
+		priv->is_params_set = true;
+
+	mutex_lock(&gb_codec->lock);
+	gb_mods_i2s_put(gb_codec);
+	mutex_unlock(&gb_codec->lock);
 
 	return err;
 }
@@ -504,6 +548,8 @@ static int mods_codec_start(struct snd_pcm_substream *substream,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
+	gb_mods_i2s_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		ret = gb_i2s_mgmt_send_start(gb_codec,
@@ -514,6 +560,8 @@ static int mods_codec_start(struct snd_pcm_substream *substream,
 
 	if (ret == -ENOTSUPP)
 		ret = 0;
+	mutex_lock(&gb_codec->lock);
+	gb_mods_i2s_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
 	return ret;
@@ -532,6 +580,8 @@ static void mods_codec_shutdown(struct snd_pcm_substream *substream,
 		mutex_unlock(&gb_codec->lock);
 		return;
 	}
+	gb_mods_i2s_get(gb_codec);
+	mutex_unlock(&gb_codec->lock);
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		gb_i2s_mgmt_send_start(gb_codec,
@@ -540,6 +590,8 @@ static void mods_codec_shutdown(struct snd_pcm_substream *substream,
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, false);
 
+	mutex_lock(&gb_codec->lock);
+	gb_mods_i2s_put(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 }
 

@@ -36,6 +36,64 @@ static void default_release(struct device *dev)
 {
 }
 
+static void gb_mods_audio_release(struct kref *kref)
+{
+	struct gb_snd_codec *codec =
+		container_of(kref, struct gb_snd_codec, mods_aud_kref);
+
+	pr_debug("%s\n", __func__);
+
+	kfree(codec->vol_range);
+	codec->vol_range = NULL;
+	kfree(codec->use_cases);
+	codec->use_cases = NULL;
+	kfree(codec->aud_devices);
+	codec->aud_devices = NULL;
+	codec->mods_aud_connection = NULL;
+}
+
+static void gb_mods_i2s_release(struct kref *kref)
+{
+	struct gb_snd_codec *codec =
+		container_of(kref, struct gb_snd_codec, mods_i2s_kref);
+
+	pr_debug("%s\n", __func__);
+	gb_i2s_mgmt_free_cfgs(codec);
+	codec->mgmt_connection = NULL;
+}
+
+void gb_mods_audio_get(struct gb_snd_codec *codec)
+{
+	pr_debug("%s\n", __func__);
+	gb_connection_get(codec->mods_aud_connection);
+	kref_get(&codec->mods_aud_kref);
+}
+
+void gb_mods_audio_put(struct gb_snd_codec *codec)
+{
+	struct gb_connection *conn = codec->mods_aud_connection;
+
+	pr_debug("%s\n", __func__);
+	kref_put(&codec->mods_aud_kref, gb_mods_audio_release);
+	gb_connection_put(conn);
+}
+
+void gb_mods_i2s_put(struct gb_snd_codec *codec)
+{
+	struct gb_connection *conn = codec->mgmt_connection;
+
+	pr_debug("%s\n", __func__);
+	kref_put(&codec->mods_i2s_kref, gb_mods_i2s_release);
+	gb_connection_put(conn);
+}
+
+void gb_mods_i2s_get(struct gb_snd_codec *codec)
+{
+	pr_debug("%s\n", __func__);
+	gb_connection_get(codec->mgmt_connection);
+	kref_get(&codec->mods_i2s_kref);
+}
+
 static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 {
 	int ret;
@@ -50,8 +108,8 @@ static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 		goto err;
 	}
 
+	gb_mods_i2s_get(&snd_codec);
 	mutex_unlock(&snd_codec.lock);
-
 	return 0;
 
 err:
@@ -132,6 +190,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	if (ret)
 		pr_warn("%s: failed to set mods codec volume\n", __func__);
 
+	gb_mods_audio_get(&snd_codec);
 	mutex_unlock(&snd_codec.lock);
 
 	return 0;
@@ -157,15 +216,9 @@ static void gb_mods_audio_connection_exit(struct gb_connection *connection)
 	struct gb_snd_codec	*codec =
 			(struct gb_snd_codec *)connection->private;
 
-	mutex_lock(&snd_codec.lock);
-	kfree(codec->vol_range);
-	codec->vol_range = NULL;
-	kfree(codec->use_cases);
-	codec->use_cases = NULL;
-	kfree(codec->aud_devices);
-	codec->aud_devices = NULL;
-	codec->mods_aud_connection = NULL;
-	mutex_unlock(&snd_codec.lock);
+	mutex_lock(&codec->lock);
+	gb_mods_audio_put(codec);
+	mutex_unlock(&codec->lock);
 }
 
 static void gb_i2s_mgmt_connection_exit(struct gb_connection *connection)
@@ -173,9 +226,9 @@ static void gb_i2s_mgmt_connection_exit(struct gb_connection *connection)
 	struct gb_snd_codec *snd_codec =
 			(struct gb_snd_codec *)connection->private;
 
-	gb_i2s_mgmt_free_cfgs(snd_codec);
-
-	snd_codec->mgmt_connection = NULL;
+	mutex_lock(&snd_codec->lock);
+	gb_mods_i2s_put(snd_codec);
+	mutex_unlock(&snd_codec->lock);
 }
 
 static int gb_i2s_mgmt_report_event_recv(u8 type, struct gb_operation *op)
@@ -325,6 +378,10 @@ static int __init gb_audio_protocol_init(void)
 
 	mutex_init(&snd_codec.lock);
 
+	kref_init(&snd_codec.mods_aud_kref);
+	kref_init(&snd_codec.mods_i2s_kref);
+	kref_put(&snd_codec.mods_aud_kref, gb_mods_audio_release);
+	kref_put(&snd_codec.mods_i2s_kref, gb_mods_i2s_release);
 	err = gb_protocol_register(&gb_i2s_mgmt_protocol);
 	if (err) {
 		pr_err("Can't register i2s mgmt protocol driver: %d\n", -err);
