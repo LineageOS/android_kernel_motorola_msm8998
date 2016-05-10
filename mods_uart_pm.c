@@ -226,7 +226,7 @@ void mods_uart_pm_on(void *uart_data, bool on)
 
 	/* pm data may be null if uart is not open */
 	if (data) {
-		data->pm_state_local = false;
+		local_pm_update(data, false);
 		atomic_set(&data->pm_state_remote, 0);
 		del_timer(&data->idle_timer);
 
