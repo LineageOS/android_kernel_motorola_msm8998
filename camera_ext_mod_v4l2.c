@@ -286,6 +286,7 @@ static int mod_v4l2_open(struct file *file)
 	if (!camera_fh)
 		return -ENOMEM;
 
+	camera_ext_get(cam_dev);
 	v4l2_fh_init(&camera_fh->fh, cam_dev->vdev_mod);
 	v4l2_fh_add(&camera_fh->fh);
 	file->private_data = &camera_fh->fh;
@@ -314,7 +315,6 @@ static int mod_v4l2_open(struct file *file)
 
 	++g_v4l2_data->mod_users;
 	mutex_unlock(&g_v4l2_data->mod_mutex);
-	camera_ext_get(cam_dev);
 
 	return 0;
 
@@ -327,6 +327,8 @@ err_regulator:
 	v4l2_fh_del(&camera_fh->fh);
 	v4l2_fh_exit(&camera_fh->fh);
 	kfree(camera_fh);
+	camera_ext_put(cam_dev);
+
 	return rc;
 }
 
@@ -505,8 +507,8 @@ static void camera_ext_dev_release(struct video_device *dev)
 {
 	struct camera_ext *cam = video_get_drvdata(dev);
 
-	camera_ext_put(cam);
 	video_device_release(dev);
+	camera_ext_put(cam);
 }
 
 /* TODO: make this function asynchronously if it takes too long */
@@ -557,6 +559,7 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_reg_vdev;
 	}
 
+	camera_ext_get(cam_dev);
 	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 
 	return retval;
@@ -575,6 +578,7 @@ void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev)
 	video_unregister_device(cam_dev->vdev_mod);
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
 	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
+	camera_ext_put(cam_dev);
 }
 
 static int camera_ext_v4l2_probe(struct platform_device *pdev)
