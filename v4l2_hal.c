@@ -69,6 +69,8 @@ struct v4l2_format_compat {
 #define VIDIOC_S_FMT32		_IOWR('V',	5, struct v4l2_format_compat)
 
 static DEFINE_MUTEX(hal_data_lock);
+static DEFINE_MUTEX(hal_state_lock);
+static enum v4l2_hal_state hal_state = HAL_DESTROYED;
 
 static void hal_data_kref_release(struct kref *kref)
 {
@@ -590,11 +592,20 @@ static int v4l2_hal_open(struct file *file)
 	unsigned long idx;
 	int ret;
 
+	mutex_lock(&hal_state_lock);
+	if (hal_state != HAL_READY) { /* it's in freeing right now */
+		mutex_unlock(&hal_state_lock);
+		return -ENODEV;
+	}
+	hal_data_get(data);
+	mutex_unlock(&hal_state_lock);
+
 	/* This driver is counting on memory copy of structures btween
 	   tasks. Those task needs to be in same compat mode. */
 	if (v4l2_misc_compat_mode() != is_compat_task()) {
 		pr_err("compat mode mismatch. v4l2_hal: %d, misc: %d\n",
 			   is_compat_task(), v4l2_misc_compat_mode());
+		hal_data_put(data);
 		return -EFAULT;
 	}
 
@@ -609,6 +620,7 @@ static int v4l2_hal_open(struct file *file)
 
 	if (idx == V4L2_HAL_MAX_STREAMS) {
 		pr_err("%s: No more stream can be opened\n", __func__);
+		hal_data_put(data);
 		return -EFAULT;
 	}
 
@@ -625,7 +637,6 @@ static int v4l2_hal_open(struct file *file)
 	}
 
 	file->private_data = &data->strms[idx];
-	hal_data_get(data);
 	return 0;
 
 close_misc:
@@ -636,6 +647,7 @@ release_stream:
 	data->strms[idx].used = false;
 	data->strms[idx].handled = false;
 	mutex_unlock(&data->lock);
+	hal_data_put(data);
 
 	return ret;
 }
@@ -762,7 +774,7 @@ void *v4l2_hal_init()
 
 	video_set_drvdata(data->vdev, data);
 
-	data->state = HAL_READY;
+	hal_state = HAL_READY;
 	kref_init(&data->kref);
 	return data;
 
@@ -781,14 +793,14 @@ void v4l2_hal_exit(void *hal_data)
 	struct v4l2_hal_data *data = hal_data;
 
 	if (data != NULL) {
-		data->state = HAL_DESTROYED;
+		mutex_lock(&hal_state_lock);
+		hal_state = HAL_DESTROYED;
 		hal_data_put(data);
+		mutex_unlock(&hal_state_lock);
 	}
 }
 
-bool v4l2_hal_check_dev_ready(void *hal_data)
+bool v4l2_hal_check_dev_ready(void)
 {
-	struct v4l2_hal_data *data = hal_data;
-
-	return data != NULL && data->state == HAL_READY;
+	return hal_state == HAL_READY;
 }
