@@ -376,10 +376,10 @@ static int misc_process_dequeue_request(void *arg)
 	if (copy_from_user(&dq_cmd, (void *)arg, sizeof(dq_cmd)))
 		return -EFAULT;
 
-	hal_data = g_data->v4l2_hal_data;
-	if (!v4l2_hal_check_dev_ready(hal_data))
+	if (!v4l2_hal_check_dev_ready())
 		return -ENODEV;
 
+	hal_data = g_data->v4l2_hal_data;
 	return v4l2_hal_buffer_ready(hal_data,
 				     dq_cmd.stream,
 				     dq_cmd.index,
@@ -494,7 +494,7 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	struct v4l2_control *ctrl;
 	void *priv = NULL;
 
-	if (!v4l2_hal_check_dev_ready(g_data->v4l2_hal_data))
+	if (!v4l2_hal_check_dev_ready())
 		return -ENODEV;
 
 	/* OPEN request will be sent to monitor.

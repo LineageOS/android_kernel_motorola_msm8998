@@ -69,6 +69,6 @@ int v4l2_hal_get_ext_controls(struct v4l2_ext_controls *kp,
 
 void *v4l2_hal_init(void);
 void v4l2_hal_exit(void *);
-bool v4l2_hal_check_dev_ready(void *);
+bool v4l2_hal_check_dev_ready(void);
 
 #endif /* __V4L2_HAL_INTERNAL_H__ */
