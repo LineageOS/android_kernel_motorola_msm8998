@@ -386,7 +386,7 @@ int gb_sensors_write_raw(struct iio_dev *indio_dev,
 		/* write_raw_get_fmt sets this input to IIO_INT_PLUS_NANO */
 		freq = val * e9 + val2;
 		if (freq > 0) {
-			sensor->sampling_period = (e9 * e9) / freq;
+			sensor->sampling_period = div_u64(e9 * e9, freq);
 			if (sensor->sampling_period == 0)
 				sensor->sampling_period = 1;
 			pr_debug("sampling_period=%lld 0x%08x%08x",
