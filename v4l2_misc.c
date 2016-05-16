@@ -390,6 +390,7 @@ static int misc_process_dequeue_request(void *arg)
 
 static int misc_process_set_handler(struct file *filp, void *arg)
 {
+	struct v4l2_misc_command *monitor_cmd_queue;
 	struct misc_set_handler set_handler_cmd;
 
 	if (copy_from_user(&set_handler_cmd, (void *)arg,
@@ -398,6 +399,13 @@ static int misc_process_set_handler(struct file *filp, void *arg)
 
 	if (set_handler_cmd.stream >= V4L2_HAL_MAX_STREAMS)
 		return -EFAULT;
+
+	monitor_cmd_queue = &g_data->command[V4L2_HAL_MAX_STREAMS];
+	if (!atomic_read(&monitor_cmd_queue->pending_resp)) {
+		/*Set handler should be only called when handling OPEN STREAM*/
+		pr_info("ignore invalid set handler or open stream timeout");
+		return -EFAULT;
+	}
 
 	if (v4l2_hal_stream_set_handled(g_data->v4l2_hal_data,
 				set_handler_cmd.stream) != 0)
