@@ -337,6 +337,8 @@ static int gb_audio_register_mods_codec(struct platform_driver *plat)
 	snd_codec.codec_dev.name = "mods_codec";
 	snd_codec.codec_dev.id = 0;
 	snd_codec.codec_dev.dev.release = default_release; /* XXX - suspicious */
+	/* initialize mod vol step to 0xff, 0db attenuation by default */
+	snd_codec.mods_vol_step = 0xff;
 	snd_codec.codec_dev.dev.platform_data = &snd_codec;
 
 	err = platform_device_register(&snd_codec.codec_dev);
