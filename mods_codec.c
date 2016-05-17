@@ -221,7 +221,7 @@ static int mods_codec_set_usecase(struct snd_kcontrol *kcontrol,
 		gb_codec->capture_use_case = use_case;
 
 	if (!mods_codec_check_connection(gb_codec)) {
-		pr_err("%s: audio mods connection is not init'ed yet\n",
+		pr_debug("%s: audio mods connection is not init'ed yet\n",
 				__func__);
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
@@ -277,7 +277,7 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 	mutex_lock(&gb_codec->lock);
 	gb_codec->mods_vol_step = vol_step;
 	if (!mods_codec_check_connection(gb_codec)) {
-		pr_err("%s: audio mods connection is not init'ed yet\n",
+		pr_debug("%s: audio mods connection is not init'ed yet\n",
 			__func__);
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
@@ -324,7 +324,7 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 	mutex_lock(&gb_codec->lock);
 	gb_codec->sys_vol_mb = sys_vol_mb;
 	if (!mods_codec_check_connection(gb_codec)) {
-		pr_err("%s: audio mods connection is not init'ed yet\n",
+		pr_debug("%s: audio mods connection is not init'ed yet\n",
 			__func__);
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
@@ -366,7 +366,7 @@ static int mods_codec_set_out_enabled_devices(struct snd_kcontrol *kcontrol,
 
 	mutex_lock(&gb_codec->lock);
 	if (!mods_codec_check_connection(gb_codec)) {
-		pr_err("%s: audio mods connection is not init'ed yet\n",
+		pr_debug("%s: audio mods connection is not init'ed yet\n",
 			__func__);
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
@@ -417,7 +417,7 @@ static int mods_codec_set_in_enabled_devices(struct snd_kcontrol *kcontrol,
 	mutex_lock(&gb_codec->lock);
 
 	if (!mods_codec_check_connection(gb_codec)) {
-		pr_err("%s: audio mods connection is not init'ed yet\n",
+		pr_debug("%s: audio mods connection is not init'ed yet\n",
 			__func__);
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
