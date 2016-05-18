@@ -54,7 +54,7 @@ struct camera_ext {
 };
 
 /* gb functions */
-int gb_camera_ext_power_on(struct gb_connection *conn);
+int gb_camera_ext_power_on(struct gb_connection *conn, uint8_t mode);
 int gb_camera_ext_power_off(struct gb_connection *conn);
 int gb_camera_ext_stream_on(struct gb_connection *conn);
 int gb_camera_ext_stream_off(struct gb_connection *conn);

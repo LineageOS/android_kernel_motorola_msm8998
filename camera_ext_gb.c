@@ -74,12 +74,12 @@
 
 #define GB_CAMERA_EXT_TYPE_EVENT		0x14
 
-int gb_camera_ext_power_on(struct gb_connection *conn)
+int gb_camera_ext_power_on(struct gb_connection *conn, uint8_t mode)
 {
 	return gb_operation_sync(conn,
 				GB_CAMERA_EXT_TYPE_POWER_ON,
-				NULL,
-				0,
+				&mode,
+				sizeof(mode),
 				NULL,
 				0);
 }
