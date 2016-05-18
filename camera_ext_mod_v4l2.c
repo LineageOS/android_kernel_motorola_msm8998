@@ -53,6 +53,7 @@ struct camera_ext_v4l2 {
 	struct regulator *cdsi_reg;
 	struct mutex mod_mutex;
 	int mod_users; /* number of active driver users */
+	int open_mode;
 };
 
 struct camera_ext_fh {
@@ -61,9 +62,18 @@ struct camera_ext_fh {
 
 struct camera_ext_v4l2 *g_v4l2_data;
 
+static int g_open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
+
 #define MOD_V4L2_DRIVER_VERSION 1
 
 static DEFINE_SPINLOCK(camera_ext_lock);
+
+static DEVICE_INT_ATTR(open_mode, 0644, g_open_mode);
+
+static bool is_open_mode_valid(int mode)
+{
+	return mode >= 0 && mode < CAMERA_EXT_BOOTMODE_MAX;
+}
 
 static void camera_ext_kref_release(struct kref *kref)
 {
@@ -292,27 +302,42 @@ static int mod_v4l2_open(struct file *file)
 	file->private_data = &camera_fh->fh;
 
 	mutex_lock(&g_v4l2_data->mod_mutex);
-	if (g_v4l2_data->mod_users == 0) {
-		/* init MOD */
-		rc = mod_v4l2_reg_control(true);
-		if (rc < 0)
-			goto err_regulator;
-
-		rc = gb_camera_ext_power_on(cam_dev->connection);
-		if (rc < 0)
-			goto err_power_on;
-
-		/* reset all none readonly controls */
-		do {
-			rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
-		} while (rc == -EAGAIN && ++retry_count < MAX_RETRY_TIMES);
-		if (rc != 0) {
-			v4l2_err(&cam_dev->v4l2_dev,
-				"failed to apply contrl default value\n");
-			goto err_set_ctrl_def;
+	if (g_v4l2_data->mod_users) {
+		int mode = g_open_mode;
+		if (is_open_mode_valid(mode) &&
+		    g_v4l2_data->open_mode != mode) {
+			rc = -EBUSY;
+			goto err_open;
 		}
+
+		goto user_present;
 	}
 
+	/* init MOD */
+	rc = mod_v4l2_reg_control(true);
+	if (rc < 0)
+		goto err_open;
+
+	g_v4l2_data->open_mode = g_open_mode;
+	if (!is_open_mode_valid(g_v4l2_data->open_mode))
+		g_v4l2_data->open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
+
+	rc = gb_camera_ext_power_on(cam_dev->connection,
+				    g_v4l2_data->open_mode);
+	if (rc < 0)
+		goto err_power_on;
+
+	/* reset all none readonly controls */
+	do {
+		rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
+	} while (rc == -EAGAIN && ++retry_count < MAX_RETRY_TIMES);
+	if (rc != 0) {
+		v4l2_err(&cam_dev->v4l2_dev,
+			 "failed to apply contrl default value\n");
+		goto err_set_ctrl_def;
+	}
+
+user_present:
 	++g_v4l2_data->mod_users;
 	mutex_unlock(&g_v4l2_data->mod_mutex);
 
@@ -322,7 +347,7 @@ err_set_ctrl_def:
 	gb_camera_ext_power_off(cam_dev->connection);
 err_power_on:
 	mod_v4l2_reg_control(false);
-err_regulator:
+err_open:
 	mutex_unlock(&g_v4l2_data->mod_mutex);
 	v4l2_fh_del(&camera_fh->fh);
 	v4l2_fh_exit(&camera_fh->fh);
@@ -559,11 +584,19 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 		goto error_reg_vdev;
 	}
 
+	retval = device_create_file(&cam_dev->vdev_mod->dev,
+				    &dev_attr_open_mode.attr);
+	if (retval) {
+		pr_err("failed to create open_mode sysfs entry\n");
+		goto error_sysfs;
+	}
+
 	camera_ext_get(cam_dev);
 	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 
 	return retval;
-
+error_sysfs:
+	video_unregister_device(cam_dev->vdev_mod);
 error_reg_vdev:
 	video_device_release(cam_dev->vdev_mod);
 error_alloc_vdev:
@@ -576,6 +609,7 @@ error_ctrl_process:
 void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev)
 {
 	video_unregister_device(cam_dev->vdev_mod);
+	device_remove_file(cam_dev->v4l2_dev.dev, &dev_attr_open_mode.attr);
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
 	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
 	camera_ext_put(cam_dev);

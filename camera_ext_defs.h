@@ -261,4 +261,10 @@ struct camera_ext_event_error {
 	char desc[CAMERA_EXT_EVENT_ERROR_DESC_LEN];
 } __packed;
 
+/* open mode hint value sent along with power up request */
+#define CAMERA_EXT_BOOTMODE_NORMAL	0
+#define CAMERA_EXT_BOOTMODE_PREVIEW	1
+#define CAMERA_EXT_BOOTMODE_DFU		2
+#define CAMERA_EXT_BOOTMODE_MAX		3
+
 #endif /* __CAMERA_EXT_DEFS_H */
