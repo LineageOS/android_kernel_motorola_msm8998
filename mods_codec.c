@@ -675,8 +675,9 @@ static ssize_t mods_codec_devices_show(struct device *dev,
 		mutex_unlock(&codec->lock);
 		return 0;
 	}
-	pr_info("%s report change in mods audio devices 0x%x\n",
-			__func__, codec->aud_devices->devices.out_devices);
+	pr_info("%s report change in mods audio devices out:0x%x in: 0x%x\n",
+			__func__, codec->aud_devices->devices.out_devices,
+			codec->aud_devices->devices.in_devices);
 	count = scnprintf(buf, PAGE_SIZE,
 				"mods_codec_in_devices=%d;mods_codec_out_devices=%d\n",
 			le32_to_cpu(codec->aud_devices->devices.in_devices),
@@ -773,29 +774,29 @@ static ssize_t mods_codec_caps_show(struct device *dev,
 		if (rate_mask & 1) {
 			rate = mods_codec_convert_gb_rate(BIT(i));
 			if (rate > 0)
-				count += scnprintf(buf + count, PAGE_SIZE, "%d",
+				count += scnprintf(buf + count, PAGE_SIZE, "%d,",
 								rate);
 		}
 		rate_mask >>= 1;
 		i++;
 	}
-	count += scnprintf(buf + count, PAGE_SIZE,
-					"\nmods_codec_sample_sizes=");
+	count += (scnprintf(buf + count -1, PAGE_SIZE,
+					";mods_codec_sample_sizes=") -1);
 	i = 0;
 	fmt_mask = codec->i2s_cfg_masks->config.format;
 	while (fmt_mask > 0) {
 		if (fmt_mask & 1) {
 			fmt = mods_codec_convert_gb_format(BIT(i));
 			if (fmt > 0)
-				count += scnprintf(buf + count, PAGE_SIZE, "%d",
+				count += scnprintf(buf + count, PAGE_SIZE, "%d,",
 							fmt);
 		}
 		fmt_mask >>= 1;
 		i++;
 	}
-	count += scnprintf(buf + count, PAGE_SIZE,
-				"\nmods_codec_max_channels=%d\n",
-				codec->i2s_cfg_masks->config.num_channels);
+	count += (scnprintf(buf + count -1, PAGE_SIZE,
+				";mods_codec_max_channels=%d\n",
+				codec->i2s_cfg_masks->config.num_channels) - 1);
 	mutex_unlock(&codec->lock);
 
 	return count;
@@ -841,8 +842,9 @@ ATTRIBUTE_GROUPS(mods_codec);
 int mods_codec_report_devices(struct gb_snd_codec *codec)
 {
 
-	pr_info("%s report change in mods audio devices 0x%x\n",
-			__func__, codec->aud_devices->devices.out_devices);
+	pr_info("%s report change in mods audio devices out:0x%x in:0x%x\n",
+			__func__, codec->aud_devices->devices.out_devices,
+			codec->aud_devices->devices.in_devices);
 
 	kobject_uevent(&codec->codec_dev.dev.kobj, KOBJ_CHANGE);
 
