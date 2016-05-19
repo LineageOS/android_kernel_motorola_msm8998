@@ -1051,7 +1051,7 @@ int gb_camera_ext_try_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl)
 	return gb_camera_ext_s_or_try_ctrl(conn, ctrl, 1);
 }
 
-static int gb_async_msg_to_local(uint32_t type, void *data, size_t size,
+static int gb_error_msg_to_local(uint32_t type, void *data, size_t size,
 	struct v4l2_camera_ext_event *event)
 {
 	struct camera_ext_event_error *err;
@@ -1059,19 +1059,13 @@ static int gb_async_msg_to_local(uint32_t type, void *data, size_t size,
 	memset(event, 0, sizeof(*event));
 	event->type = type;
 
-	switch (type) {
-	case CAMERA_EXT_REPORT_ERROR:
-		if (size != sizeof(*err)) {
-			pr_err("%s: invalid error msg\n", __func__);
-			return -EINVAL;
-		}
-		err = (struct camera_ext_event_error *)data;
-		event->error_code = le32_to_cpu(err->error_code);
-		break;
-	default:
-		pr_err("%s: invalid message type\n", __func__);
+	if (size != sizeof(*err)) {
+		pr_err("%s: invalid error msg\n", __func__);
 		return -EINVAL;
 	}
+	err = (struct camera_ext_event_error *)data;
+	event->error_code = le32_to_cpu(err->error_code);
+
 	return 0;
 }
 
@@ -1082,6 +1076,7 @@ static int gb_camera_ext_async_msg_receive(u8 type, struct gb_operation *op)
 	uint32_t msg_type;
 	size_t msg_data_size;
 	struct camera_ext *cam_dev;
+	struct camera_ext_event_metadata *metadata;
 
 	if (type != GB_CAMERA_EXT_ASYNC_MESSAGE) {
 		pr_err("%s: unknown request type %u\n", __func__, type);
@@ -1098,13 +1093,31 @@ static int gb_camera_ext_async_msg_receive(u8 type, struct gb_operation *op)
 	msg_hdr = op->request->payload;
 	msg_type = le32_to_cpu(msg_hdr->type);
 	msg_data_size = op->request->payload_size - sizeof(*msg_hdr);
-	if (gb_async_msg_to_local(msg_type, msg_hdr->data,
-			msg_data_size, &event) != 0) {
-		pr_err("%s: failed to convert msg to v4l2 event\n", __func__);
-		return -EINVAL;
-	}
 
-	camera_ext_mod_v4l2_event_notify(cam_dev, &event);
+	switch (msg_type) {
+	case CAMERA_EXT_REPORT_ERROR:
+		if (gb_error_msg_to_local(msg_type, msg_hdr->data,
+				msg_data_size, &event) != 0) {
+			pr_err("%s: failed to convert msg to v4l2 event\n",
+				__func__);
+			return -EINVAL;
+		}
+		camera_ext_mod_v4l2_event_notify(cam_dev, &event);
+		break;
+	case CAMERA_EXT_REPORT_METADATA:
+		if (msg_data_size > sizeof(*metadata)) {
+			pr_err("%s: incorrect metadata size %zu != %zu\n",
+				__func__, msg_data_size, sizeof(*metadata));
+			return -EINVAL;
+		}
+		metadata = (struct camera_ext_event_metadata *)msg_hdr->data;
+		camera_ext_mod_v4l2_buffer_notify(cam_dev,
+			metadata->desc, msg_data_size);
+		break;
+	default:
+		pr_err("unsupported event type %d\n", msg_type);
+		return -ENOTSUPP;
+	}
 
 	return 0;
 }

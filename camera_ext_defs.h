@@ -256,6 +256,13 @@ struct camera_ext_event_error {
 	__le32 error_code;
 } __packed;
 
+/* use 1024 as metadata length*/
+#define CAMERA_EXT_EVENT_METADATA_DESC_LEN 1024
+
+struct camera_ext_event_metadata {
+	char desc[CAMERA_EXT_EVENT_METADATA_DESC_LEN];
+} __packed;
+
 /* open mode hint value sent along with power up request */
 #define CAMERA_EXT_BOOTMODE_NORMAL	0
 #define CAMERA_EXT_BOOTMODE_PREVIEW	1
