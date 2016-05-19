@@ -34,6 +34,7 @@
 #include <linux/of.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
+#include <media/videobuf2-vmalloc.h>
 #include <uapi/video/v4l2_camera_ext_ctrls.h>
 #include <uapi/video/v4l2_camera_ext_events.h>
 
@@ -49,11 +50,25 @@
 #define TO_CAMERA_EXT_FH(file_handle) \
 	container_of(file_handle, struct camera_ext_fh, fh)
 
+struct metastream_data {
+	struct vb2_queue vb2_q;
+	struct mutex list_lock;
+	struct list_head available_buffers;
+};
+
 struct camera_ext_v4l2 {
 	struct regulator *cdsi_reg;
 	struct mutex mod_mutex;
 	int mod_users; /* number of active driver users */
 	int open_mode;
+	bool buf_requested;
+	bool streaming;
+	struct metastream_data strm;
+};
+
+struct vb2_metadata_buffer {
+	struct vb2_buffer vb;
+	struct list_head list;
 };
 
 struct camera_ext_fh {
@@ -189,16 +204,45 @@ static int stream_on(struct file *file, void *fh,
 			enum v4l2_buf_type buf_type)
 {
 	struct camera_ext *cam_dev = video_drvdata(file);
+	struct metastream_data *strm = &g_v4l2_data->strm;
+	struct vb2_queue *q = &strm->vb2_q;
+	int ret;
 
-	return gb_camera_ext_stream_on(cam_dev->connection);
+	mutex_lock(&g_v4l2_data->mod_mutex);
+	if (g_v4l2_data->streaming) {
+		mutex_unlock(&g_v4l2_data->mod_mutex);
+		return -EBUSY;
+	}
+
+	g_v4l2_data->streaming = true;
+
+	if (g_v4l2_data->buf_requested)
+		ret = vb2_streamon(q, buf_type);
+	else
+		ret = gb_camera_ext_stream_on(cam_dev->connection);
+	mutex_unlock(&g_v4l2_data->mod_mutex);
+
+	return ret;
 }
 
 static int stream_off(struct file *file, void *fh,
 			enum v4l2_buf_type buf_type)
 {
 	struct camera_ext *cam_dev = video_drvdata(file);
+	struct metastream_data *strm = &g_v4l2_data->strm;
+	struct vb2_queue *q = &strm->vb2_q;
+	int ret;
 
-	return gb_camera_ext_stream_off(cam_dev->connection);
+	mutex_lock(&g_v4l2_data->mod_mutex);
+	g_v4l2_data->streaming = false;
+
+	if (g_v4l2_data->buf_requested)
+		ret = vb2_streamoff(q, buf_type);
+	else
+		ret = gb_camera_ext_stream_off(cam_dev->connection);
+	mutex_unlock(&g_v4l2_data->mod_mutex);
+
+	return ret;
 }
 
 static int stream_parm_get(struct file *file, void *fh,
@@ -233,6 +277,163 @@ static int subscribe_event(struct v4l2_fh *fh,
 	}
 }
 
+int camera_ext_mod_v4l2_buffer_notify(struct camera_ext *cam_dev,
+				const char *desc, size_t size)
+{
+	struct vb2_metadata_buffer *available_buf;
+	void *metadata;
+
+	if (!vb2_is_streaming(&g_v4l2_data->strm.vb2_q))
+		return 0;
+	mutex_lock(&g_v4l2_data->strm.list_lock);
+	available_buf = list_first_entry_or_null(
+		&g_v4l2_data->strm.available_buffers,
+		struct vb2_metadata_buffer, list);
+	if (available_buf)
+		list_del(&available_buf->list);
+	mutex_unlock(&g_v4l2_data->strm.list_lock);
+
+	if (available_buf) {
+		metadata = vb2_plane_vaddr(&available_buf->vb, 0);
+		if (metadata != NULL)
+			memcpy(metadata, desc, size);
+		vb2_set_plane_payload(&available_buf->vb, 0, size);
+		vb2_buffer_done(&available_buf->vb, VB2_BUF_STATE_DONE);
+	} else
+		pr_warn("%s: buffer is not available\n", __func__);
+
+	return 0;
+}
+
+static int camera_ext_queue_setup(struct vb2_queue *q,
+	const struct v4l2_format *fmt,
+	unsigned int *num_buffers, unsigned int *num_planes,
+	unsigned int sizes[], void *alloc_ctxs[])
+{
+	int size = CAMERA_EXT_EVENT_METADATA_DESC_LEN;
+
+	*num_planes = 1;
+	sizes[0] = size;
+
+	return 0;
+}
+
+static void camera_ext_buf_queue(struct vb2_buffer *vb)
+{
+	struct vb2_metadata_buffer *buf = container_of(vb,
+			struct vb2_metadata_buffer, vb);
+
+	mutex_lock(&g_v4l2_data->strm.list_lock);
+	list_add_tail(&buf->list, &g_v4l2_data->strm.available_buffers);
+	mutex_unlock(&g_v4l2_data->strm.list_lock);
+}
+
+static int query_buf(struct file *file, void *fh, struct v4l2_buffer *b)
+{
+	struct metastream_data *strm;
+	struct vb2_queue *q;
+
+	strm = &g_v4l2_data->strm;
+	q = &strm->vb2_q;
+
+	return vb2_querybuf(q, b);
+}
+
+static int camera_ext_start_streaming(struct vb2_queue *q, unsigned int count)
+{
+	struct camera_ext *cam_dev = vb2_get_drv_priv(q);
+
+	return gb_camera_ext_stream_on(cam_dev->connection);
+}
+
+static void camera_ext_stop_streaming(struct vb2_queue *q)
+{
+	struct camera_ext *cam_dev = vb2_get_drv_priv(q);
+	struct vb2_metadata_buffer *available_buf;
+
+	if (g_v4l2_data->buf_requested) {
+		mutex_lock(&g_v4l2_data->strm.list_lock);
+		while ((available_buf = list_first_entry_or_null(
+			&g_v4l2_data->strm.available_buffers,
+			struct vb2_metadata_buffer, list)) != NULL) {
+			list_del(&available_buf->list);
+			vb2_buffer_done(&available_buf->vb,
+				VB2_BUF_STATE_ERROR);
+		}
+		mutex_unlock(&g_v4l2_data->strm.list_lock);
+		g_v4l2_data->buf_requested = false;
+	}
+	gb_camera_ext_stream_off(cam_dev->connection);
+}
+
+static struct vb2_ops camera_ext_vb2_ops = {
+
+	.queue_setup = camera_ext_queue_setup,
+	.buf_queue = camera_ext_buf_queue,
+	.start_streaming = camera_ext_start_streaming,
+	.stop_streaming = camera_ext_stop_streaming,
+};
+
+static int camera_ext_vb2_q_init(struct camera_ext *cam_dev,
+					struct vb2_queue *q)
+{
+	memset(q, 0, sizeof(struct vb2_queue));
+	q->drv_priv = cam_dev;
+	q->mem_ops = &vb2_vmalloc_memops;
+	q->ops = &camera_ext_vb2_ops;
+
+	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	q->io_modes = VB2_MMAP;
+	q->io_flags = 0;
+	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+	q->buf_struct_size = sizeof(struct vb2_metadata_buffer);
+
+	return vb2_queue_init(q);
+}
+
+
+static int request_bufs(struct file *file, void *fh,
+	struct v4l2_requestbuffers *req)
+{
+	struct metastream_data *strm = &g_v4l2_data->strm;
+	struct vb2_queue *q = &strm->vb2_q;
+	int ret;
+
+	mutex_lock(&g_v4l2_data->mod_mutex);
+	if (g_v4l2_data->streaming
+		|| g_v4l2_data->buf_requested) {
+		mutex_unlock(&g_v4l2_data->mod_mutex);
+		return -EBUSY;
+	}
+
+	INIT_LIST_HEAD(&g_v4l2_data->strm.available_buffers);
+
+	ret = vb2_reqbufs(q, req);
+	g_v4l2_data->buf_requested = ret ? false : true;
+
+	mutex_unlock(&g_v4l2_data->mod_mutex);
+
+	return ret;
+}
+
+static int queue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
+{
+	struct metastream_data *strm;
+	struct vb2_queue *q;
+
+	strm = &g_v4l2_data->strm;
+	q = &strm->vb2_q;
+	return vb2_qbuf(q, b);
+}
+
+static int dequeue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
+{
+	struct metastream_data *strm = &g_v4l2_data->strm;
+	struct vb2_queue *q = &strm->vb2_q;
+
+	return vb2_dqbuf(q, b, file->f_flags & O_NONBLOCK);
+}
+
 /* This device is used to query mod capabilities and config mod stream.
  * It does not support video buffer related operations.
  */
@@ -250,6 +451,10 @@ static const struct v4l2_ioctl_ops camera_ext_v4l2_ioctl_ops = {
 	.vidioc_streamoff		= stream_off,
 	.vidioc_g_parm			= stream_parm_get,
 	.vidioc_s_parm			= stream_parm_set,
+	.vidioc_querybuf		= query_buf,
+	.vidioc_reqbufs			= request_bufs,
+	.vidioc_qbuf			= queue_buf,
+	.vidioc_dqbuf			= dequeue_buf,
 	.vidioc_subscribe_event		= subscribe_event,
 	.vidioc_unsubscribe_event	= v4l2_event_unsubscribe,
 };
@@ -338,6 +543,13 @@ static int mod_v4l2_open(struct file *file)
 		goto err_set_ctrl_def;
 	}
 
+	rc = camera_ext_vb2_q_init(cam_dev, &g_v4l2_data->strm.vb2_q);
+	if (rc)
+		goto err_set_ctrl_def;
+
+	g_v4l2_data->buf_requested = false;
+	g_v4l2_data->streaming = false;
+
 user_present:
 	++g_v4l2_data->mod_users;
 	mutex_unlock(&g_v4l2_data->mod_mutex);
@@ -373,6 +585,8 @@ static int mod_v4l2_close(struct file *file)
 	mutex_lock(&g_v4l2_data->mod_mutex);
 	--g_v4l2_data->mod_users;
 	if (g_v4l2_data->mod_users == 0) {
+		vb2_queue_release(&g_v4l2_data->strm.vb2_q);
+		mutex_destroy(&g_v4l2_data->strm.list_lock);
 		mod_v4l2_reg_control(false);
 		g_open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
 		if (cam_dev->state == CAMERA_EXT_READY)
@@ -388,13 +602,27 @@ static unsigned int mod_v4l2_poll(struct file *file,
 		struct poll_table_struct *pll_table)
 {
 	int ret = 0;
+	struct metastream_data *strm = &g_v4l2_data->strm;
+	struct vb2_queue *q = &strm->vb2_q;
 	struct v4l2_fh *fh = file->private_data;
 
-	poll_wait(file, &fh->wait, pll_table);
-	if (v4l2_event_pending(fh))
-		ret = POLLIN | POLLRDNORM;
+	if (vb2_is_streaming(q)) {
+		ret = vb2_poll(q, file, pll_table);
+	} else {
+		poll_wait(file, &fh->wait, pll_table);
+		if (v4l2_event_pending(fh))
+			ret = POLLPRI;
+	}
 
 	return ret;
+}
+
+static int mod_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct metastream_data *strm = &g_v4l2_data->strm;
+	struct vb2_queue *q = &strm->vb2_q;
+
+	return vb2_mmap(q, vma);
 }
 
 static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
@@ -403,6 +631,7 @@ static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
 	.ioctl		= video_ioctl2,
 	.release	= mod_v4l2_close,
 	.poll		= mod_v4l2_poll,
+	.mmap		= mod_v4l2_mmap,
 };
 
 static int mod_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
@@ -640,6 +869,7 @@ static int camera_ext_v4l2_probe(struct platform_device *pdev)
 	}
 
 	mutex_init(&data->mod_mutex);
+	mutex_init(&data->strm.list_lock);
 	g_v4l2_data = data;
 
 	return 0;

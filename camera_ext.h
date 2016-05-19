@@ -117,4 +117,6 @@ void camera_ext_v4l2_driver_exit(void);
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id);
 void camera_ext_mod_v4l2_event_notify(struct camera_ext *cam_dev,
 		struct v4l2_camera_ext_event *event);
+int camera_ext_mod_v4l2_buffer_notify(struct camera_ext *cam_dev,
+		const char *desc, size_t size);
 #endif /* CAMERA_EXT_H */
