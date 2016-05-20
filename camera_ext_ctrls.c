@@ -319,6 +319,17 @@ static struct v4l2_ctrl_config jpeg_quality = {
 	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config manual_focus_position = {
+	.id = CAM_EXT_CID_MANUAL_FOCUS_POSITION,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "manual focus position",
+	.min = 0,
+	.max = 100,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_MIN
+		| CAMERA_EXT_CTRL_FLAG_NEED_MAX,
+};
+
 static struct v4l2_ctrl_config lens_facing = {
 	.id = CAM_EXT_CID_LENS_FACING,
 	.type = V4L2_CTRL_TYPE_INTEGER,
@@ -1548,6 +1559,7 @@ __ITEM(LENS_INFO_FOCUS_HYPERFOCAL_DISTANCE,
 __ITEM(LENS_INFO_MINIMUM_FOCUS_DISTANCE, lens_info_minimum_focus_distance),
 __ITEM(LENS_FOCUS_DISTANCE, lens_focus_distance),
 __ITEM(LENS_OPTICAL_STABILIZATION_MODE, lens_optical_stabilization_mode),
+__ITEM(MANUAL_FOCUS_POSITION, manual_focus_position),
 __ITEM(REPROCESS_EFFECTIVE_EXPOSURE_FACTOR,
 		reprocess_effective_exposure_factore),
 __ITEM(REPROCESS_MAX_CAPTURE_STALL, reprocess_max_capture_stall),
