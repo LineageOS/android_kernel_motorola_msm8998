@@ -547,6 +547,7 @@ int v4l2_hal_stream_set_handled(void *hal_data, unsigned int stream)
 
 int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 			unsigned int length, unsigned int seq,
+			unsigned int ts_sec, unsigned int ts_usec,
 			enum misc_buffer_state state)
 {
 	struct v4l2_hal_data *data = hal_data;
@@ -575,6 +576,8 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 	if (strm->used) {
 		vb = strm->vb2_q.bufs[index];
 		if (vb != NULL) {
+			vb->v4l2_buf.timestamp.tv_sec = ts_sec;
+			vb->v4l2_buf.timestamp.tv_usec = ts_usec;
 			vb->v4l2_buf.sequence = seq;
 			vb->v4l2_planes[0].bytesused = length;
 			vb2_buffer_done(vb, buffer_state);
