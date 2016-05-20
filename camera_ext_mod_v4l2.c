@@ -506,7 +506,7 @@ static int custom_ctrl_register(
 		return -EINVAL;
 	} else if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF
 		&& (ctrl->elems > 1
-		|| (cfg->flags & CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER))) {
+		|| (cfg->type == V4L2_CTRL_TYPE_STRING))) {
 		/* update default value for array or string control */
 		size_t size = ctrl->elem_size * ctrl->elems;
 
