@@ -160,13 +160,12 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 			if (tgt_fd < 0)
 				goto errout;
 
+			get_file(target_cmd->ionfile);
 			fd_install(tgt_fd, target_cmd->ionfile);
 			v4l2_hal_set_mapped_fd(g_data->v4l2_hal_data,
 					       target_cmd->stream,
 					       qb->index,
 					       target_cmd->orig_fd, tgt_fd);
-			fput(target_cmd->ionfile);
-			target_cmd->ionfile = NULL;
 		}
 
 		qb->fd = tgt_fd;
@@ -181,14 +180,13 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 			if (tgt_fd < 0)
 				goto errout;
 
+			get_file(target_cmd->ionfile);
 			fd_install(tgt_fd, target_cmd->ionfile);
 			v4l2_hal_set_mapped_fd_for_cid(g_data->v4l2_hal_data,
 						       target_cmd->stream,
 						       ctrl->id,
 						       target_cmd->orig_fd,
 						       tgt_fd);
-			fput(target_cmd->ionfile);
-			target_cmd->ionfile = NULL;
 		}
 		ctrl->value = tgt_fd;
 	}
@@ -435,8 +433,16 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 		if (data == NULL)
 			ret = -EFAULT;
 
-		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
-		    init_completion(&g_data->command[i].comp);
+		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
+			/* a req from last session could stuck there */
+			if (!mutex_trylock(&g_data->command[i].lock)) {
+				complete(&g_data->command[i].comp);
+				mutex_lock(&g_data->command[i].lock);
+			}
+			init_completion(&g_data->command[i].comp);
+			mutex_unlock(&g_data->command[i].lock);
+		}
+
 		g_data->v4l2_hal_data = data;
 		break;
 	}
@@ -445,10 +451,20 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 
 		if (g_data->v4l2_hal_data == NULL)
 			break;
-		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
-			complete(&g_data->command[i].comp);
+
+		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
+			/* a req from current session could stuck there */
+			if (!mutex_trylock(&g_data->command[i].lock)) {
+				complete(&g_data->command[i].comp);
+				mutex_lock(&g_data->command[i].lock);
+			}
+		}
+
 		v4l2_hal_exit(g_data->v4l2_hal_data);
 		g_data->v4l2_hal_data = NULL;
+
+		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
+			mutex_unlock(&g_data->command[i].lock);
 		break;
 	}
 	case VIOC_HAL_STREAM_OPENED:
@@ -502,9 +518,6 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	struct v4l2_control *ctrl;
 	void *priv = NULL;
 
-	if (!v4l2_hal_check_dev_ready())
-		return -ENODEV;
-
 	/* OPEN request will be sent to monitor.
 	 * Other stream request will be sent to its handler.
 	 */
@@ -522,26 +535,41 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	/* each stream only allow one command queued at a time */
 	mutex_lock(&target_cmd_queue->lock);
 
+	if (!v4l2_hal_check_dev_ready()) {
+		mutex_unlock(&target_cmd_queue->lock);
+		return -ENODEV;
+	}
+
 	target_cmd_queue->stream = stream;
 	target_cmd_queue->cmd = cmd;
 	target_cmd_queue->size = size;
 	target_cmd_queue->data = data;
 	target_cmd_queue->orig_fd = -1;
-	if (target_cmd_queue->ionfile) {
-		fput(target_cmd_queue->ionfile);
-		target_cmd_queue->ionfile = NULL;
-	}
 	target_cmd_queue->priv = priv;
-
+	target_cmd_queue->ionfile = NULL;
 	if (cmd == VIOC_HAL_STREAM_QBUF) {
+		int tgt_fd;
+
 		qb = data;
-		target_cmd_queue->orig_fd = qb->fd;
-		target_cmd_queue->ionfile = fget(qb->fd);
+		tgt_fd = v4l2_hal_get_mapped_fd(g_data->v4l2_hal_data,
+						target_cmd_queue->stream,
+						qb->index);
+		if (tgt_fd < 0) {
+			target_cmd_queue->orig_fd = qb->fd;
+			target_cmd_queue->ionfile = fget(qb->fd);
+		}
 	} else if (cmd == VIDIOC_S_CTRL) {
+		int tgt_fd;
+
 		ctrl = data;
 		if (v4l2_hal_is_set_mapping_cid(ctrl->id)) {
-			target_cmd_queue->orig_fd = ctrl->value;
-			target_cmd_queue->ionfile = fget(ctrl->value);
+		    tgt_fd = v4l2_hal_get_mapped_fd_for_cid(g_data->v4l2_hal_data,
+							target_cmd_queue->stream,
+							ctrl->id);
+			if (tgt_fd < 0) {
+			    target_cmd_queue->orig_fd = ctrl->value;
+			    target_cmd_queue->ionfile = fget(ctrl->value);
+			}
 		}
 	}
 
@@ -560,6 +588,11 @@ int v4l2_misc_process_command(unsigned int stream, unsigned int cmd,
 	atomic_set(&target_cmd_queue->pending_resp, 0);
 
 	ret = atomic_read(&target_cmd_queue->result_code);
+
+	if (target_cmd_queue->ionfile) {
+		fput(target_cmd_queue->ionfile);
+		target_cmd_queue->ionfile = NULL;
+	}
 
 	mutex_unlock(&target_cmd_queue->lock);
 
