@@ -1508,6 +1508,26 @@ static struct v4l2_ctrl_config scene_mode_ext = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK,
 };
 
+static struct v4l2_ctrl_config zoom_limit = {
+	.id = CAM_EXT_CID_ZOOM_LIMIT,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "zoom limit",
+	.min = 100,
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config focus_key_lock = {
+	.id = CAM_EXT_CID_FOCUS_KEY_LOCK,
+	.type = V4L2_CTRL_TYPE_BOOLEAN,
+	.name = "focus key lock",
+	.min = 0,
+	.max = 1,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1631,6 +1651,8 @@ __ITEM(MODEL_NUMBER, model_number),
 __ITEM(FIRMWARE_VERSION, firmware_version),
 __ITEM(AE_MODE_EXT, ae_mode_ext),
 __ITEM(SCENE_MODE_EXT, scene_mode_ext),
+__ITEM(ZOOM_LIMIT, zoom_limit),
+__ITEM(FOCUS_KEY_LOCK, focus_key_lock),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
