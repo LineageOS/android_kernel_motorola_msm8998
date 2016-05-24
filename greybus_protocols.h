@@ -732,6 +732,7 @@ struct gb_i2s_mgmt_stop_request {
 #define GB_AUDIO_GET_SUPPORTED_DEVICES		0x08
 #define GB_AUDIO_DEVICES_REPORT_EVENT		0x09
 #define GB_AUDIO_ENABLE_DEVICES		0x0a
+#define GB_AUDIO_GET_SPEAKER_PRESET_EQ		0x0b
 
 /* Playback use cases bit mask*/
 
@@ -772,6 +773,21 @@ struct gb_i2s_mgmt_stop_request {
 #define GB_AUDIO_DEVICE_IN_MIC_EC                BIT(5)
 #define GB_AUDIO_DEVICE_IN_MIC_ECNS              BIT(6)
 #define GB_AUDIO_DEVICE_IN_MIC_NS                BIT(7)
+
+/* speaker eq preset*/
+#define GB_AUDIO_SPEAKER_PRESET_EQ_NONE                 0
+ /* EQ and Bass Enhancement optimized to boost an approximate
+  * frequency range of 400Hz - 800Hz.
+  */
+#define GB_AUDIO_SPEAKER_PRESET_EQ_SMALL                1
+/* EQ and Bass Enhancement optimized to boost an approximate
+ * frequency range of 150Hz - 300Hz.
+ */
+#define GB_AUDIO_SPEAKER_PRESET_EQ_MEDIUM               2
+ /* EQ and Bass Enhancement optimized to boost a frequency range
+  * below 150Hz.
+  */
+#define GB_AUDIO_SPEAKER_PRESET_EQ_LARGE                3
 
 /* version request has no payload */
 struct gb_audio_proto_version_response {
@@ -847,6 +863,11 @@ struct gb_audio_enable_devices_request {
 struct gb_audio_report_devices_request {
 	struct gb_aud_devices   devices;
 } __packed;
+
+/* get eq preset for speaker */
+struct gb_audio_get_speaker_preset_eq_response {
+	__le32                  preset_eq;
+};
 
 /* SPI */
 

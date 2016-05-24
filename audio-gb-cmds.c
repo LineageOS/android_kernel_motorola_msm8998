@@ -107,11 +107,9 @@ int gb_i2s_mgmt_set_samples_per_message(
 				 &request, sizeof(request), NULL, 0);
 }
 
-static bool gb_i2s_is_ver_supported(struct gb_snd_codec *snd_codec,
+bool gb_i2s_audio_is_ver_supported(struct gb_connection *conn,
 				uint32_t major, uint32_t minor)
 {
-	struct gb_connection *conn = snd_codec->mgmt_connection;
-
 	if (conn->module_major < major) {
 		pr_debug("%s() mod fw does'nt support cfg masks!\n", __func__);
 		return false;
@@ -133,7 +131,7 @@ int gb_i2s_mgmt_get_cfgs(struct gb_snd_codec *snd_codec,
 	size_t size;
 	int ret;
 
-	if (gb_i2s_is_ver_supported(snd_codec,
+	if (gb_i2s_audio_is_ver_supported(snd_codec->mgmt_connection,
 					GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR,
 					GB_I2S_MGMT_VERSION_CFG_MASK_MINOR)) {
 		size = sizeof(*get_cfg_mask);
@@ -312,7 +310,7 @@ int gb_i2s_mgmt_set_cfg(struct gb_snd_codec *snd_codec, uint32_t rate,
 	int i, ret;
 	u8 byte_order = GB_I2S_MGMT_BYTE_ORDER_NA;
 
-	if (gb_i2s_is_ver_supported(snd_codec,
+	if (gb_i2s_audio_is_ver_supported(snd_codec->mgmt_connection,
 					GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR,
 					GB_I2S_MGMT_VERSION_CFG_MASK_MINOR)) {
 		ret = gb_i2s_mgmt_is_cfg_supported(snd_codec,
@@ -382,7 +380,7 @@ int gb_i2s_mgmt_send_start(struct gb_snd_codec *snd_codec, uint32_t port_type,
 	struct gb_i2s_mgmt_start_request req_start;
 	struct gb_i2s_mgmt_stop_request req_stop;
 
-	if (!gb_i2s_is_ver_supported(snd_codec,
+	if (!gb_i2s_audio_is_ver_supported(snd_codec->mgmt_connection,
 					GB_I2S_MGMT_VERSION_START_MSG_MAJOR,
 					GB_I2S_MGMT_VERSION_START_MSG_MINOR)) {
 		pr_warn("gb i2s start and stop messages not supported by mod\n");
@@ -522,4 +520,22 @@ int gb_mods_aud_enable_devices(struct gb_connection *connection,
 
 	return gb_operation_sync(connection, GB_AUDIO_ENABLE_DEVICES,
 				 &request, sizeof(request), NULL, 0);
+}
+
+int gb_mods_aud_get_speaker_preset_eq(
+		struct gb_audio_get_speaker_preset_eq_response *get_preset,
+		struct gb_connection *connection)
+{
+	int ret;
+	size_t size = sizeof(*get_preset);
+
+	ret = gb_operation_sync(connection,
+				 GB_AUDIO_GET_SPEAKER_PRESET_EQ,
+				 NULL, 0, get_preset, size);
+	if (ret) {
+		pr_err("get speaker preset eq failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
 }

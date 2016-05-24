@@ -831,10 +831,42 @@ static ssize_t mods_codec_usecases_show(struct device *dev,
 
 static DEVICE_ATTR_RO(mods_codec_usecases);
 
+static ssize_t mods_codec_speaker_preset_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t count;
+	struct gb_snd_codec *codec;
+	struct mods_codec_dai *priv = dev_get_drvdata(dev);
+
+	codec = priv->snd_codec;
+	mutex_lock(&codec->lock);
+	if (!mods_codec_check_connection(codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+				__func__);
+		mutex_unlock(&codec->lock);
+		return -ENODEV;
+	}
+
+	if (codec->spkr_preset)
+		count = scnprintf(buf, PAGE_SIZE,
+				"%d\n",
+				le32_to_cpu(codec->spkr_preset->preset_eq));
+	else
+		count = scnprintf(buf, PAGE_SIZE,"%d\n",
+					GB_AUDIO_SPEAKER_PRESET_EQ_NONE);
+	mutex_unlock(&codec->lock);
+
+	return count;
+}
+
+static DEVICE_ATTR_RO(mods_codec_speaker_preset);
+
 static struct attribute *mods_codec_attrs[] = {
 	&dev_attr_mods_codec_devices.attr,
 	&dev_attr_mods_codec_usecases.attr,
 	&dev_attr_mods_codec_caps.attr,
+	&dev_attr_mods_codec_speaker_preset.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mods_codec);
