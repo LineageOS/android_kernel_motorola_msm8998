@@ -713,12 +713,9 @@ int gb_operation_request_send_sync_timeout(struct gb_operation *operation,
 	else
 		timeout_jiffies = MAX_SCHEDULE_TIMEOUT;
 
-	ret = wait_for_completion_interruptible_timeout(&operation->completion,
-							timeout_jiffies);
-	if (ret < 0) {
-		/* Cancel the operation if interrupted */
-		gb_operation_cancel(operation, -ECANCELED);
-	} else if (ret == 0) {
+	ret = wait_for_completion_timeout(&operation->completion,
+						timeout_jiffies);
+	if (!ret) {
 		/* Cancel the operation if op timed out */
 		gb_operation_cancel(operation, -ETIMEDOUT);
 	}
