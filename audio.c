@@ -49,6 +49,8 @@ static void gb_mods_audio_release(struct kref *kref)
 	codec->use_cases = NULL;
 	kfree(codec->aud_devices);
 	codec->aud_devices = NULL;
+	kfree(codec->spkr_preset);
+	codec->spkr_preset = NULL;
 	codec->mods_aud_connection = NULL;
 }
 
@@ -123,6 +125,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	struct gb_audio_get_volume_db_range_response *get_vol;
 	struct gb_audio_get_supported_usecases_response *get_use_cases;
 	struct gb_audio_get_devices_response *get_devices;
+	struct gb_audio_get_speaker_preset_eq_response *get_preset;
 	int ret;
 	int mods_vol_step;
 
@@ -172,6 +175,26 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	snd_codec.aud_devices = get_devices;
 	if (snd_codec.report_devices)
 		snd_codec.report_devices(&snd_codec);
+	/* if speaker device is supported query EQ preset needed by mod */
+	if ((le32_to_cpu(get_devices->devices.out_devices) &
+			GB_AUDIO_DEVICE_OUT_LOUDSPEAKER) &&
+		gb_i2s_audio_is_ver_supported(snd_codec.mods_aud_connection,
+				GB_MODS_AUDIO_VERSION_SPKR_PRESET_MAJOR,
+				GB_MODS_AUDIO_VERSION_SPKR_PRESET_MINOR)) {
+		get_preset = kmalloc(sizeof(*get_preset), GFP_KERNEL);
+		if (!get_preset) {
+			ret = -ENOMEM;
+			goto free_aud_dev;
+		}
+		ret = gb_mods_aud_get_speaker_preset_eq(get_preset, connection);
+		if (ret) {
+			dev_warn(&connection->bundle->dev,
+					"failed to get spkr preset eq %d\n",
+					ret);
+			get_preset->preset_eq = GB_AUDIO_SPEAKER_PRESET_EQ_NONE;
+		}
+		snd_codec.spkr_preset = get_preset;
+	}
 
 	/* set current use case and sys volume */
 	ret = gb_mods_aud_set_playback_usecase(
@@ -197,6 +220,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 
 free_aud_dev:
 	kfree(get_devices);
+	snd_codec.aud_devices = NULL;
 get_dev_null:
 	snd_codec.use_cases = NULL;
 free_use_case:
@@ -363,8 +387,8 @@ static struct gb_protocol gb_i2s_mgmt_protocol = {
 static struct gb_protocol gb_mods_audio_protocol = {
 	.name			= GB_MODS_AUDIO_DRIVER_NAME,
 	.id			= GREYBUS_PROTOCOL_MODS_AUDIO,
-	.major			= 0,
-	.minor			= 1,
+	.major			= GB_MODS_AUDIO_VERSION_MAJOR,
+	.minor			= GB_MODS_AUDIO_VERSION_MINOR,
 	.connection_init	= gb_mods_audio_connection_init,
 	.connection_exit	= gb_mods_audio_connection_exit,
 	.request_recv		= gb_mods_audio_event_recv,

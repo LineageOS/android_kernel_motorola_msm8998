@@ -36,11 +36,17 @@
 #define GB_I2S_MGMT_VERSION_MAJOR 0
 #define GB_I2S_MGMT_VERSION_MINOR 3
 
+#define GB_MODS_AUDIO_VERSION_MAJOR 0
+#define GB_MODS_AUDIO_VERSION_MINOR 2
+
 #define GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR 0
 #define GB_I2S_MGMT_VERSION_CFG_MASK_MINOR 2
 
 #define GB_I2S_MGMT_VERSION_START_MSG_MAJOR 0
 #define GB_I2S_MGMT_VERSION_START_MSG_MINOR 3
+
+#define GB_MODS_AUDIO_VERSION_SPKR_PRESET_MAJOR 0
+#define GB_MODS_AUDIO_VERSION_SPKR_PRESET_MINOR 2
 /*
  * This codec structure will be passed as platform data
  * to mods codec when physical I2S interface is used
@@ -55,6 +61,7 @@ struct gb_snd_codec {
 			*i2s_configs; /* table of i2s configurations*/
 	struct gb_i2s_mgmt_get_config_masks_response
 			*i2s_cfg_masks; /* bit mask of i2s configurations */
+	struct gb_audio_get_speaker_preset_eq_response *spkr_preset;
 	struct gb_connection *mods_aud_connection;
 	struct gb_connection *mgmt_connection;
 	uint32_t playback_use_case;
@@ -73,6 +80,9 @@ void gb_mods_audio_put(struct gb_snd_codec *codec);
 void gb_mods_i2s_get(struct gb_snd_codec *codec);
 void gb_mods_i2s_put(struct gb_snd_codec *codec);
 
+/* Version check utilily */
+bool gb_i2s_audio_is_ver_supported(struct gb_connection *conn,
+				uint32_t major, uint32_t minor);
 /*
  * GB I2S cmd functions
  */
@@ -121,7 +131,9 @@ int gb_mods_aud_enable_devices(struct gb_connection *connection,
 int gb_mods_aud_get_devices(
 		struct gb_audio_get_devices_response *get_devices,
 		struct gb_connection *connection);
-
+int gb_mods_aud_get_speaker_preset_eq(
+		struct gb_audio_get_speaker_preset_eq_response *get_preset,
+		struct gb_connection *connection);
 /*
  * Platform drivers
  */
