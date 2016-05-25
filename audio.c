@@ -110,7 +110,8 @@ static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 		goto err;
 	}
 
-	gb_mods_i2s_get(&snd_codec);
+	kref_init(&snd_codec.mods_i2s_kref);
+	gb_connection_get(snd_codec.mgmt_connection);
 	mutex_unlock(&snd_codec.lock);
 	return 0;
 
@@ -213,7 +214,8 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	if (ret)
 		pr_warn("%s: failed to set mods codec volume\n", __func__);
 
-	gb_mods_audio_get(&snd_codec);
+	kref_init(&snd_codec.mods_aud_kref);
+	gb_connection_get(snd_codec.mods_aud_connection);
 	mutex_unlock(&snd_codec.lock);
 
 	return 0;
@@ -404,10 +406,6 @@ static int __init gb_audio_protocol_init(void)
 
 	mutex_init(&snd_codec.lock);
 
-	kref_init(&snd_codec.mods_aud_kref);
-	kref_init(&snd_codec.mods_i2s_kref);
-	kref_put(&snd_codec.mods_aud_kref, gb_mods_audio_release);
-	kref_put(&snd_codec.mods_i2s_kref, gb_mods_i2s_release);
 	err = gb_protocol_register(&gb_i2s_mgmt_protocol);
 	if (err) {
 		pr_err("Can't register i2s mgmt protocol driver: %d\n", -err);
