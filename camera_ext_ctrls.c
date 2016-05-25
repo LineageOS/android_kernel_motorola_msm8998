@@ -1528,6 +1528,18 @@ static struct v4l2_ctrl_config focus_key_lock = {
 	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config eis_frmsize_map = {
+	.id = CAM_EXT_CID_EIS_FRAME_SIZE_MAP,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "eis frame size map",
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	/* MOD should have dims {4, EIS_FRAME_SIZE_NUM} */
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_NEED_DIMS
+		| V4L2_CTRL_FLAG_READ_ONLY,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1653,6 +1665,7 @@ __ITEM(AE_MODE_EXT, ae_mode_ext),
 __ITEM(SCENE_MODE_EXT, scene_mode_ext),
 __ITEM(ZOOM_LIMIT, zoom_limit),
 __ITEM(FOCUS_KEY_LOCK, focus_key_lock),
+__ITEM(EIS_FRAME_SIZE_MAP, eis_frmsize_map),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
