@@ -414,14 +414,22 @@ static void gb_svc_process_intf_hotplug(struct gb_operation *operation)
 	 * XXX Do we need to allocate device ID for SVC or the AP here? And what
 	 * XXX about an AP with multiple interface blocks?
 	 */
-	device_id = ida_simple_get(&svc->device_id_map,
+	ret = ida_simple_get(&svc->device_id_map,
 				   GB_DEVICE_ID_MODULES_START, 0, GFP_KERNEL);
-	if (device_id < 0) {
-		ret = device_id;
+	if (ret < 0) {
 		dev_err(&svc->dev, "failed to allocate device id for interface %u: %d\n",
 				intf_id, ret);
 		goto destroy_interface;
 	}
+
+	if (ret >= GB_DEVICE_ID_BAD) {
+		dev_err(&svc->dev, "max device_id reached for intf %u: %d\n",
+				intf_id, ret);
+		ret = -ENOMEM;
+		goto destroy_interface;
+	}
+
+	device_id = (u8)ret;
 
 	ret = gb_svc_intf_device_id(svc, intf_id, device_id);
 	if (ret) {
