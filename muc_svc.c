@@ -650,7 +650,7 @@ static struct gb_message *svc_gb_msg_alloc(u8 type, size_t payload_size)
 		return NULL;
 
 	msg->buffer = kzalloc(message_size, GFP_KERNEL);
-	if (!msg) {
+	if (!msg->buffer) {
 		kfree(msg);
 		return NULL;
 	}
