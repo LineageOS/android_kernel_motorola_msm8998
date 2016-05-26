@@ -220,8 +220,10 @@ static int gb_vendor_moto_connection_init(struct gb_connection *connection)
 	if (connection->module_minor >= GB_VENDOR_MOTO_VER_DMESG_SIZE) {
 		rsp = kmalloc(sizeof(struct gb_vendor_moto_get_dmesg_size_resp),
 			      GFP_KERNEL);
-		if (!rsp)
+		if (!rsp) {
+			retval = -ENOMEM;
 			goto error;
+		}
 
 		retval = gb_operation_sync(gb->connection,
 					   GB_VENDOR_MOTO_TYPE_GET_DMESG_SIZE,
