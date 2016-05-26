@@ -214,6 +214,9 @@ static int config_tty(struct mods_uart_data *mud, speed_t speed)
 	kt.c_oflag = 0;
 	kt.c_lflag = 0;
 
+	/* Save off the previous c_line so we don't overwrite it */
+	kt.c_line = mud->tty->termios.c_line;
+
 	tty_termios_encode_baud_rate(&kt, speed, speed);
 
 	return tty_set_termios(mud->tty, &kt);
