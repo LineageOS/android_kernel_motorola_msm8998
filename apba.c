@@ -947,8 +947,8 @@ static int apba_erase_partition(struct apba_ctrl *ctrl, const char *partition)
 
 	mtd_info = apba_init_mtd_module(partition);
 	if (!mtd_info) {
-		pr_err("%s: mtd init module failed for %s, err=%d\n",
-			__func__, partition, err);
+		pr_err("%s: mtd init module failed for %s\n",
+			__func__, partition);
 		err = -ENODEV;
 		goto no_mtd;
 	}
@@ -1135,8 +1135,8 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 
 	mtd_info = apba_init_mtd_module(partition);
 	if (!mtd_info) {
-		pr_err("%s: mtd init module failed for %s, err=%d\n",
-			__func__, partition, err);
+		pr_err("%s: mtd init module failed for %s\n",
+			__func__, partition);
 		err = -ENODEV;
 		goto no_mtd;
 	}
