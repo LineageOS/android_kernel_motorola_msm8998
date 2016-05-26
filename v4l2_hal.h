@@ -65,7 +65,7 @@ struct misc_set_handler {
 #define VIOC_HAL_V4L2_CMD	_IOW('H', 9, struct misc_ioctl_resp)
 #define VIOC_HAL_SET_STREAM_HANDLER _IOW('H', 10, struct misc_set_handler)
 
-#define V4L2_HAL_MAX_STREAMS	6
+#define V4L2_HAL_MAX_STREAMS	8
 
 /* Used in capabilities field in v4l2_input structure */
 #define V4L2_HAL_IN_STREAM_TYPE_MASK	0x00000007
