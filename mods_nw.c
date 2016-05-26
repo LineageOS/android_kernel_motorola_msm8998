@@ -345,13 +345,13 @@ int mods_nw_register_filter(struct mods_nw_msg_filter *filter)
 	if (!filter)
 		return -EINVAL;
 
+	type = filter->type;
+	protocol = filter->protocol_id;
+
 	if (filter->initialized) {
 		pr_warn("filter %d:%d already initialized\n", protocol, type);
 		return 0;
 	}
-
-	type = filter->type;
-	protocol = filter->protocol_id;
 
 	/* Make sure the filter doesn't already exist */
 	list_for_each_entry_safe(e, tmp, &mods_nw_filters, entry) {
