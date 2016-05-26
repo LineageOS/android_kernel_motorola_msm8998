@@ -291,6 +291,11 @@ static int mod_v4l2_open(struct file *file)
 	struct camera_ext_fh *camera_fh;
 	struct camera_ext *cam_dev = video_drvdata(file);
 	int retry_count = 0;
+	int mode = g_open_mode;
+
+	if (!is_open_mode_valid(mode)) {
+		mode = CAMERA_EXT_BOOTMODE_NORMAL;
+	}
 
 	camera_fh = kzalloc(sizeof(*camera_fh), GFP_KERNEL);
 	if (!camera_fh)
@@ -303,9 +308,8 @@ static int mod_v4l2_open(struct file *file)
 
 	mutex_lock(&g_v4l2_data->mod_mutex);
 	if (g_v4l2_data->mod_users) {
-		int mode = g_open_mode;
-		if (is_open_mode_valid(mode) &&
-		    g_v4l2_data->open_mode != mode) {
+		if ((CAMERA_EXT_BOOTMODE_DFU == g_v4l2_data->open_mode) ||
+		    (CAMERA_EXT_BOOTMODE_DFU == mode)) {
 			rc = -EBUSY;
 			goto err_open;
 		}
@@ -318,9 +322,7 @@ static int mod_v4l2_open(struct file *file)
 	if (rc < 0)
 		goto err_open;
 
-	g_v4l2_data->open_mode = g_open_mode;
-	if (!is_open_mode_valid(g_v4l2_data->open_mode))
-		g_v4l2_data->open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
+	g_v4l2_data->open_mode = mode;
 
 	rc = gb_camera_ext_power_on(cam_dev->connection,
 				    g_v4l2_data->open_mode);
@@ -373,6 +375,7 @@ static int mod_v4l2_close(struct file *file)
 	--g_v4l2_data->mod_users;
 	if (g_v4l2_data->mod_users == 0) {
 		mod_v4l2_reg_control(false);
+		g_open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
 		if (cam_dev->state == CAMERA_EXT_READY)
 			ret = gb_camera_ext_power_off(cam_dev->connection);
 	}
@@ -541,6 +544,7 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 {
 	int retval;
 	struct gb_connection *conn = cam_dev->connection;
+	g_open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
 
 	v4l2_ctrl_handler_init(&cam_dev->hdl_ctrls, CAM_EXT_CTRL_NUM_HINT);
 	v4l2_ctrl_new_custom(&cam_dev->hdl_ctrls, &mod_ctrl_class, NULL);
