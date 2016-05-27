@@ -83,7 +83,7 @@ static const struct snd_kcontrol_new mods_codec_snd_controls[] = {
 	SOC_SINGLE_EXT_TLV("Mods Codec Volume", SND_SOC_NOPM,
 			0, 0xff, 0, mods_codec_get_vol, mods_codec_set_vol, mods_tlv_0_5),
 	SOC_SINGLE_EXT("Mods Codec System Volume", SND_SOC_NOPM,
-			0, 0xffff, 0, mods_codec_get_sys_vol, mods_codec_set_sys_vol),
+			0, 0x7fff, 0, mods_codec_get_sys_vol, mods_codec_set_sys_vol),
 	SOC_ENUM_EXT("Mods Set Playback Use Case", mods_codec_enum[0],
 				mods_codec_get_usecase,
 				mods_codec_set_usecase),
@@ -319,7 +319,10 @@ static int mods_codec_set_sys_vol(struct snd_kcontrol *kcontrol,
 	struct mods_codec_dai *priv = snd_soc_codec_get_drvdata(codec);
 	struct gb_snd_codec *gb_codec = priv->snd_codec;
 	int ret;
-	int sys_vol_mb = ucontrol->value.integer.value[0];
+	/* mods audio greybus calls out this value as attenuation,
+	 * -ve value should be sent to mods.
+	 */
+	int sys_vol_mb = ucontrol->value.integer.value[0] * -1;
 
 	mutex_lock(&gb_codec->lock);
 	gb_codec->sys_vol_mb = sys_vol_mb;
