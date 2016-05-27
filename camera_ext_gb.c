@@ -28,6 +28,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <uapi/video/v4l2_camera_ext_events.h>
 
 #include "camera_ext.h"
 #include "greybus.h"
@@ -72,7 +73,7 @@
 #define GB_CAMERA_EXT_TYPE_CTRL_SET		0x12
 #define GB_CAMERA_EXT_TYPE_CTRL_TRY		0x13
 
-#define GB_CAMERA_EXT_TYPE_EVENT		0x14
+#define GB_CAMERA_EXT_ASYNC_MESSAGE		0x14
 
 int gb_camera_ext_power_on(struct gb_connection *conn, uint8_t mode)
 {
@@ -1050,58 +1051,60 @@ int gb_camera_ext_try_ctrl(struct gb_connection *conn, struct v4l2_ctrl *ctrl)
 	return gb_camera_ext_s_or_try_ctrl(conn, ctrl, 1);
 }
 
-static int camera_ext_handle_error_event(struct camera_ext *cam_dev,
-		uint8_t *obj, size_t size)
+static int gb_async_msg_to_local(uint32_t type, void *data, size_t size,
+	struct v4l2_camera_ext_event *event)
 {
-	struct camera_ext_event_error *error;
-	uint32_t code;
+	struct camera_ext_event_error *err;
 
-	if (size != sizeof(*error)) {
-		pr_err("%s: incorrect object size %zu != %zu\n", __func__,
-			size, sizeof(*error));
+	memset(event, 0, sizeof(*event));
+	event->type = type;
+
+	switch (type) {
+	case CAMERA_EXT_REPORT_ERROR:
+		if (size != sizeof(*err)) {
+			pr_err("%s: invalid error msg\n", __func__);
+			return -EINVAL;
+		}
+		err = (struct camera_ext_event_error *)data;
+		event->error_code = le32_to_cpu(err->error_code);
+		break;
+	default:
+		pr_err("%s: invalid message type\n", __func__);
 		return -EINVAL;
 	}
-
-	error = (struct camera_ext_event_error *)obj;
-	code = le32_to_cpu(error->code);
-	error->desc[CAMERA_EXT_EVENT_ERROR_DESC_LEN - 1] = 0;
-
-	camera_ext_mod_v4l2_error_notify(cam_dev, code, error->desc);
-
 	return 0;
 }
 
-static int gb_camera_ext_event_receive(u8 type, struct gb_operation *op)
+static int gb_camera_ext_async_msg_receive(u8 type, struct gb_operation *op)
 {
-	struct camera_ext_event_hdr *event_hdr;
-	uint32_t ev_type;
-	size_t ev_data_size;
+	struct camera_ext_event_hdr *msg_hdr;
+	struct v4l2_camera_ext_event event;
+	uint32_t msg_type;
+	size_t msg_data_size;
 	struct camera_ext *cam_dev;
 
-	if (type != GB_CAMERA_EXT_TYPE_EVENT) {
+	if (type != GB_CAMERA_EXT_ASYNC_MESSAGE) {
 		pr_err("%s: unknown request type %u\n", __func__, type);
 		return -EINVAL;
 	}
 
-	if (op->request->payload_size < sizeof(*event_hdr)) {
-		pr_err("%s: request payload too small (%zu < %zu)\n", __func__,
-			op->request->payload_size, sizeof(*event_hdr));
+	if (op->request->payload_size < sizeof(*msg_hdr)) {
+		pr_err("%s: async msg payload too small(%zu < %zu)\n", __func__,
+			op->request->payload_size, sizeof(*msg_hdr));
 		return -EINVAL;
 	}
 
 	cam_dev = op->connection->private;
-	event_hdr = op->request->payload;
-	ev_type = le32_to_cpu(event_hdr->type);
-	ev_data_size = op->request->payload_size - sizeof(*event_hdr);
-
-	switch (ev_type) {
-	case CAMERA_EXT_EV_ERROR:
-		return camera_ext_handle_error_event(cam_dev, event_hdr->data,
-				ev_data_size);
-	default:
-		pr_err("unsupported event type %d\n", ev_type);
+	msg_hdr = op->request->payload;
+	msg_type = le32_to_cpu(msg_hdr->type);
+	msg_data_size = op->request->payload_size - sizeof(*msg_hdr);
+	if (gb_async_msg_to_local(msg_type, msg_hdr->data,
+			msg_data_size, &event) != 0) {
+		pr_err("%s: failed to convert msg to v4l2 event\n", __func__);
 		return -EINVAL;
 	}
+
+	camera_ext_mod_v4l2_event_notify(cam_dev, &event);
 
 	return 0;
 }
@@ -1146,7 +1149,7 @@ static struct gb_protocol camera_ext_protocol = {
 	.minor			= GB_CAMERA_EXT_VERSION_MINOR,
 	.connection_init	= gb_camera_ext_connection_init,
 	.connection_exit	= gb_camera_ext_connection_exit,
-	.request_recv		= gb_camera_ext_event_receive,
+	.request_recv		= gb_camera_ext_async_msg_receive,
 };
 
 static int camera_ext_init(void)

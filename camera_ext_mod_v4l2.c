@@ -270,18 +270,17 @@ static int mod_v4l2_reg_control(bool on)
 	return rc;
 }
 
-void camera_ext_mod_v4l2_error_notify(struct camera_ext *cam_dev,
-	uint32_t code, const char *desc)
+void camera_ext_mod_v4l2_event_notify(struct camera_ext *cam_dev,
+	struct v4l2_camera_ext_event *event)
 {
 	struct v4l2_event ev;
-	struct v4l2_camera_ext_event_error *user_ev;
 
+	memset(&ev, 0, sizeof(ev));
 	ev.type = V4L2_CAMERA_EXT_EVENT_TYPE;
-	ev.id = V4L2_CAMERA_EXT_EVENT_ERROR;
-	user_ev = (struct v4l2_camera_ext_event_error *) ev.u.data;
-	user_ev->code = code;
-	strlcpy(user_ev->desc, desc, V4L2_CAMERA_EXT_EVENT_ERROR_DESC_LEN);
-
+	if (sizeof(*event) <= sizeof(ev.u.data))
+		memcpy(ev.u.data, event, sizeof(*event));
+	else
+		pr_warn("%s: incorrect event size\n", __func__);
 	v4l2_event_queue(cam_dev->vdev_mod, &ev);
 }
 

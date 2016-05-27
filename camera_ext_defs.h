@@ -246,19 +246,14 @@ struct camera_ext_predefined_ctrl_mod_cfg {
 	uint8_t data[0];
 } __packed;
 
-#define CAMERA_EXT_EV_ERROR 1
-
 /* event send from MOD to AP */
 struct camera_ext_event_hdr {
 	__le32 type;
 	uint8_t data[0];
 } __packed;
 
-#define CAMERA_EXT_EVENT_ERROR_DESC_LEN 60
-
 struct camera_ext_event_error {
-	__le32 code;
-	char desc[CAMERA_EXT_EVENT_ERROR_DESC_LEN];
+	__le32 error_code;
 } __packed;
 
 /* open mode hint value sent along with power up request */
