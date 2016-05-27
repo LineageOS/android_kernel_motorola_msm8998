@@ -388,6 +388,21 @@ static int misc_process_dequeue_request(void *arg)
 				     dq_cmd.state);
 }
 
+static int misc_process_report_mod_error(void *arg)
+{
+	void *hal_data;
+	struct misc_report_mod_error mod_err;
+
+	if (copy_from_user(&mod_err, arg, sizeof(mod_err)))
+		return -EFAULT;
+
+	if (!v4l2_hal_check_dev_ready())
+		return -ENODEV;
+
+	hal_data = g_data->v4l2_hal_data;
+	return v4l2_hal_report_error(hal_data, mod_err.code);
+}
+
 static int misc_process_set_handler(struct file *filp, void *arg)
 {
 	struct v4l2_misc_command *monitor_cmd_queue;
@@ -486,6 +501,9 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 		break;
 	case VIOC_HAL_SET_STREAM_HANDLER:
 		ret = misc_process_set_handler(filp, (void *)arg);
+		break;
+	case VIOC_HAL_REPORT_MOD_ERROR:
+		ret = misc_process_report_mod_error((void *)arg);
 		break;
 	default:
 		pr_err("%s: Unknown command %x\n", __func__, cmd);
