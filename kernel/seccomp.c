@@ -579,6 +579,17 @@ void secure_computing_strict(int this_syscall)
 		BUG();
 }
 #else
+int __secure_computing(const struct seccomp_data *sd)
+{
+	u32 phase1_result = seccomp_phase1(sd);
+
+	if (likely(phase1_result == SECCOMP_PHASE1_OK))
+		return 0;
+	else if (likely(phase1_result == SECCOMP_PHASE1_SKIP))
+		return -1;
+	else
+		return seccomp_phase2(phase1_result);
+}
 
 #ifdef CONFIG_SECCOMP_FILTER
 static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
