@@ -1088,9 +1088,9 @@ muc_svc_capability_changed(struct mods_dl_device *dld, struct gb_message *msg,
 		return -EINVAL;
 	}
 
-	dld->capability.level = req->level;
-	dld->capability.reason = req->reason;
-	dld->capability.vendor = le16_to_cpu(req->vendor);
+	mods_dev->capability.level = req->level;
+	mods_dev->capability.reason = req->reason;
+	mods_dev->capability.vendor = le16_to_cpu(req->vendor);
 
 	muc_svc_send_kobj_uevent(&mods_dev->intf_kobj,
 				"MOD_EVENT=CAPABILITY_CHANGED");
@@ -1116,7 +1116,7 @@ muc_svc_current_rsv(struct mods_dl_device *dld, struct gb_message *msg,
 		mutex_unlock(&svc_list_lock);
 		return -EINVAL;
 	}
-	dld->high_current_reserved = !!req->rsv;
+	mods_dev->high_current_reserved = !!req->rsv;
 
 	/* If the current limit is being reserved - tell the system it */
 	/* should save the power */
@@ -1998,6 +1998,11 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	mods_dev->hpw = NULL;
 	mods_dev->high_current_reserved = false;
 	mods_dev->fw_vendor_updates = false;
+
+	/* Reset capabilities on detach */
+	mods_dev->capability.level = 0;
+	mods_dev->capability.reason = 0;
+	mods_dev->capability.vendor = 0;
 }
 EXPORT_SYMBOL_GPL(mods_dl_dev_detached);
 
