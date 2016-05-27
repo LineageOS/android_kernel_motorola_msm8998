@@ -673,12 +673,12 @@ free_attach_wq:
 
 void muc_gpio_exit(struct device *dev, struct muc_data *cdata)
 {
-	muc_pinctrl_cleanup(cdata, dev);
 	muc_gpio_cleanup(cdata, dev);
 	/* Disable the module on unload */
 	muc_seq(cdata, cdata->dis_seq, cdata->dis_seq_len);
 	cancel_delayed_work_sync(&cdata->isr_work.work);
 	destroy_workqueue(cdata->attach_wq);
+	muc_pinctrl_cleanup(cdata, dev);
 }
 
 /* The simulated reset is performed in cases where we've asked
