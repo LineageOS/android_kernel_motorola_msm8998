@@ -53,6 +53,12 @@ struct misc_set_handler {
 	__u32 stream;
 } __packed;
 
+#define V4L2_HAL_ERROR_EVENT_TYPE 1
+
+struct misc_report_mod_error {
+	__u32 code;
+} __packed;
+
 #define VIOC_HAL_IFACE_START	_IO('H', 0)
 #define VIOC_HAL_IFACE_STOP	_IO('H', 1)
 #define VIOC_HAL_STREAM_OPENED	_IOW('H', 2, struct misc_stream_resp)
@@ -64,6 +70,7 @@ struct misc_set_handler {
 #define VIOC_HAL_STREAM_DQBUF	_IOW('H', 8, struct misc_dequeue_cmd)
 #define VIOC_HAL_V4L2_CMD	_IOW('H', 9, struct misc_ioctl_resp)
 #define VIOC_HAL_SET_STREAM_HANDLER _IOW('H', 10, struct misc_set_handler)
+#define VIOC_HAL_REPORT_MOD_ERROR _IOW('H', 11, struct misc_report_mod_error)
 
 #define V4L2_HAL_MAX_STREAMS	8
 

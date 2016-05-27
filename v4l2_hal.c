@@ -17,6 +17,7 @@
 #include <linux/string.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-device.h>
+#include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-core.h>
 #include <media/v4l2-ctrls.h>
@@ -26,6 +27,9 @@
 
 #define V4L2_HAL_DRIVER_VERSION 1
 #define HAL_DEV_NAME "v4l2_hal"
+
+#define FH_TO_STREAM(hal_fh) \
+	container_of(hal_fh, struct v4l2_stream_data, fh)
 
 struct v4l2_buffer_data {
 	int orig_fd;
@@ -40,6 +44,7 @@ struct v4l2_stream_data {
 	size_t bcount;
 	struct v4l2_buffer_data *bdata;
 	struct v4l2_buffer_data cid_map[V4L2_HAL_MAX_NUM_MMAP_CID];
+	struct v4l2_fh fh;
 };
 
 enum v4l2_hal_state {
@@ -110,7 +115,7 @@ static int query_cap(struct file *file, void *fh, struct v4l2_capability *cap)
 static int input_enum(struct file *file, void *fh, struct v4l2_input *inp)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_ENUMINPUT,
 					sizeof(*inp), inp);
@@ -121,7 +126,7 @@ static int input_enum(struct file *file, void *fh, struct v4l2_input *inp)
 static int input_get(struct file *file, void *fh, unsigned int *i)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_G_INPUT,
 					sizeof(*i), i);
@@ -133,7 +138,7 @@ static int input_set(struct file *file, void *fh,
 {
 	int ret;
 	unsigned int tmp = i;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_S_INPUT,
 					sizeof(tmp), &tmp);
@@ -145,7 +150,7 @@ static int fmt_enum(struct file *file, void *fh,
 			struct v4l2_fmtdesc *fmt)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_ENUM_FMT,
 					sizeof(*fmt), fmt);
@@ -157,7 +162,7 @@ static int fmt_get(struct file *file, void *fh,
 		   struct v4l2_format *fmt)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	/* G_FMT required special handling due to incompatiblity
 	   of v4l2_format structure */
@@ -181,7 +186,7 @@ static int fmt_set(struct file *file, void *fh,
 		   struct v4l2_format *fmt)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	/* S_FMT required special handling due to incompatiblity
 	   of v4l2_format structure */
@@ -205,7 +210,7 @@ static int frmsize_enum(struct file *file, void *fh,
 			struct v4l2_frmsizeenum *frmsize)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_ENUM_FRAMESIZES,
 					sizeof(*frmsize), frmsize);
@@ -217,7 +222,7 @@ static int frmival_enum(struct file *file, void *fh,
 			struct v4l2_frmivalenum *frmival)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_ENUM_FRAMEINTERVALS,
 					sizeof(*frmival), frmival);
@@ -230,7 +235,7 @@ static int stream_parm_get(struct file *file, void *fh,
 			   struct v4l2_streamparm *parm)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_G_PARM,
 					sizeof(*parm), parm);
@@ -242,7 +247,7 @@ static int stream_parm_set(struct file *file, void *fh,
 			   struct v4l2_streamparm *parm)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_S_PARM,
 					sizeof(*parm), parm);
@@ -253,14 +258,14 @@ static int stream_parm_set(struct file *file, void *fh,
 static int request_bufs(struct file *file, void *fh,
 			struct v4l2_requestbuffers *req)
 {
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	return vb2_reqbufs(&strm->vb2_q, req);
 }
 
 static int queue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 	unsigned int idx = b->index;
 	int fd = b->m.userptr;
 
@@ -277,21 +282,21 @@ static int queue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
 
 static int dequeue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
 {
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	return vb2_dqbuf(&strm->vb2_q, b, file->f_flags & O_NONBLOCK);
 }
 
 static int streamon(struct file *file, void *fh, enum v4l2_buf_type buf_type)
 {
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	return vb2_streamon(&strm->vb2_q, buf_type);
 }
 
 static int streamoff(struct file *file, void *fh, enum v4l2_buf_type buf_type)
 {
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	return vb2_streamoff(&strm->vb2_q, buf_type);
 }
@@ -319,7 +324,7 @@ static int get_ctrl(struct file *file, void *fh,
 {
 	int ret;
 	__u32 idx;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	if (v4l2_hal_is_set_mapping_cid(ctrl->id))
 		/* No "get" for setup mapping request */
@@ -337,7 +342,7 @@ static int set_ctrl(struct file *file, void *fh,
 			struct v4l2_control *ctrl)
 {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	if (v4l2_hal_is_set_mapping_cid(ctrl->id)) {
 		if (!validate_mapping(strm, ctrl)) {
@@ -355,7 +360,7 @@ static int set_ctrl(struct file *file, void *fh,
 static int get_ext_ctrls(struct file *file, void *fh,
 			 struct v4l2_ext_controls *ctrls) {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_G_EXT_CTRLS,
 					sizeof(*ctrls), ctrls);
@@ -366,7 +371,7 @@ static int get_ext_ctrls(struct file *file, void *fh,
 static int set_ext_ctrls(struct file *file, void *fh,
 			 struct v4l2_ext_controls *ctrls) {
 	int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	ret = v4l2_misc_process_command(strm->id, VIDIOC_S_EXT_CTRLS,
 					sizeof(*ctrls), ctrls);
@@ -639,7 +644,10 @@ static int v4l2_hal_open(struct file *file)
 		goto close_misc;
 	}
 
-	file->private_data = &data->strms[idx];
+	v4l2_fh_init(&data->strms[idx].fh, data->vdev);
+	v4l2_fh_add(&data->strms[idx].fh);
+	file->private_data = &data->strms[idx].fh;
+
 	return 0;
 
 close_misc:
@@ -659,7 +667,7 @@ static int v4l2_hal_close(struct file *file)
 {
 	int i;
 	struct v4l2_hal_data *data = video_drvdata(file);
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(file->private_data);
 	unsigned int id = strm->id;
 
 	v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_CLOSED, 0, NULL);
@@ -667,6 +675,8 @@ static int v4l2_hal_close(struct file *file)
 	vb2_queue_release(&strm->vb2_q);
 	mutex_lock(&data->lock);
 	kfree(strm->bdata);
+	v4l2_fh_del(&strm->fh);
+	v4l2_fh_exit(&strm->fh);
 	memset(strm, 0, sizeof(*strm));
 	strm->id = id;
 	for (i = 0; i < V4L2_HAL_MAX_NUM_MMAP_CID; i++) {
@@ -683,11 +693,21 @@ static int v4l2_hal_close(struct file *file)
 static unsigned int v4l2_hal_poll(struct file *file, poll_table *wait)
 {
 	unsigned int ret;
-	struct v4l2_stream_data *strm = file->private_data;
+	struct v4l2_stream_data *strm = FH_TO_STREAM(file->private_data);
 	ret = vb2_poll(&strm->vb2_q, file, wait);
 	return ret;
 }
 
+static int subscribe_event(struct v4l2_fh *fh,
+	const struct v4l2_event_subscription *sub)
+{
+	switch (sub->type) {
+	case V4L2_HAL_ERROR_EVENT_TYPE:
+		return v4l2_event_subscribe(fh, sub, 2, NULL);
+	default:
+		return -EINVAL;
+	}
+}
 /* Callout ioctls not passing through */
 static const struct v4l2_ioctl_ops v4l2_hal_ioctl_ops = {
 	.vidioc_querycap				= query_cap,
@@ -714,6 +734,9 @@ static const struct v4l2_ioctl_ops v4l2_hal_ioctl_ops = {
 
 	.vidioc_g_ext_ctrls		= get_ext_ctrls,
 	.vidioc_s_ext_ctrls		= set_ext_ctrls,
+
+	.vidioc_subscribe_event		= subscribe_event,
+	.vidioc_unsubscribe_event	= v4l2_event_unsubscribe,
 };
 
 static struct v4l2_file_operations v4l2_hal_fops = {
@@ -806,4 +829,22 @@ void v4l2_hal_exit(void *hal_data)
 bool v4l2_hal_check_dev_ready(void)
 {
 	return hal_state == HAL_READY;
+}
+
+int v4l2_hal_report_error(void *hal_data, unsigned int code)
+{
+	struct v4l2_event ev;
+	struct v4l2_hal_data *data = hal_data;
+	struct misc_report_mod_error *err;
+
+	if (data == NULL)
+		return -ENODEV;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.type = V4L2_HAL_ERROR_EVENT_TYPE;
+	err = (struct misc_report_mod_error *) ev.u.data;
+	err->code = code;
+	v4l2_event_queue(data->vdev, &ev);
+
+	return 0;
 }
