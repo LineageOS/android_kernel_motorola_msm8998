@@ -454,11 +454,13 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 
 static void muc_pinctrl_cleanup(struct muc_data *cd, struct device *dev)
 {
-	/* If no mod present, set to disconnected, otherwise leave active */
-	if (gpio_get_value(cd->gpios[MUC_GPIO_DET_N]))
-		(void)pinctrl_select_state(cd->pinctrl, cd->pins_discon);
-	else
-		(void)pinctrl_select_state(cd->pinctrl, cd->pins_spi_con);
+	int rc;
+
+	if (!gpio_get_value(cd->gpios[MUC_GPIO_DET_N]))
+		dev_warn(dev, "%s MUC_GPIO_DET_N is LOW!\n", __func__);
+	rc = pinctrl_select_state(cd->pinctrl, cd->pins_discon);
+	if (rc)
+		dev_err(dev, "%s select_state error %d\n", __func__, rc);
 }
 
 static int muc_gpio_setup(struct muc_data *cdata, struct device *dev)
