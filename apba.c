@@ -153,7 +153,8 @@ struct apba_ctrl {
 	const char *gpio_labels[APBA_NUM_GPIOS];
 	int int_index;
 	int irq;
-	struct apba_seq enable_seq;
+	struct apba_seq enable_preclk_seq;
+	struct apba_seq enable_postclk_seq;
 	struct apba_seq disable_seq;
 	struct apba_seq wake_assert_seq;
 	struct apba_seq wake_deassert_seq;
@@ -799,28 +800,30 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 	mods_ext_bus_vote(on);
 
 	if (on) {
+		apba_seq(ctrl, &ctrl->enable_preclk_seq);
 		if (clk_prepare_enable(g_ctrl->mclk)) {
 			dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
 				__func__);
+			apba_seq(ctrl, &ctrl->disable_seq);
 			return;
 		}
 
 		if (ctrl->mods_uart)
 			mods_uart_open(ctrl->mods_uart);
-		apba_seq(ctrl, &ctrl->enable_seq);
 		if (ctrl->mods_uart)
 			mods_uart_pm_on(ctrl->mods_uart, true);
+
+		apba_seq(ctrl, &ctrl->enable_postclk_seq);
 		enable_irq(ctrl->irq);
 	} else {
 		ctrl->mode = 0;
 		disable_irq(ctrl->irq);
-		apba_seq(ctrl, &ctrl->disable_seq);
+		clk_disable_unprepare(g_ctrl->mclk);
 		if (ctrl->mods_uart) {
 			mods_uart_pm_on(ctrl->mods_uart, false);
 			mods_uart_close(ctrl->mods_uart);
 		}
-
-		clk_disable_unprepare(g_ctrl->mclk);
+		apba_seq(ctrl, &ctrl->disable_seq);
 	}
 	ctrl->on = on;
 }
@@ -2140,9 +2143,17 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 	if (ret)
 		goto free_gpios;
 
-	ctrl->enable_seq.len = ARRAY_SIZE(ctrl->enable_seq.val);
-	ret = apba_parse_seq(&pdev->dev, "mmi,enable-seq",
-		&ctrl->enable_seq);
+	ctrl->enable_preclk_seq.len = ARRAY_SIZE(ctrl->enable_preclk_seq.val);
+	ret = apba_parse_seq(&pdev->dev, "mmi,enable-preclk-seq",
+		&ctrl->enable_preclk_seq);
+	if (ret)
+		goto disable_irq;
+
+
+	ctrl->enable_postclk_seq.len =
+				     ARRAY_SIZE(ctrl->enable_postclk_seq.val);
+	ret = apba_parse_seq(&pdev->dev, "mmi,enable-postclk-seq",
+		&ctrl->enable_postclk_seq);
 	if (ret)
 		goto disable_irq;
 
