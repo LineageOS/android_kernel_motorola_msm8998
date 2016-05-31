@@ -249,7 +249,7 @@ static void muc_handle_detection(bool force_removal)
 	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED) {
 		muc_register_spi();
 
-		cdata->bplus_state = MUC_BPLUS_ENABLING;
+		cdata->bplus_state = MUC_BPLUS_TRANSITIONING;
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
 		cdata->bplus_state = MUC_BPLUS_ENABLED;
 
@@ -310,7 +310,7 @@ static irqreturn_t muc_isr(int irq, void *data)
 	/* Ignore CC pin during BPLUS enable sequence due to propagation
 	 * of the reset/power-on sequence of the MUC.
 	 */
-	if (cdata->bplus_state == MUC_BPLUS_ENABLING)
+	if (cdata->bplus_state == MUC_BPLUS_TRANSITIONING)
 		return IRQ_HANDLED;
 
 	muc_misc_data->intr_count++;
@@ -742,7 +742,7 @@ static void do_muc_ff_reset(struct work_struct *work)
 				rw->do_reset ? "yes" : "no");
 
 	/* Take control of BPLUS, ignoring interrupts until done */
-	cd->bplus_state = MUC_BPLUS_ENABLING;
+	cd->bplus_state = MUC_BPLUS_TRANSITIONING;
 
 	/* In order to provide reset / force flash, need to control the CC pin,
 	 * which means free/disable the IRQ, and set as an output low.
@@ -854,6 +854,7 @@ static void do_muc_poweroff(struct work_struct *work)
 
 	muc_attach_notifier_call_chain(0);
 
+	cd->bplus_state = MUC_BPLUS_TRANSITIONING;
 	muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
 	cd->bplus_state = MUC_BPLUS_DISABLED;
 

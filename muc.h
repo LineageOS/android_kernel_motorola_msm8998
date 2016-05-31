@@ -55,7 +55,7 @@ static inline bool muc_gpio_optional(int index)
 /* BPLUS State Transitions */
 enum bplus_state {
 	MUC_BPLUS_DISABLED = 0,
-	MUC_BPLUS_ENABLING,
+	MUC_BPLUS_TRANSITIONING,
 	MUC_BPLUS_ENABLED,
 	MUC_BPLUS_SHORTED,
 };
