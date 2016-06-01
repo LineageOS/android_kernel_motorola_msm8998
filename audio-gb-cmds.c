@@ -253,7 +253,7 @@ static int gb_i2s_mgmt_is_cfg_supported(struct gb_snd_codec *snd_codec,
 
 	if (((cfg->sample_frequency & cpu_to_le32(gb_rate)) !=
 		cpu_to_le32(gb_rate)) ||
-					(cfg->num_channels != chans) ||
+					(cfg->num_channels < chans) ||
 		((cfg->format & cpu_to_le32(gb_format)) !=
 					cpu_to_le32(gb_format)) ||
 		((cfg->protocol & mods_i2s_cfg.protocol) !=
