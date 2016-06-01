@@ -579,21 +579,9 @@ void secure_computing_strict(int this_syscall)
 		BUG();
 }
 #else
-int __secure_computing(const struct seccomp_data *sd)
-{
-	u32 phase1_result = seccomp_phase1(sd);
-
-	if (likely(phase1_result == SECCOMP_PHASE1_OK))
-		return 0;
-	else if (likely(phase1_result == SECCOMP_PHASE1_SKIP))
-		return -1;
-	else
-		return seccomp_phase2(phase1_result);
-}
 
 #ifdef CONFIG_SECCOMP_FILTER
-static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
-			    const bool recheck_after_trace)
+static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd)
 {
 	u32 filter_ret, action;
 	int data;
@@ -625,10 +613,6 @@ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
 		goto skip;
 
 	case SECCOMP_RET_TRACE:
-		/* We've been put in this state by the ptracer already. */
-		if (recheck_after_trace)
-			return 0;
-
 		/* ENOSYS these calls if there is no tracer attached. */
 		if (!ptrace_event_enabled(current, PTRACE_EVENT_SECCOMP)) {
 			syscall_set_return_value(current,
@@ -641,29 +625,16 @@ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
 		ptrace_event(PTRACE_EVENT_SECCOMP, data);
 		/*
 		 * The delivery of a fatal signal during event
-		 * notification may silently skip tracer notification,
-		 * which could leave us with a potentially unmodified
-		 * syscall that the tracer would have liked to have
-		 * changed. Since the process is about to die, we just
-		 * force the syscall to be skipped and let the signal
-		 * kill the process and correctly handle any tracer exit
-		 * notifications.
+		 * notification may silently skip tracer notification.
+		 * Terminating the task now avoids executing a system
+		 * call that may not be intended.
 		 */
 		if (fatal_signal_pending(current))
-			goto skip;
+			do_exit(SIGSYS);
 		/* Check if the tracer forced the syscall to be skipped. */
 		this_syscall = syscall_get_nr(current, task_pt_regs(current));
 		if (this_syscall < 0)
 			goto skip;
-
-		/*
-		 * Recheck the syscall, since it may have changed. This
-		 * intentionally uses a NULL struct seccomp_data to force
-		 * a reload of all registers. This does not goto skip since
-		 * a skip would have already been reported.
-		 */
-		if (__seccomp_filter(this_syscall, NULL, true))
-			return -1;
 
 		return 0;
 
@@ -683,8 +654,7 @@ skip:
 	return -1;
 }
 #else
-static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
-			    const bool recheck_after_trace)
+static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd)
 {
 	BUG();
 }
@@ -694,6 +664,9 @@ int __secure_computing(const struct seccomp_data *sd)
 {
 	int mode = current->seccomp.mode;
 	int this_syscall;
+
+	this_syscall = sd ? sd->nr :
+		syscall_get_nr(current, task_pt_regs(current));
 
 	if (config_enabled(CONFIG_CHECKPOINT_RESTORE) &&
 	    unlikely(current->ptrace & PT_SUSPEND_SECCOMP))
@@ -707,7 +680,7 @@ int __secure_computing(const struct seccomp_data *sd)
 		__secure_computing_strict(this_syscall);  /* may call do_exit */
 		return 0;
 	case SECCOMP_MODE_FILTER:
-		return __seccomp_filter(this_syscall, sd, false);
+		return __seccomp_filter(this_syscall, sd);
 	default:
 		BUG();
 	}
