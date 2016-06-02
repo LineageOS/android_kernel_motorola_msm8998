@@ -868,6 +868,7 @@ static void do_muc_poweroff(struct work_struct *work)
 	muc_attach_notifier_call_chain(0);
 
 	cd->bplus_state = MUC_BPLUS_TRANSITIONING;
+	pinctrl_select_state(cd->pinctrl, cd->pins_discon);
 	muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
 	cd->bplus_state = MUC_BPLUS_DISABLED;
 
@@ -875,16 +876,15 @@ static void do_muc_poweroff(struct work_struct *work)
 
 	kfree(dwork);
 
-	/* If we're still detected, don't mux to disconnected
-	 * state until we get the removal interrupt.
-	 */
-	if (!gpio_get_value(cd->gpios[MUC_GPIO_DET_N])) {
-		cd->pinctrl_disconnect = true;
+	/* If we've been removed, we're done */
+	if (gpio_get_value(cd->gpios[MUC_GPIO_DET_N])) {
+		pr_debug("%s: mod no longer present\n", __func__);
 		return;
 	}
 
-	if (pinctrl_select_state(cd->pinctrl, cd->pins_discon))
-		pr_warn("%s: select disconnected pinctrl failed\n", __func__);
+	cd->pinctrl_disconnect = true;
+	if (pinctrl_select_state(cd->pinctrl, cd->pins_spi_con))
+		pr_warn("%s: select spi pinctrl failed\n", __func__);
 }
 
 void muc_poweroff(void)
