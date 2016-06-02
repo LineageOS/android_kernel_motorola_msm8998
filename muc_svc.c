@@ -339,17 +339,27 @@ hotplug_store(struct mods_dl_device *dev, const char *buf, size_t count)
 	if (!svc_dd->authenticate)
 		return count;
 
-	/* Nothing to do, there is no hotplug, or we already sent */
-	if (!dev->hpw || dev->hotplug_sent)
-		return -EINVAL;
-
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	if (val == 1)
-		queue_work(svc_dd->wq, &dev->hpw->work);
+	switch (val) {
+	case 1:
+		/* Nothing to do, there is no hotplug, or we already sent */
+		if (!dev->hpw || dev->hotplug_sent)
+			return -EINVAL;
 
-	/* XXX What to do if told to 'deny' */
+		queue_work(svc_dd->wq, &dev->hpw->work);
+		break;
+	case 0:
+		dev_info(&svc_dd->pdev->dev,
+			"%s: hotplug deny/unload; shutting down\n", __func__);
+		muc_poweroff();
+		break;
+	default:
+		dev_err(&svc_dd->pdev->dev, "%s: invalid mode: %ld\n",
+			__func__, val);
+		return -EINVAL;
+	}
 
 	return count;
 }
