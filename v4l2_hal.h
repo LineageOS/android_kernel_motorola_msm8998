@@ -80,6 +80,7 @@ struct misc_report_mod_error {
 #define V4L2_HAL_IN_VIDEO_STREAM	2
 #define V4L2_HAL_IN_SNAPSHOT_STREAM	3
 #define V4L2_HAL_IN_METADATA_STREAM	4
+#define V4L2_HAL_IN_RAW_STREAM		5
 
 /* CIDs for S/G_CTRL */
 #define V4L2_HAL_CID_SET_PARAMS_MEM	(V4L2_CID_PRIVATE_BASE + 0)
@@ -97,8 +98,9 @@ struct misc_report_mod_error {
 /* integer type */
 #define V4L2_HAL_EXT_CID_CAPS		(CID_V4L2_HAL_CLASS_BASE + 1)
 
-/* Metadata type */
+/* Pixel formats */
 #define V4L2_PIX_FMT_MODS_META		v4l2_fourcc('M','E','T','A')
+#define V4L2_PIX_FMT_MODS_DNG		v4l2_fourcc('M','D','N','G')
 
 static inline bool v4l2_hal_is_set_mapping_cid(__u32 id) {
 	if (id == V4L2_HAL_CID_SET_PARAMS_MEM ||
