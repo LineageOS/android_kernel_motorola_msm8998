@@ -453,6 +453,12 @@ static int gb_ptp_receive(u8 type, struct gb_operation *op)
 	struct gb_connection *connection = op->connection;
 	struct gb_ptp *ptp = connection->private;
 
+	if (!ptp) {
+		pr_warn("%s: connection not initialized, type = %d\n",
+			__func__, type);
+		return -EAGAIN;
+	}
+
 	switch (type) {
 	case GB_PTP_TYPE_POWER_AVAILABLE_CHANGED:
 		if (!GB_PTP_SUPPORTS(ptp, POWER_AVAILABLE_CHANGED))
@@ -587,7 +593,6 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 		return -ENOMEM;
 
 	ptp->connection = connection;
-	connection->private = ptp;
 	mutex_init(&ptp->conn_lock);
 
 	/* Create a power supply */
@@ -604,6 +609,7 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 		goto error;
 
 	ptp->psy.dev->release = gb_ptp_psy_release;
+	connection->private = ptp;
 
 	return 0;
 
