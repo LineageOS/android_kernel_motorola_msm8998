@@ -282,6 +282,12 @@ static int mods_codec_set_vol(struct snd_kcontrol *kcontrol,
 		mutex_unlock(&gb_codec->lock);
 		return -EINVAL;
 	}
+	if (gb_codec->vol_range->vol_range.step == 0) {
+		pr_err("%s: audio mods vol_range step is zero\n",
+			__func__);
+		mutex_unlock(&gb_codec->lock);
+		return -EINVAL;
+	}
 	gb_mods_audio_get(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 

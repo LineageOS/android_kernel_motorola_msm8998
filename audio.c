@@ -129,6 +129,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	struct gb_audio_get_speaker_preset_eq_response *get_preset;
 	int ret;
 	int mods_vol_step;
+	int mods_vol_range_step;
 
 	mutex_lock(&snd_codec.lock);
 	snd_codec.mods_aud_connection = connection;
@@ -208,11 +209,17 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	ret = gb_mods_aud_set_sys_vol(connection, snd_codec.sys_vol_mb);
 	if (ret)
 		pr_warn("%s: failed to set mods codec sys volume\n", __func__);
-	/* calculate remote codec vol step and set it*/
-	mods_vol_step = (snd_codec.mods_vol_step*MODS_VOL_STEP)/(snd_codec.vol_range->vol_range.step);
-	ret = gb_mods_aud_set_vol(connection, mods_vol_step);
-	if (ret)
-		pr_warn("%s: failed to set mods codec volume\n", __func__);
+
+	mods_vol_range_step = snd_codec.vol_range->vol_range.step;
+	if (mods_vol_range_step != 0) {
+		/* calculate remote codec vol step and set it*/
+		mods_vol_step =
+		(snd_codec.mods_vol_step*MODS_VOL_STEP)/mods_vol_range_step;
+		ret = gb_mods_aud_set_vol(connection, mods_vol_step);
+		if (ret)
+			pr_warn("%s:failed to set mods codec volume\n",
+				__func__);
+	}
 
 	kref_init(&snd_codec.mods_aud_kref);
 	gb_connection_get(snd_codec.mods_aud_connection);
