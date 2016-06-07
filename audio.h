@@ -37,7 +37,7 @@
 #define GB_I2S_MGMT_VERSION_MINOR 3
 
 #define GB_MODS_AUDIO_VERSION_MAJOR 0
-#define GB_MODS_AUDIO_VERSION_MINOR 2
+#define GB_MODS_AUDIO_VERSION_MINOR 3
 
 #define GB_I2S_MGMT_VERSION_CFG_MASK_MAJOR 0
 #define GB_I2S_MGMT_VERSION_CFG_MASK_MINOR 2
@@ -47,6 +47,9 @@
 
 #define GB_MODS_AUDIO_VERSION_SPKR_PRESET_MAJOR 0
 #define GB_MODS_AUDIO_VERSION_SPKR_PRESET_MINOR 2
+
+#define GB_MODS_AUDIO_VERSION_BF_PARAMS_MAJOR 0
+#define GB_MODS_AUDIO_VERSION_BF_PARAMS_MINOR 3
 /*
  * This codec structure will be passed as platform data
  * to mods codec when physical I2S interface is used
@@ -133,6 +136,9 @@ int gb_mods_aud_get_devices(
 		struct gb_connection *connection);
 int gb_mods_aud_get_speaker_preset_eq(
 		struct gb_audio_get_speaker_preset_eq_response *get_preset,
+		struct gb_connection *connection);
+int gb_mods_aud_get_mic_params(
+		struct gb_audio_get_mic_params_response *get_params,
 		struct gb_connection *connection);
 /*
  * Platform drivers

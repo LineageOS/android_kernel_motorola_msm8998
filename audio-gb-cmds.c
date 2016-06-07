@@ -539,3 +539,21 @@ int gb_mods_aud_get_speaker_preset_eq(
 
 	return 0;
 }
+
+int gb_mods_aud_get_mic_params(
+		struct gb_audio_get_mic_params_response *get_params,
+		struct gb_connection *connection)
+{
+	int ret;
+	size_t size = sizeof(*get_params);
+
+	ret = gb_operation_sync(connection,
+				 GB_AUDIO_GET_MIC_PARAMS,
+				 NULL, 0, get_params, size);
+	if (ret) {
+		pr_err("get mic tuning params failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
