@@ -589,6 +589,7 @@ skip_pkt1:
 static irqreturn_t muc_spi_isr(int irq, void *data)
 {
 	struct muc_spi_data *dd = data;
+	int ret = 0;
 
 	/* Any interrupt while the MuC is not present would be spurious */
 	if (!dd->present)
@@ -601,8 +602,13 @@ static irqreturn_t muc_spi_isr(int irq, void *data)
 	set_tx_pkt_hdr(dd, HDR_BIT_DUMMY);
 	set_tx_pkt_crc(dd);
 
-	while (!muc_gpio_get_int_n() && dd->present)
-		muc_spi_transfer(dd, (dd->pkts_remaining > 1));
+	while (!muc_gpio_get_int_n() && dd->present) {
+		ret = muc_spi_transfer(dd, (dd->pkts_remaining > 1));
+		if (ret) {
+			dev_err(&dd->spi->dev, "isr spi transfer failed\n");
+			break;
+		}
+	}
 
 	pm_relax(&dd->spi->dev);
 	mutex_unlock(&dd->mutex);
