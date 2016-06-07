@@ -1540,6 +1540,45 @@ static struct v4l2_ctrl_config eis_frmsize_map = {
 		| V4L2_CTRL_FLAG_READ_ONLY,
 };
 
+static struct v4l2_ctrl_config jpeg_available_thumbnail_sizes = {
+	.id = CAM_EXT_CID_JPEG_AVAILABLE_THUMBNAIL_SIZES,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "jpeg thumbnail size",
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_NEED_DIMS
+		| V4L2_CTRL_FLAG_READ_ONLY,
+};
+
+static struct v4l2_ctrl_config jpeg_thumbnail_size_index = {
+	.id = CAM_EXT_CID_JPEG_THUMBNAIL_SIZE_INDEX,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "jpeg thumbnail size index",
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config phone_version = {
+	.id = CAM_EXT_CID_PHONE_VERSION,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.max = CTRL_STRING_MAX_LEN - 1,
+	.name = "phone version",
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
+static struct v4l2_ctrl_config supplemental_key_mask = {
+	.id = CAM_EXT_CID_SUPPLEMENTAL_KEY_MASK,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "supplemental key mask",
+	.max = CAM_EXT_HW_KEY_MAX,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1666,6 +1705,10 @@ __ITEM(SCENE_MODE_EXT, scene_mode_ext),
 __ITEM(ZOOM_LIMIT, zoom_limit),
 __ITEM(FOCUS_KEY_LOCK, focus_key_lock),
 __ITEM(EIS_FRAME_SIZE_MAP, eis_frmsize_map),
+__ITEM(JPEG_AVAILABLE_THUMBNAIL_SIZES, jpeg_available_thumbnail_sizes),
+__ITEM(JPEG_THUMBNAIL_SIZE_INDEX, jpeg_thumbnail_size_index),
+__ITEM(PHONE_VERSION, phone_version),
+__ITEM(SUPPLEMENTAL_KEY_MASK, supplemental_key_mask),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
