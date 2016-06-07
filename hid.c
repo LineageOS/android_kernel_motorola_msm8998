@@ -107,6 +107,12 @@ static int gb_hid_irq_handler(u8 type, struct gb_operation *op)
 	struct gb_hid *ghid = connection->private;
 	struct gb_hid_input_report_request *request = op->request->payload;
 
+	if (!ghid) {
+		dev_err(&connection->bundle->dev,
+			"hid connection initialization incomplete\n");
+		return -EAGAIN;
+	}
+
 	if (type != GB_HID_TYPE_IRQ_EVENT) {
 		dev_err(&connection->bundle->dev,
 			"unsupported unsolicited request\n");
@@ -442,7 +448,6 @@ static int gb_hid_connection_init(struct gb_connection *connection)
 		goto err_free_ghid;
 	}
 
-	connection->private = ghid;
 	ghid->connection = connection;
 	ghid->hid = hid;
 
@@ -455,6 +460,8 @@ static int gb_hid_connection_init(struct gb_connection *connection)
 		hid_err(hid, "can't add hid device: %d\n", ret);
 		goto err_destroy_hid;
 	}
+
+	connection->private = ghid;
 
 	return 0;
 
