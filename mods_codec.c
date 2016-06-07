@@ -1,3 +1,17 @@
+/*
+ * Copyright (C) 2015 Motorola Mobility, Inc.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/cdev.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -871,11 +885,65 @@ static ssize_t mods_codec_speaker_preset_show(struct device *dev,
 
 static DEVICE_ATTR_RO(mods_codec_speaker_preset);
 
+static ssize_t mods_codec_mic_params_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	ssize_t count;
+	struct gb_snd_codec *codec;
+	struct mods_codec_dai *priv = dev_get_drvdata(dev);
+	struct gb_audio_get_mic_params_response *get_params;
+	int ret;
+
+	codec = priv->snd_codec;
+	mutex_lock(&codec->lock);
+	if (!mods_codec_check_connection(codec)) {
+		pr_err("%s: audio mods connection is not init'ed yet\n",
+				__func__);
+		count = -ENODEV;
+		goto out;
+	}
+	if (!gb_i2s_audio_is_ver_supported(codec->mods_aud_connection,
+			GB_MODS_AUDIO_VERSION_BF_PARAMS_MAJOR,
+			GB_MODS_AUDIO_VERSION_BF_PARAMS_MINOR)) {
+		pr_warn("%s: audio mods does not support mic tuning params\n",
+				__func__);
+		count = -ENOTSUPP;
+		goto out;
+	}
+	get_params = kzalloc(
+		sizeof(struct gb_audio_get_mic_params_response),
+		GFP_KERNEL);
+	if (!get_params) {
+		count = -ENOMEM;
+		goto out;
+	}
+
+	ret = gb_mods_aud_get_mic_params(get_params,
+			codec->mods_aud_connection);
+	if (ret) {
+		count = ret;
+		goto params_free;
+	}
+
+	memcpy(buf, get_params->params, GB_AUDIO_MIC_PARAMS_SIZE);
+	count = GB_AUDIO_MIC_PARAMS_SIZE;
+
+params_free:
+	kfree(get_params);
+out:
+	mutex_unlock(&codec->lock);
+	return count;
+}
+
+static DEVICE_ATTR_RO(mods_codec_mic_params);
+
 static struct attribute *mods_codec_attrs[] = {
 	&dev_attr_mods_codec_devices.attr,
 	&dev_attr_mods_codec_usecases.attr,
 	&dev_attr_mods_codec_caps.attr,
 	&dev_attr_mods_codec_speaker_preset.attr,
+	&dev_attr_mods_codec_mic_params.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mods_codec);

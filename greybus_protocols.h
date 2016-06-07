@@ -733,6 +733,7 @@ struct gb_i2s_mgmt_stop_request {
 #define GB_AUDIO_DEVICES_REPORT_EVENT		0x09
 #define GB_AUDIO_ENABLE_DEVICES		0x0a
 #define GB_AUDIO_GET_SPEAKER_PRESET_EQ		0x0b
+#define GB_AUDIO_GET_MIC_PARAMS		0x0c
 
 /* Playback use cases bit mask*/
 
@@ -788,6 +789,9 @@ struct gb_i2s_mgmt_stop_request {
   * below 150Hz.
   */
 #define GB_AUDIO_SPEAKER_PRESET_EQ_LARGE                3
+
+/* Tuning Parameters for microphone capture */
+#define GB_AUDIO_MIC_PARAMS_SIZE                        1996
 
 /* version request has no payload */
 struct gb_audio_proto_version_response {
@@ -867,6 +871,11 @@ struct gb_audio_report_devices_request {
 /* get eq preset for speaker */
 struct gb_audio_get_speaker_preset_eq_response {
 	__le32                  preset_eq;
+};
+
+/* get mic tuning parameters */
+struct gb_audio_get_mic_params_response {
+	u8  params[GB_AUDIO_MIC_PARAMS_SIZE];
 };
 
 /* SPI */
