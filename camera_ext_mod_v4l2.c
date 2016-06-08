@@ -825,6 +825,7 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 
 	camera_ext_get(cam_dev);
 	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
+	kobject_uevent(&cam_dev->vdev_mod->dev.kobj, KOBJ_ADD);
 
 	return retval;
 error_sysfs:
