@@ -1579,6 +1579,15 @@ static struct v4l2_ctrl_config supplemental_key_mask = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config group_ind = {
+	.id = CAM_EXT_CID_GROUP_IND,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "group indicator",
+	.min = CAM_EXT_CID_GROUP_IND_BEGIN,
+	.max = CAM_EXT_CID_GROUP_IND_MAX,
+	.step = 1,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1709,6 +1718,7 @@ __ITEM(JPEG_AVAILABLE_THUMBNAIL_SIZES, jpeg_available_thumbnail_sizes),
 __ITEM(JPEG_THUMBNAIL_SIZE_INDEX, jpeg_thumbnail_size_index),
 __ITEM(PHONE_VERSION, phone_version),
 __ITEM(SUPPLEMENTAL_KEY_MASK, supplemental_key_mask),
+__ITEM(GROUP_IND, group_ind),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
