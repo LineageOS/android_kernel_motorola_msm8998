@@ -112,6 +112,11 @@ static int gb_i2s_mgmt_connection_init(struct gb_connection *connection)
 
 	kref_init(&snd_codec.mods_i2s_kref);
 	gb_connection_get(snd_codec.mgmt_connection);
+	/* report audio devices available to user space now
+	 * if mods audio connection is also initialized
+	*/
+	if (snd_codec.report_devices && snd_codec.mods_aud_connection)
+		snd_codec.report_devices(&snd_codec);
 	mutex_unlock(&snd_codec.lock);
 	return 0;
 
@@ -175,8 +180,7 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 		goto free_aud_dev;
 	}
 	snd_codec.aud_devices = get_devices;
-	if (snd_codec.report_devices)
-		snd_codec.report_devices(&snd_codec);
+
 	/* if speaker device is supported query EQ preset needed by mod */
 	if ((le32_to_cpu(get_devices->devices.out_devices) &
 			GB_AUDIO_DEVICE_OUT_LOUDSPEAKER) &&
@@ -223,6 +227,11 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 
 	kref_init(&snd_codec.mods_aud_kref);
 	gb_connection_get(snd_codec.mods_aud_connection);
+	/* report audio devices available to user space now
+	 * if i2s mgmt connection is also initialized
+	*/
+	if (snd_codec.report_devices && snd_codec.mgmt_connection)
+		snd_codec.report_devices(&snd_codec);
 	mutex_unlock(&snd_codec.lock);
 
 	return 0;
