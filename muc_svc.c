@@ -242,13 +242,14 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 }
 
 #define MUC_SVC_COMMUNICATION_RESET "MOD_COMM_RESET"
-void muc_svc_communication_reset(void)
+void muc_svc_communication_reset(struct mods_dl_device *error_dev)
 {
 	/* Try a heartbeat via the version; if it succeeds we are talking */
 	if (!muc_svc_version_heartbeat())
 		return;
 
-	dev_err(&svc_dd->pdev->dev, "%s: resetting\n", __func__);
+	dev_err(&svc_dd->pdev->dev, "%s: resetting via interface: %d\n",
+		__func__, error_dev->intf_id);
 
 	/* Increment failure count, and mark the starting time */
 	if (!svc_dd->fail_count++)

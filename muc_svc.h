@@ -15,5 +15,5 @@ extern int mods_dl_dev_attached(struct mods_dl_device *mods_dev);
 extern void mods_dl_dev_detached(struct mods_dl_device *mods_dev);
 extern void mods_dl_device_get(struct mods_dl_device *mods_dev);
 extern void mods_dl_device_put(struct mods_dl_device *mods_dev);
-extern void muc_svc_communication_reset(void);
+extern void muc_svc_communication_reset(struct mods_dl_device *error_dev);
 #endif
