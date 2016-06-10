@@ -113,7 +113,7 @@ static void mods_ap_msg_cancel(struct gb_message *message)
 	/* nothing currently */
 }
 
-static void mods_ap_recovery(void)
+static void mods_ap_recovery(struct gb_host_device *hd, u16 cport_id)
 {
 	muc_svc_communication_reset();
 }

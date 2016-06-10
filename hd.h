@@ -24,7 +24,7 @@ struct gb_hd_driver {
 	int (*latency_tag_enable)(struct gb_host_device *hd, u16 cport_id);
 	int (*latency_tag_disable)(struct gb_host_device *hd, u16 cport_id);
 
-	void (*recovery)(void);
+	void (*recovery)(struct gb_host_device *hd, u16 cport_id);
 };
 
 struct gb_host_device {

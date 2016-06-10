@@ -592,6 +592,6 @@ void gb_connection_error_accounting(struct gb_connection *connection, int ret)
 		"Maximum number of sequential timeouts: %d; recovering\n",
 		hd->max_timeouts);
 
-	hd->driver->recovery();
+	hd->driver->recovery(hd, connection->hd_cport_id);
 	atomic_set(&hd->timeout_counter, 0);
 }
