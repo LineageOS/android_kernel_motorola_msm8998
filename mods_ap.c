@@ -115,7 +115,15 @@ static void mods_ap_msg_cancel(struct gb_message *message)
 
 static void mods_ap_recovery(struct gb_host_device *hd, u16 cport_id)
 {
-	muc_svc_communication_reset();
+	struct mods_ap_data *data;
+	struct mods_dl_device *dld;
+	struct mods_dl_device *err_dev;
+
+	data = (struct mods_ap_data *)hd->hd_priv;
+	dld = data->dld;
+
+	err_dev = mods_nw_find_dest_dl_device(dld, cport_id);
+	muc_svc_communication_reset(err_dev);
 }
 
 static struct gb_hd_driver mods_ap_host_driver = {
