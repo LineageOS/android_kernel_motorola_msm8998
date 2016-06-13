@@ -105,6 +105,9 @@ extern int mods_nw_add_dl_device(struct mods_dl_device *mods_dev);
 extern void mods_nw_del_dl_device(struct mods_dl_device *mods_dev);
 extern struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id);
 
+extern struct mods_dl_device *
+mods_nw_find_dest_dl_device(struct mods_dl_device *from, u16 cport);
+
 /* send message to switch to connect to destination */
 extern int mods_nw_switch(struct mods_dl_device *from, uint8_t *msg, size_t len);
 
