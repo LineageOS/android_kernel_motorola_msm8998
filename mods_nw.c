@@ -99,6 +99,32 @@ struct mods_dl_device *mods_nw_get_dl_device(u8 intf_id)
 	return route->dev;
 }
 
+struct mods_dl_device *
+mods_nw_find_dest_dl_device(struct mods_dl_device *from, u16 cport)
+{
+	struct dest_entry *dest;
+	struct cport_set *route;
+
+	if (!from)
+		return ERR_PTR(-EINVAL);
+
+	route = radix_tree_lookup(&nw_interfaces, from->intf_id);
+	if (!route) {
+		dev_err(from->dev, "DLD not found for interface: %d\n",
+				from->intf_id);
+		return ERR_PTR(-ENODEV);
+	}
+
+	dest = radix_tree_lookup(&route->tree, cport);
+	if (!dest) {
+		dev_err(from->dev, "No route for %u:%u\n",
+				from->intf_id, cport);
+		return ERR_PTR(-ENODEV);
+	}
+
+	return dest->dev;
+}
+
 /* add the dl device to the table */
 /* called by the svc while creating the dl device */
 int mods_nw_add_dl_device(struct mods_dl_device *mods_dev)
