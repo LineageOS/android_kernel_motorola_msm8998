@@ -1252,9 +1252,7 @@ static struct v4l2_ctrl_config hot_pixel_map = {
 };
 
 static const u64 capture_items[] = {
-	CAM_EXT_CID_CAPTURE_PREVIEW,
 	CAM_EXT_CID_CAPTURE_STILL_CAPTURE,
-	CAM_EXT_CID_CAPTURE_VIDEO_RECORD,
 	CAM_EXT_CID_CAPTURE_VIDEO_SNAPSHOT,
 	CAM_EXT_CID_CAPTURE_ZSL_CAPTURE,
 	CAM_EXT_CID_CAPTURE_RAW,
@@ -1588,6 +1586,16 @@ static struct v4l2_ctrl_config group_ind = {
 	.step = 1,
 };
 
+static struct v4l2_ctrl_config video_record_hint = {
+	.id = CAM_EXT_CID_VIDEO_RECORD_HINT,
+	.type = V4L2_CTRL_TYPE_BOOLEAN,
+	.name = "video record hint",
+	.min = 0,
+	.max = 1,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1719,6 +1727,7 @@ __ITEM(JPEG_THUMBNAIL_SIZE_INDEX, jpeg_thumbnail_size_index),
 __ITEM(PHONE_VERSION, phone_version),
 __ITEM(SUPPLEMENTAL_KEY_MASK, supplemental_key_mask),
 __ITEM(GROUP_IND, group_ind),
+__ITEM(VIDEO_RECORD_HINT, video_record_hint),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
