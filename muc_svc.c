@@ -136,9 +136,6 @@ static void _do_muc_recovery_level(void)
 
 #define MUC_SVC_FAILURE_WINDOW (60 * 5 * HZ) /* 5 minute window */
 #define MUC_SVC_WATCHDOG_MAX_RETRIES 5
-#define MUC_SVC_ATTACH_ERROR "MOD_ATTACH_FAILURE"
-#define MUC_SVC_RECOVERY_FAILED "MOD_RECOVERY_FAILED"
-#define MUC_SVC_RECOVERY_SUCCESS "MOD_RECOVERY_SUCCESS"
 static void muc_svc_recovery(void)
 {
 	unsigned long end_time;
@@ -174,7 +171,6 @@ static void muc_svc_recovery(void)
 	if (++svc_dd->fail_count > MUC_SVC_WATCHDOG_MAX_RETRIES) {
 		dev_err(&svc_dd->pdev->dev,
 				"Too many failures; shutting down\n");
-		mods_queue_error_event_empty(MUC_SVC_RECOVERY_FAILED);
 		muc_svc_send_uevent("MOD_ERROR=RECOVERY_FAILED");
 
 		muc_poweroff();
@@ -192,34 +188,46 @@ static void muc_svc_wdog(struct work_struct *work)
 	muc_svc_recovery();
 }
 
-static void muc_svc_clear_wdog(struct mods_dl_device *mods_dev)
+static void send_event_to_userspace(const char *event,
+	struct mods_dl_device *mods_dev)
 {
 	u8 count = svc_dd->fail_count;
 	struct kobj_uevent_env *env;
 
-	cancel_delayed_work_sync(&svc_dd->wdog_work);
-
-	if (!svc_dd->fail_count)
+	if (!mods_dev) {
+		dev_err(&svc_dd->pdev->dev, "NULL mods_dev, skipping send\n");
 		return;
-	svc_dd->fail_count = 0;
+	}
 
 	env = kzalloc(sizeof(*env), GFP_KERNEL);
 	if (!env)
 		return;
-
-	add_uevent_var(env, "MOD_EVENT=RECOVERY_SUCCESS");
+	add_uevent_var(env, event);
 	add_uevent_var(env, "RECOVERY_RETRIES=%d", count);
-	add_uevent_var(env, "RECOVERY_VID=%d",
-		mods_dev->hpw->hotplug.data.ara_vend_id);
-	add_uevent_var(env, "RECOVERY_PID=%d",
-		mods_dev->hpw->hotplug.data.ara_prod_id);
-	add_uevent_var(env, "RECOVERY_UID=0x%016llX%016llX",
-		mods_dev->uid_high, mods_dev->uid_low);
+	add_uevent_var(env, "INTERFACE_ID=%d", mods_dev->intf_id);
+	if (mods_dev->hpw) {
+		add_uevent_var(env, "RECOVERY_VID=%d",
+			mods_dev->hpw->hotplug.data.ara_vend_id);
+		add_uevent_var(env, "RECOVERY_PID=%d",
+			mods_dev->hpw->hotplug.data.ara_prod_id);
+		add_uevent_var(env, "RECOVERY_UID=0x%016llX%016llX",
+			mods_dev->uid_high, mods_dev->uid_low);
+	}
 	add_uevent_var(env, "RECOVERY_FW_VERSION=0x%08X", mods_dev->fw_version);
 	kobject_uevent_env(&svc_dd->pdev->dev.kobj, KOBJ_CHANGE, env->envp);
-
-	dev_dbg(&svc_dd->pdev->dev, "report RECOVERY_SUCCESS\n");
+	dev_dbg(&svc_dd->pdev->dev, "report to USERSPACE\n");
 	kfree(env);
+}
+
+static void muc_svc_clear_wdog(struct mods_dl_device *mods_dev)
+{
+	cancel_delayed_work_sync(&svc_dd->wdog_work);
+
+	if (!svc_dd->fail_count)
+		return;
+
+	send_event_to_userspace("MOD_EVENT=RECOVERY_SUCCESS", mods_dev);
+	svc_dd->fail_count = 0;
 }
 
 #define MUC_SVC_WATCHDOG_ATTACH_TIMEOUT (5 * HZ) /* 5s */
@@ -241,7 +249,6 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 	return 0;
 }
 
-#define MUC_SVC_COMMUNICATION_RESET "MOD_COMM_RESET"
 void muc_svc_communication_reset(struct mods_dl_device *error_dev)
 {
 	/* Try a heartbeat via the version; if it succeeds we are talking */
@@ -255,10 +262,8 @@ void muc_svc_communication_reset(struct mods_dl_device *error_dev)
 	if (!svc_dd->fail_count++)
 		svc_dd->first_fail = jiffies;
 
+	send_event_to_userspace("MOD_ERROR=COMMUNICATION_RESET", error_dev);
 	_do_muc_recovery_level();
-
-	mods_queue_error_event_empty(MUC_SVC_COMMUNICATION_RESET);
-	muc_svc_send_uevent("MOD_ERROR=COMMUNICATION_RESET");
 }
 
 static ssize_t manifest_read(struct file *fp, struct kobject *kobj,
