@@ -2365,7 +2365,7 @@ int __init apba_ctrl_init(void)
 	return platform_driver_register(&apba_ctrl_driver);
 }
 
-void __exit apba_ctrl_exit(void)
+void apba_ctrl_exit(void)
 {
 	platform_driver_unregister(&apba_ctrl_driver);
 }
