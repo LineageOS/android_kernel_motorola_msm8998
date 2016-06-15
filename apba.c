@@ -170,6 +170,7 @@ struct apba_ctrl {
 	struct completion mode_comp;
 	struct completion unipro_comp;
 	struct completion unipro_stats_comp;
+	struct completion fw_callback;
 	uint8_t master_intf;
 	uint8_t mode;
 	bool flash_dev_populated;
@@ -1833,6 +1834,9 @@ static void apba_firmware_callback(const struct firmware *fw,
 
 	if (!ctrl) {
 		pr_err("%s: invalid ctrl\n", __func__);
+		release_firmware(fw);
+		if (g_ctrl)
+			complete(&g_ctrl->fw_callback);
 		return;
 	}
 
@@ -1855,6 +1859,7 @@ static void apba_firmware_callback(const struct firmware *fw,
 
 	/* Flashing is done, let's let muc core probe finish. */
 	muc_enable_det();
+	complete(&g_ctrl->fw_callback);
 }
 
 static irqreturn_t apba_isr(int irq, void *data)
@@ -2274,6 +2279,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 		 APBA_FIRMWARE_STAGE);
 	pr_debug("%s: requesting fw %s\n", __func__, ctrl->firmware_name);
 
+	init_completion(&ctrl->fw_callback);
 	ret = request_firmware_nowait(THIS_MODULE, true, ctrl->firmware_name,
 				      g_ctrl->dev, GFP_KERNEL, g_ctrl,
 				      apba_firmware_callback);
@@ -2313,6 +2319,8 @@ free_gpios:
 static int apba_ctrl_remove(struct platform_device *pdev)
 {
 	struct apba_ctrl *ctrl = platform_get_drvdata(pdev);
+
+	wait_for_completion(&ctrl->fw_callback);
 
 	unregister_muc_attach_notifier(&ctrl->attach_nb);
 	flush_work(&apba_dettach_work);
