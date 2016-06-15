@@ -584,14 +584,17 @@ static void apba_handle_diag_message(struct mhb_hdr *hdr, uint8_t *payload,
 {
 	switch (hdr->type) {
 	case MHB_TYPE_DIAG_LOG_RSP:
+	case MHB_TYPE_DIAG_LOG_NOT:
 		if (hdr->addr == MHB_ADDR_DIAG) {
 			save_log_data((struct kfifo *)&apba_log_fifo,
 				      payload, len);
-			complete(&g_ctrl->comp);
+			if (!completion_done(&g_ctrl->comp))
+				complete(&g_ctrl->comp);
 		} else if (hdr->addr == MHB_ADDR_PEER_DIAG) {
 			save_log_data((struct kfifo *)&apbe_log_fifo,
 				      payload, len);
-			complete(&g_ctrl->apbe_log_comp);
+			if (!completion_done(&g_ctrl->apbe_log_comp))
+				complete(&g_ctrl->apbe_log_comp);
 		}
 		break;
 	case MHB_TYPE_DIAG_MODE_RSP:
@@ -1448,14 +1451,13 @@ static ssize_t apba_log_show(struct device *dev,
 	if (!g_ctrl)
 		return -ENODEV;
 
-	if (apba_send_diag_log_req(MHB_ADDR_DIAG))
-		return -EIO;
-
-	if (!wait_for_completion_timeout(
+	reinit_completion(&g_ctrl->comp);
+	if (apba_send_diag_log_req(MHB_ADDR_DIAG) == 0) {
+		if (!wait_for_completion_timeout(
 		    &g_ctrl->comp,
 		    msecs_to_jiffies(APBA_LOG_REQ_TIMEOUT))) {
-		pr_err("%s: timeout from LOG REQUEST\n", __func__);
-		return -ETIMEDOUT;
+			pr_err("%s: timeout from LOG REQUEST\n", __func__);
+		}
 	}
 
 	mutex_lock(&g_ctrl->log_mutex);
@@ -1475,14 +1477,13 @@ static ssize_t apbe_log_show(struct device *dev,
 	if (!g_ctrl)
 		return -ENODEV;
 
-	if (apba_send_diag_log_req(MHB_ADDR_PEER_DIAG))
-		return -EIO;
-
-	if (!wait_for_completion_timeout(
+	reinit_completion(&g_ctrl->apbe_log_comp);
+	if (apba_send_diag_log_req(MHB_ADDR_PEER_DIAG) == 0) {
+		if (!wait_for_completion_timeout(
 		    &g_ctrl->apbe_log_comp,
 		    msecs_to_jiffies(APBE_LOG_REQ_TIMEOUT))) {
-		pr_err("%s: timeout from LOG REQUEST\n", __func__);
-		return -ETIMEDOUT;
+			pr_err("%s: timeout from LOG REQUEST\n", __func__);
+		}
 	}
 
 	mutex_lock(&g_ctrl->log_mutex);
