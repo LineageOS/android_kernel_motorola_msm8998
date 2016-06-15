@@ -241,7 +241,7 @@ alloc_fail:
 	return err;
 }
 
-void __exit mods_ap_exit(void)
+void mods_ap_exit(void)
 {
 	platform_device_unregister(mods_ap_device);
 	platform_driver_unregister(&mods_ap_driver);
