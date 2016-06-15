@@ -2896,7 +2896,7 @@ int __init muc_svc_init(void)
 	return 0;
 }
 
-void __exit muc_svc_exit(void)
+void muc_svc_exit(void)
 {
 	platform_driver_unregister(&muc_svc_driver);
 }
