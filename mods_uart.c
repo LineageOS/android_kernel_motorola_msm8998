@@ -692,7 +692,7 @@ int __init mods_uart_init(void)
 	return platform_driver_register(&mods_uart_driver);
 }
 
-void __exit mods_uart_exit(void)
+void mods_uart_exit(void)
 {
 	int ret;
 
