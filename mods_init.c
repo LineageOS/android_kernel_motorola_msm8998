@@ -11,7 +11,7 @@
  * GNU General Public License for more details.
  *
  */
-#define pr_fmt(fmt) "INI: " fmt
+#define pr_fmt(fmt) "MODS_INIT: " fmt
 
 #define CREATE_TRACE_POINTS
 #include "greybus.h"
