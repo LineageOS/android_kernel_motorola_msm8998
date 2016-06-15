@@ -232,7 +232,7 @@ int __init muc_core_init(void)
 	return 0;
 }
 
-void __exit muc_core_exit(void)
+void muc_core_exit(void)
 {
 	platform_driver_unregister(&muc_driver);
 }
