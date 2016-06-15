@@ -991,7 +991,7 @@ int __init muc_spi_init(void)
 	return err;
 }
 
-void __exit muc_spi_exit(void)
+void muc_spi_exit(void)
 {
 	spi_unregister_driver(&muc_spi_driver);
 	_deallocate_buffers();
