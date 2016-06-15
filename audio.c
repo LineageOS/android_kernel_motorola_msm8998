@@ -385,6 +385,7 @@ static int gb_audio_register_mods_codec(struct platform_driver *plat)
 
 	err = platform_device_register(&snd_codec.codec_dev);
 	if (err) {
+		platform_driver_unregister(plat);
 		pr_err("mods codec platform dev register failed\n");
 		return -EINVAL;
 	}
