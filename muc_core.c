@@ -228,8 +228,7 @@ static struct platform_driver muc_driver = {
 
 int __init muc_core_init(void)
 {
-	platform_driver_register(&muc_driver);
-	return 0;
+	return platform_driver_register(&muc_driver);
 }
 
 void muc_core_exit(void)
