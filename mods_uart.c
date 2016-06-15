@@ -684,12 +684,16 @@ int __init mods_uart_init(void)
 	int ret;
 
 	ret = tty_register_ldisc(N_MODS_UART, &mods_uart_ldisc);
-	if (ret < 0) {
+	if (ret) {
 		pr_err("%s: ldisc registration failed: %d\n", __func__, ret);
 		return ret;
 	}
 
-	return platform_driver_register(&mods_uart_driver);
+	ret = platform_driver_register(&mods_uart_driver);
+	if (ret)
+		tty_unregister_ldisc(N_MODS_UART);
+
+	return ret;
 }
 
 void mods_uart_exit(void)
