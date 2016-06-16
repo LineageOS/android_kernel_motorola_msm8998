@@ -97,6 +97,7 @@ struct misc_report_mod_error {
 
 /* integer type */
 #define V4L2_HAL_EXT_CID_CAPS		(CID_V4L2_HAL_CLASS_BASE + 1)
+#define V4L2_HAL_EXT_CID_ONLINE_CAPS	(CID_V4L2_HAL_CLASS_BASE + 2)
 
 /* Pixel formats */
 #define V4L2_PIX_FMT_MODS_META		v4l2_fourcc('M','E','T','A')
