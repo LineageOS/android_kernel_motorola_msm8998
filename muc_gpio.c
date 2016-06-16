@@ -31,14 +31,15 @@ static void do_muc_ff_reset(struct work_struct *work);
 static int muc_attach_notifier_call_chain(unsigned long val)
 {
 	int ret;
+	struct muc_data *cd = muc_misc_data;
 
 	/* Log the new state and interrupts since last change in state */
-	if (muc_misc_data) {
-		pr_info("muc_attach_state: val = %lu intr = %d b+fault = %d\n",
-				val, muc_misc_data->intr_count,
-				muc_misc_data->bplus_fault_cnt);
-		muc_misc_data->bplus_fault_cnt = 0;
-		muc_misc_data->intr_count = 0;
+	if (cd) {
+		pr_info("muc_attach_%s: val = %lu intr = %d b+fault = %d\n",
+				cd->det_testmode ? "TESTMODE" : "state",
+				val, cd->intr_count, cd->bplus_fault_cnt);
+		cd->bplus_fault_cnt = 0;
+		cd->intr_count = 0;
 	}
 
 	ret  = blocking_notifier_call_chain(&muc_attach_chain_head,
@@ -393,8 +394,11 @@ int muc_intr_setup(struct muc_data *cdata, struct device *dev)
 
 void muc_intr_destroy(struct muc_data *cdata, struct device *dev)
 {
-	disable_irq_wake(cdata->irq);
-	disable_irq(cdata->irq);
+
+	if (!cdata->det_testmode) {
+		disable_irq_wake(cdata->irq);
+		disable_irq(cdata->irq);
+	}
 
 	if (gpio_is_valid(cdata->gpios[MUC_GPIO_BPLUS_FAULT_N])) {
 		disable_irq_wake(cdata->bplus_fault_irq);
@@ -760,9 +764,11 @@ static void do_muc_ff_reset(struct work_struct *work)
 	/* In order to provide reset / force flash, need to control the CC pin,
 	 * which means free/disable the IRQ, and set as an output low.
 	 */
-	disable_irq_wake(cd->irq);
-	disable_irq(cd->irq);
-	devm_free_irq(cd->dev, cd->irq, cd);
+	if (!cd->det_testmode) {
+		disable_irq_wake(cd->irq);
+		disable_irq(cd->irq);
+		devm_free_irq(cd->dev, cd->irq, cd);
+	}
 
 	/* Send force removal before resetting the muc */
 	ret = muc_attach_notifier_call_chain(0);
@@ -790,15 +796,17 @@ static void do_muc_ff_reset(struct work_struct *work)
 		gpio_direction_input(cd->gpios[MUC_GPIO_DET_N]);
 
 	/* Re-setup the IRQ */
-	flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
-	ret = devm_request_threaded_irq(cd->dev, cd->irq, NULL, muc_isr,
-				   flags, "muc_ctrl", cd);
-	if (ret) {
-		pr_err("%s: Failed re-request IRQ!\n", __func__);
-		BUG();
+	if (!cd->det_testmode) {
+		flags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
+			IRQF_ONESHOT;
+		ret = devm_request_threaded_irq(cd->dev, cd->irq, NULL,
+					muc_isr, flags, "muc_ctrl", cd);
+		if (ret) {
+			pr_err("%s: Failed re-request IRQ!\n", __func__);
+			BUG();
+		}
+		enable_irq_wake(cd->irq);
 	}
-	enable_irq_wake(cd->irq);
-
 	/* Reset from FF simply does the disable sequence */
 	if (rw->do_reset) {
 		muc_seq(cd, cd->dis_seq, cd->dis_seq_len);
@@ -930,4 +938,20 @@ void muc_soft_reset(void)
 
 	INIT_DELAYED_WORK(dw, do_muc_soft_reset);
 	queue_delayed_work(muc_misc_data->attach_wq, dw, 0);
+}
+
+void muc_force_detect(u32 val)
+{
+	struct muc_data *cd = muc_misc_data;
+
+	if (!cd->det_testmode) {
+		cd->det_testmode = true;
+		disable_irq_wake(cd->irq);
+		disable_irq(cd->irq);
+		devm_free_irq(cd->dev, cd->irq, cd);
+	}
+
+	gpio_direction_output(cd->gpios[MUC_GPIO_DET_N], !val);
+
+	muc_isr(cd->irq, cd);
 }

@@ -2665,6 +2665,30 @@ static ssize_t flashmode_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(flashmode);
 
+static ssize_t forcedetect_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	u32 val;
+
+	if (unlikely(!muc_core_probed()))
+		return -ENODEV;
+
+	if (kstrtou32(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	val = !!val;
+
+	dev_info(dev, "forcedetect: %s\n", val?"detect":"undetect");
+	/* Add taint for evil user */
+	add_taint(TAINT_USER, LOCKDEP_STILL_OK);
+
+	muc_force_detect(val);
+
+	return count;
+}
+static DEVICE_ATTR_WO(forcedetect);
+
 static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -2722,6 +2746,7 @@ static DEVICE_ATTR_WO(recovery_mode);
 
 static struct attribute *muc_svc_base_attrs[] = {
 	&dev_attr_flashmode.attr,
+	&dev_attr_forcedetect.attr,
 	&dev_attr_reset.attr,
 	&dev_attr_recovery_mode.attr,
 	NULL,
