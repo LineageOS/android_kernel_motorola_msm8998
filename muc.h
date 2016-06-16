@@ -123,6 +123,8 @@ struct muc_data {
 	/* BPLUS Fault Interrupts */
 	int bplus_fault_irq;
 	int bplus_fault_cnt;
+
+	bool det_testmode;
 };
 
 /* Global functions */
@@ -141,6 +143,7 @@ void muc_register_spi(void);
 void muc_register_spi_flash(void);
 void muc_deregister_spi_flash(void);
 void muc_register_i2c(void);
+void muc_force_detect(u32 val);
 /* Global variables */
 extern struct muc_data *muc_misc_data;
 
