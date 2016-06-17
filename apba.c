@@ -255,6 +255,7 @@ static void apba_handle_pm_status_not(struct mhb_hdr *hdr, uint8_t *payload,
 		pr_info("APBE: disconnected\n");
 		mods_slave_ctrl_power(g_ctrl->master_intf,
 			MB_CONTROL_SLAVE_POWER_OFF, MB_CONTROL_SLAVE_MASK_APBE);
+		apba_send_kobj_uevent("APBA_EVENT=PEER_DISCONNECTED");
 		break;
 	default:
 		pr_err("%s: Invalid reason=%d.\n", __func__, not->status);
