@@ -35,6 +35,7 @@
 #define CTRL_MAX_INT64 0x7FFFFFFFFFFFFFFFLL
 
 #define CTRL_STRING_MAX_LEN 64
+#define CTRL_CUSTOM_PARAM_MAX_LEN 256
 
 /* camera_ext predefined controls
  * These objects cannot be constant because they will be updated by data from
@@ -1649,6 +1650,15 @@ static struct v4l2_ctrl_config zsl_buffer_depth = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config custom_parameter = {
+	.id = CAM_EXT_CID_CUSTOM_PARAMETER,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.max = CTRL_CUSTOM_PARAM_MAX_LEN - 1,
+	.name = "custom end-to-end parameter string",
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1784,6 +1794,7 @@ __ITEM(VIDEO_RECORD_HINT, video_record_hint),
 __ITEM(RAW_TO_YUV_GAIN, raw_to_yuv_gain),
 __ITEM(EFFECT_MODE_EXT, effect_mode_ext),
 __ITEM(ZSL_BUFFER_DEPTH, zsl_buffer_depth),
+__ITEM(CUSTOM_PARAMETER, custom_parameter),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
