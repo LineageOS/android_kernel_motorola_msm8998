@@ -8832,27 +8832,9 @@ void sched_offline_group(struct task_group *tg)
 	spin_unlock_irqrestore(&task_group_lock, flags);
 }
 
-/* change task's runqueue when it moves between groups.
- *	The caller of this function should have put the task in its new group
- *	by now. This function just updates tsk->se.cfs_rq and tsk->se.parent to
- *	reflect its new group.
- */
-void sched_move_task(struct task_struct *tsk)
+static void sched_change_group(struct task_struct *tsk, int type)
 {
 	struct task_group *tg;
-	int queued, running;
-	unsigned long flags;
-	struct rq *rq;
-
-	rq = task_rq_lock(tsk, &flags);
-
-	running = task_current(rq, tsk);
-	queued = task_on_rq_queued(tsk);
-
-	if (queued)
-		dequeue_task(rq, tsk, DEQUEUE_SAVE | DEQUEUE_MOVE);
-	if (unlikely(running))
-		put_prev_task(rq, tsk);
 
 	/*
 	 * All callers are synchronized by task_rq_lock(); we do not use RCU
@@ -8865,11 +8847,37 @@ void sched_move_task(struct task_struct *tsk)
 	tsk->sched_task_group = tg;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	if (tsk->sched_class->task_move_group)
-		tsk->sched_class->task_move_group(tsk);
+	if (tsk->sched_class->task_change_group)
+		tsk->sched_class->task_change_group(tsk, type);
 	else
 #endif
 		set_task_rq(tsk, task_cpu(tsk));
+}
+
+/*
+ * Change task's runqueue when it moves between groups.
+ *
+ * The caller of this function should have put the task in its new group by
+ * now. This function just updates tsk->se.cfs_rq and tsk->se.parent to reflect
+ * its new group.
+ */
+void sched_move_task(struct task_struct *tsk)
+{
+	int queued, running;
+	unsigned long flags;
+	struct rq *rq;
+
+	rq = task_rq_lock(tsk, &flags);
+
+	running = task_current(rq, tsk);
+	queued = task_on_rq_queued(tsk);
+
+	if (queued)
+		dequeue_task(rq, tsk, DEQUEUE_SAVE);
+	if (unlikely(running))
+		put_prev_task(rq, tsk);
+
+	sched_change_group(tsk, TASK_MOVE_GROUP);
 
 	if (unlikely(running))
 		tsk->sched_class->set_curr_task(rq);
@@ -9306,9 +9314,20 @@ static void cpu_cgroup_css_free(struct cgroup_subsys_state *css)
 	sched_free_group(tg);
 }
 
+/*
+ * This is called before wake_up_new_task(), therefore we really only
+ * have to set its group bits, all the other stuff does not apply.
+ */
 static void cpu_cgroup_fork(struct task_struct *task, void *private)
 {
-	sched_move_task(task);
+	unsigned long flags;
+	struct rq *rq;
+
+	rq = task_rq_lock(task, &flags);
+
+	sched_change_group(task, TASK_SET_GROUP);
+
+	task_rq_unlock(rq, task, &flags);
 }
 
 static int cpu_cgroup_can_attach(struct cgroup_taskset *tset)
