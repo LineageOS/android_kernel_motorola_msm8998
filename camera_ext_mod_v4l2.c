@@ -808,6 +808,7 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 	cam_dev->vdev_mod->ioctl_ops = &camera_ext_v4l2_ioctl_ops;
 	cam_dev->vdev_mod->vfl_type = VFL_TYPE_GRABBER;
 
+	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 	retval = video_register_device(cam_dev->vdev_mod,
 				VFL_TYPE_GRABBER, -1);
 	if (retval) {
@@ -824,7 +825,6 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 	}
 
 	camera_ext_get(cam_dev);
-	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 	kobject_uevent(&cam_dev->vdev_mod->dev.kobj, KOBJ_ADD);
 
 	return retval;
