@@ -586,7 +586,6 @@ static int mod_v4l2_close(struct file *file)
 	--g_v4l2_data->mod_users;
 	if (g_v4l2_data->mod_users == 0) {
 		vb2_queue_release(&g_v4l2_data->strm.vb2_q);
-		mutex_destroy(&g_v4l2_data->strm.list_lock);
 		mod_v4l2_reg_control(false);
 		g_open_mode = CAMERA_EXT_BOOTMODE_NORMAL;
 		if (cam_dev->state == CAMERA_EXT_READY)
@@ -878,6 +877,7 @@ static int camera_ext_v4l2_probe(struct platform_device *pdev)
 
 static int camera_ext_v4l2_remove(struct platform_device *pdev)
 {
+	mutex_destroy(&g_v4l2_data->strm.list_lock);
 	g_v4l2_data = NULL;
 
 	return 0;
