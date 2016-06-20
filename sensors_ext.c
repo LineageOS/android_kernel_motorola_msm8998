@@ -89,6 +89,12 @@ static int gb_sensors_ext_event_receive(u8 type, struct gb_operation *op)
 	struct gb_message *request;
 	int ret;
 
+	if (!connection->private) {
+		dev_err(&connection->bundle->dev,
+			"sensor ext initialization incomplete\n");
+		return -EAGAIN;
+	}
+
 	mutex_lock(&sensors_ext->mlock);
 
 	if (type != GB_SENSORS_EXT_TYPE_EVENT) {
@@ -298,7 +304,6 @@ static int gb_sensors_ext_connection_init(struct gb_connection *connection)
 
 	kref_init(&sensors_ext->refcount);
 	sensors_ext->connection = connection;
-	connection->private = sensors_ext;
 	gb_connection_get(sensors_ext->connection);
 
 	mutex_init(&sensors_ext->mlock);
@@ -307,6 +312,8 @@ static int gb_sensors_ext_connection_init(struct gb_connection *connection)
 	ret = gb_sensors_ext_setup(sensors_ext);
 	if (ret)
 		goto error_setup;
+
+	connection->private = sensors_ext;
 
 	dev_info(&connection->bundle->dev, "module_minor=%d, count = %d\n",
 		 connection->module_minor, sensors_ext->sensors_cnt);
