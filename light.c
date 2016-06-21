@@ -844,10 +844,13 @@ static void __gb_lights_led_unregister(struct gb_channel *channel)
 	struct led_classdev *cdev = get_channel_cdev(channel);
 
 	if (!channel->is_registered)
-		return;
+		goto free_name;
 
 	led_classdev_unregister(cdev);
 	channel->led = NULL;
+
+free_name:
+	kfree(cdev->name);
 }
 
 static void gb_lights_channel_unregister(struct gb_channel *channel)
