@@ -670,9 +670,9 @@ static int v4l2_hal_close(struct file *file)
 	struct v4l2_stream_data *strm = FH_TO_STREAM(file->private_data);
 	unsigned int id = strm->id;
 
+	vb2_queue_release(&strm->vb2_q);
 	v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_CLOSED, 0, NULL);
 
-	vb2_queue_release(&strm->vb2_q);
 	mutex_lock(&data->lock);
 	kfree(strm->bdata);
 	v4l2_fh_del(&strm->fh);
