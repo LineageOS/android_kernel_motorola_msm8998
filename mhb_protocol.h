@@ -221,11 +221,11 @@ enum MHB_ADDR {
 #define MHB_TYPE_DIAG_CONTROL_REQ (4)
 #define MHB_TYPE_DIAG_CONTROL_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_COMMAND_REQ)
 
-#define MHB_TYPE_DIAG_REG_LOG_APBE_REQ (5)
-#define MHB_TYPE_DIAG_REG_LOG_APBE_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_REG_LOG_APBE_REQ)
+#define MHB_TYPE_DIAG_REG_LOG_REQ (5)
+#define MHB_TYPE_DIAG_REG_LOG_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_REG_LOG_REQ)
 
-#define MHB_TYPE_DIAG_REG_LOG_APBA_REQ (6)
-#define MHB_TYPE_DIAG_REG_LOG_APBA_RSP (MHB_RSP_MASK|MHB_TYPE_DIAG_REG_LOG_APBA_REQ)
+#define MHB_TYPE_DIAG_ID_REQ (6)
+#define MHB_TYPE_DIAG_ID_NOT (MHB_NOT_MASK|MHB_TYPE_DIAG_ID_REQ)
 
 /* result */
 enum MHB_RESULT {
@@ -348,49 +348,77 @@ struct mhb_unipro_stats_not {
 } __attribute__((packed));
 
 /* CDSI */
+enum mhb_csi_vsync_mode {
+    MHB_CDSI_VSYNC_MODE_NONE = 0x00,
+    MHB_CDSI_VSYNC_MODE_GPIO = 0x01,
+    MHB_CDSI_VSYNC_MODE_DCS  = 0x02,
+};
+
+enum mhb_cdsi_eot_mode {
+    MHB_CDSI_EOT_MODE_NONE   = 0x00,
+    MHB_CDSI_EOT_MODE_APPEND = 0x01,
+};
+
+enum mhb_cdsi_traffic_mode {
+    MHB_CDSI_TRAFFIC_MODE_NON_BURST_SYNC_PULSE = 0x00,
+    MHB_CDSI_TRAFFIC_MODE_NON_BURST_SYNC_EVENT = 0x01,
+    MHB_CDSI_TRAFFIC_MODE_BURST                = 0x02,
+};
 
 /* config */
 struct mhb_cdsi_config {
-	/* Common */
 	uint8_t direction; /* RX: 0 (CDSI -> UniPro), TX: 1 (UniPro -> CDSI) */
 	uint8_t mode;                    /* DSI: 0, CSI: 1 */
+
 	uint8_t rx_num_lanes;            /* 1 to 4 */
 	uint8_t tx_num_lanes;            /* 1 to 4 */
-	uint32_t rx_mbits_per_lane;      /* Mbps-per-lane */
-	uint32_t tx_mbits_per_lane;      /* Mbps-per-lane */
-	/* RX only */
+	uint32_t rx_bits_per_lane;       /* bits-per-lane */
+	uint32_t tx_bits_per_lane;       /* bits-per-lane */
+
 	uint32_t hs_rx_timeout;
-	/* TX only */
+
 	uint32_t pll_frs;
 	uint32_t pll_prd;
 	uint32_t pll_fbd;
+
 	uint32_t framerate;              /* frames-per-second */
+
 	uint32_t width;                  /* pixels */
 	uint32_t height;                 /* pixels */
+	uint16_t physical_width;         /* millimeters */
+	uint16_t physical_height;        /* millimeters */
+
 	uint32_t bpp;                    /* bits-per-pixel */
+
 	uint32_t vss_control_payload;
 	uint8_t bta_enabled;             /* 0: disabled, 1: enabled */
 	uint8_t continuous_clock;        /* 0: off, 1: on */
 	uint8_t blank_packet_enabled;
-	uint8_t video_mode;              /* 0: video, 1: command */
+	uint8_t video_mode;              /* 0: command, 1: video */
 	uint8_t color_bar_enabled;       /* 0: disabled */
 	uint8_t keep_alive;              /* 0: disabled */
+
 	uint8_t t_clk_pre;               /* nanoseconds */
 	uint8_t t_clk_post;              /* nanoseconds */
-	/* CSI only */
-	/* DSI only */
+
 	uint8_t horizontal_front_porch;  /* pixels */
 	uint8_t horizontal_back_porch;   /* pixels */
 	uint8_t horizontal_pulse_width;  /* pixels */
 	uint8_t horizontal_sync_skew;    /* pixels */
 	uint8_t horizontal_left_border;  /* pixels */
 	uint8_t horizontal_right_border; /* pixels */
+
 	uint8_t vertical_front_porch;    /* lines */
 	uint8_t vertical_back_porch;     /* lines */
 	uint8_t vertical_pulse_width;    /* lines */
 	uint8_t vertical_top_border;     /* lines */
 	uint8_t vertical_bottom_border;  /* lines */
-	uint8_t vsync_mode;              /* 0: none, 1: gpio, 2: dcs */
+
+	uint8_t vsync_mode;              /* mhb_csi_vsync_mode */
+	uint8_t eot_mode;                /* mhb_cdsi_eot_mode */
+	uint8_t traffic_mode;            /* mhb_cdsi_traffic_mode */
+
+	uint8_t reserved[6];
 } __attribute__((packed));
 
 struct mhb_cdsi_config_req {
@@ -438,7 +466,7 @@ struct mhb_cdsi_cmd {
 	uint8_t ctype;  /* MHB_CTYPE_* */
 	uint8_t dtype;  /* MHB_DTYPE_* */
 	uint16_t length;
-	uint32_t delay; /* minimum milliseconds to wait after command */
+	uint32_t delay; /* minimum microseconds to wait after command */
 	union {
 		uint16_t spdata;
 		uint32_t lpdata[2];
@@ -545,5 +573,16 @@ struct mhb_diag_control_req {
 #define MHB_DIAG_CONTROL_NONE           0
 #define MHB_DIAG_CONTROL_REGLOG_FIFO    1  /* Set the reglog mode to FIFO. */
 #define MHB_DIAG_CONTROL_REGLOG_STACK   2  /* Set the reglog mode to stack. */
+
+struct mhb_diag_id_not {
+	uint32_t unipro_mid;
+	uint32_t unipro_pid;
+	uint32_t vid;
+	uint32_t pid;
+	uint16_t major_version;
+	uint16_t minor_version;
+	char build[32];
+	char reserved[32];
+} __attribute__((packed));
 
 #endif

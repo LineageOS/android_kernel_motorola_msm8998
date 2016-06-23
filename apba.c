@@ -182,6 +182,8 @@ struct apba_ctrl {
 	struct notifier_block attach_nb;
 	unsigned long present;
 	struct workqueue_struct *wq;
+	struct mhb_diag_id_not apba_ids;
+	struct mhb_diag_id_not apbe_ids;
 } *g_ctrl;
 
 #define APBA_LOG_SIZE	SZ_16K
@@ -579,6 +581,24 @@ static void apba_handle_diag_mode_rsp(struct mhb_hdr *hdr, uint8_t *payload,
 	complete(&g_ctrl->mode_comp);
 }
 
+static void apba_handle_diag_id_not(struct mhb_hdr *hdr, uint8_t *payload,
+		size_t len)
+{
+	struct mhb_diag_id_not *src = (struct mhb_diag_id_not *)payload;
+        struct mhb_diag_id_not *dest =
+	    (hdr->addr == MHB_ADDR_DIAG ? &g_ctrl->apba_ids : &g_ctrl->apbe_ids);
+
+	if (len == sizeof(struct mhb_diag_id_not)) {
+		dest->unipro_mid = le32_to_cpu(src->unipro_mid);
+		dest->unipro_pid = le32_to_cpu(src->unipro_pid);
+		dest->vid = le32_to_cpu(src->vid);
+		dest->pid = le32_to_cpu(src->pid);
+		dest->major_version = le16_to_cpu(src->major_version);
+		dest->minor_version = le16_to_cpu(src->minor_version);
+		memcpy(dest->build, src->build, sizeof(src->build));
+	}
+}
+
 static void apba_handle_diag_message(struct mhb_hdr *hdr, uint8_t *payload,
 		size_t len)
 {
@@ -599,6 +619,9 @@ static void apba_handle_diag_message(struct mhb_hdr *hdr, uint8_t *payload,
 		break;
 	case MHB_TYPE_DIAG_MODE_RSP:
 		apba_handle_diag_mode_rsp(hdr, payload, len);
+		break;
+	case MHB_TYPE_DIAG_ID_NOT:
+		apba_handle_diag_id_not(hdr, payload, len);
 		break;
 	default:
 		pr_err("%s: Invalid type=0x%02x.\n", __func__, hdr->type);
@@ -1443,6 +1466,41 @@ static ssize_t apba_baud_store(struct device *dev,
 
 static DEVICE_ATTR_RW(apba_baud);
 
+static ssize_t print_ids(char *buf, struct mhb_diag_id_not *not)
+{
+	return scnprintf(buf, PAGE_SIZE,
+			 "%08x:%08x:%08x:%08x %d.%d %s\n",
+			 not->unipro_mid,
+			 not->unipro_pid,
+			 not->vid,
+			 not->pid,
+			 not->major_version,
+			 not->minor_version,
+			 not->build);
+}
+
+static ssize_t apba_ids_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return print_ids(buf, &g_ctrl->apba_ids);
+}
+
+static DEVICE_ATTR_RO(apba_ids);
+
+static ssize_t apbe_ids_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!g_ctrl)
+		return -ENODEV;
+
+	return print_ids(buf, &g_ctrl->apbe_ids);
+}
+
+static DEVICE_ATTR_RO(apbe_ids);
+
 static ssize_t apba_log_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1806,8 +1864,10 @@ static struct attribute *apba_attrs[] = {
 	&dev_attr_flash_file.attr,
 	&dev_attr_apba_enable.attr,
 	&dev_attr_apba_baud.attr,
+	&dev_attr_apba_ids.attr,
 	&dev_attr_apba_log.attr,
 	&dev_attr_apba_mode.attr,
+	&dev_attr_apbe_ids.attr,
 	&dev_attr_apbe_log.attr,
 	&dev_attr_apbe_power.attr,
 	&dev_attr_apbe_status.attr,
