@@ -227,6 +227,7 @@ EXPORT_SYMBOL_GPL(gb_protocol_get_version);
 int gb_protocol_version_negotiate(struct gb_connection *connection)
 {
 	struct gb_protocol *protocol = connection->protocol;
+	struct gb_protocol *old_protocol;
 	int ret;
 
 	ret = gb_protocol_get_version(connection);
@@ -244,8 +245,8 @@ int gb_protocol_version_negotiate(struct gb_connection *connection)
 		protocol->major, protocol->minor,
 		connection->module_major, connection->module_minor);
 
-	/* Drop reference to the old module */
-	gb_protocol_put(protocol);
+	/* Save off old protocol in case we find a new match */
+	old_protocol = protocol;
 
 	/* Try to find a matching major */
 	protocol = gb_protocol_get_latest(protocol->id,
@@ -253,6 +254,9 @@ int gb_protocol_version_negotiate(struct gb_connection *connection)
 					true);
 	if (!protocol)
 		return -EPROTONOSUPPORT;
+
+	/* Drop reference to the old module */
+	gb_protocol_put(old_protocol);
 
 	connection->protocol = protocol;
 
