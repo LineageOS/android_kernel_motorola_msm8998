@@ -1138,6 +1138,11 @@ static int gb_lights_event_recv(u8 type, struct gb_operation *op)
 	payload = request->payload;
 	light_id = payload->light_id;
 
+	if (!glights) {
+		dev_err(dev, "lights device not initialized\n");
+		return -EAGAIN;
+	}
+
 	if (light_id >= glights->lights_count || !&glights->lights[light_id]) {
 		dev_err(dev, "Event received for unconfigured light id: %d\n",
 			light_id);
@@ -1168,7 +1173,6 @@ static int gb_lights_connection_init(struct gb_connection *connection)
 		return -ENOMEM;
 
 	glights->connection = connection;
-	connection->private = glights;
 
 	mutex_init(&glights->lights_lock);
 
@@ -1179,6 +1183,8 @@ static int gb_lights_connection_init(struct gb_connection *connection)
 	ret = gb_lights_setup(glights);
 	if (ret < 0)
 		goto out;
+
+	connection->private = glights;
 
 	return 0;
 
