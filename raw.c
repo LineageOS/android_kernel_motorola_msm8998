@@ -139,6 +139,11 @@ static int gb_raw_receive(u8 type, struct gb_operation *op)
 	struct gb_raw_send_request *receive;
 	u32 len;
 
+	if (!raw) {
+		dev_err(dev, "raw device initialization incomplete\n");
+		return -EAGAIN;
+	}
+
 	if (type != GB_RAW_TYPE_SEND) {
 		dev_err(dev, "unknown request type %d\n", type);
 		return -EINVAL;
@@ -210,7 +215,6 @@ static int gb_raw_connection_init(struct gb_connection *connection)
 
 	kref_init(&raw->kref);
 	raw->connection = connection;
-	connection->private = raw;
 	gb_connection_get(raw->connection);
 	raw->state = GB_RAW_READY;
 
@@ -250,6 +254,7 @@ static int gb_raw_connection_init(struct gb_connection *connection)
 		goto error_device;
 
 	dev_set_drvdata(raw->device, raw);
+	connection->private = raw;
 
 	return 0;
 
