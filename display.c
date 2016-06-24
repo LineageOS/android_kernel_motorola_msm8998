@@ -401,6 +401,12 @@ static int gb_display_event_recv(u8 type, struct gb_operation *op)
 	struct gb_display_device *disp = connection->private;
 	int ret = -EINVAL;
 
+	if (!disp) {
+		dev_err(&connection->bundle->dev,
+			"%s: display device not yet initialized\n", __func__);
+		return -EAGAIN;
+	}
+
 	if (op->request->payload_size != sizeof(*request)) {
 		dev_err(&connection->bundle->dev,
 			"%s: illegal size of gb_display_notification_request (%zu != %zu)\n",
@@ -457,7 +463,6 @@ static int gb_display_connection_init(struct gb_connection *connection)
 		return -ENOMEM;
 
 	disp->connection = connection;
-	connection->private = disp;
 
 	disp->minor = ida_simple_get(&minors, 0, 0, GFP_KERNEL);
 	if (disp->minor < 0) {
@@ -470,6 +475,8 @@ static int gb_display_connection_init(struct gb_connection *connection)
 		retval = PTR_ERR(dev);
 		goto err_ida_remove;
 	}
+
+	connection->private = disp;
 	disp->dev = dev;
 
 	mod_display_comm_ops.data = disp;
