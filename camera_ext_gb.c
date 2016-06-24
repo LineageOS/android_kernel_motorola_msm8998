@@ -1090,6 +1090,11 @@ static int gb_camera_ext_async_msg_receive(u8 type, struct gb_operation *op)
 	}
 
 	cam_dev = op->connection->private;
+	if (!cam_dev) {
+		pr_err("%s: cam_dev device not initialized\n", __func__);
+		return -EAGAIN;
+	}
+
 	msg_hdr = op->request->payload;
 	msg_type = le32_to_cpu(msg_hdr->type);
 	msg_data_size = op->request->payload_size - sizeof(*msg_hdr);
@@ -1133,7 +1138,6 @@ static int gb_camera_ext_connection_init(struct gb_connection *connection)
 
 	kref_init(&cam->kref);
 	cam->connection = connection;
-	connection->private = cam;
 	gb_connection_get(cam->connection);
 	cam->state = CAMERA_EXT_READY;
 
@@ -1142,8 +1146,12 @@ static int gb_camera_ext_connection_init(struct gb_connection *connection)
 		pr_err("failed to init v4l2 for mod control\n");
 		gb_connection_put(cam->connection);
 		kfree(cam);
+		goto exit;
 	}
 
+	connection->private = cam;
+
+exit:
 	return retval;
 }
 
