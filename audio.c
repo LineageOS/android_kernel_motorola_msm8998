@@ -138,7 +138,6 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 
 	mutex_lock(&snd_codec.lock);
 	snd_codec.mods_aud_connection = connection;
-	connection->private = &snd_codec;
 
 	get_vol = kmalloc(sizeof(*get_vol), GFP_KERNEL);
 	if (!get_vol) {
@@ -233,6 +232,8 @@ static int gb_mods_audio_connection_init(struct gb_connection *connection)
 	if (snd_codec.report_devices && snd_codec.mgmt_connection)
 		snd_codec.report_devices(&snd_codec);
 	mutex_unlock(&snd_codec.lock);
+
+	connection->private = &snd_codec;
 
 	return 0;
 
@@ -347,6 +348,11 @@ static int gb_mods_audio_event_recv(u8 type, struct gb_operation *op)
 		dev_err(&connection->bundle->dev, "Invalid request type: %d\n",
 			type);
 		return -EINVAL;
+	}
+
+	if (!codec) {
+		dev_err(&connection->bundle->dev, "snd_codec not yet initialized\n");
+		return -EAGAIN;
 	}
 
 	if (op->request->payload_size < sizeof(*req)) {
