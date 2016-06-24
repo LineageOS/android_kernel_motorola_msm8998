@@ -203,6 +203,13 @@ static int gb_firmware_ready_to_boot(struct gb_operation *op)
 
 static int gb_firmware_request_recv(u8 type, struct gb_operation *op)
 {
+
+	if (!op->connection->private) {
+		dev_err(&op->connection->bundle->dev,
+			"firmware device not yet initialized\n");
+		return -EAGAIN;
+	}
+
 	switch (type) {
 	case GB_FIRMWARE_TYPE_FIRMWARE_SIZE:
 		return gb_firmware_size_request(op);
