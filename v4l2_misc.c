@@ -143,8 +143,18 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	}
 
 	misc_cmd = (struct misc_read_cmd *)ubuf;
-	misc_cmd->stream = target_cmd->stream;
-	misc_cmd->cmd = target_cmd->cmd;
+	if (copy_to_user((void __user *)&misc_cmd->stream, &target_cmd->stream,
+			 sizeof(target_cmd->stream))) {
+		pr_err("%s: failed to copy stream id to user\n", __func__);
+		goto errout;
+	}
+
+	if (copy_to_user((void __user *)&misc_cmd->cmd, &target_cmd->cmd,
+			 sizeof(target_cmd->cmd))) {
+		pr_err("%s: failed to copy cmd to user\n", __func__);
+		goto errout;
+	}
+
 	if (target_cmd->data == NULL)
 		return copy_size;
 
