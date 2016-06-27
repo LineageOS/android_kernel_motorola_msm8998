@@ -25,7 +25,7 @@ struct gb_display_device {
 
 /* Version of the Greybus display protocol we support */
 #define	GB_DISPLAY_VERSION_MAJOR		0x00
-#define	GB_DISPLAY_VERSION_MINOR		0x01
+#define	GB_DISPLAY_VERSION_MINOR		0x02
 
 /* Greybus Display operation types */
 #define	GB_DISPLAY_HOST_READY			0x02
