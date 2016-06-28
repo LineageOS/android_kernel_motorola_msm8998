@@ -1494,6 +1494,10 @@ static struct v4l2_ctrl_config ae_mode_ext = {
 static const u64 scene_mode_items_ext[] = {
 	CAM_EXT_SCENE_MODE_EXT_NULL,
 	CAM_EXT_SCENE_MODE_EXT_AUTO_HDR,
+	CAM_EXT_SCENE_MODE_EXT_BACKLIGHT_PORTRAIT,
+	CAM_EXT_SCENE_MODE_EXT_CLOSEUP,
+	CAM_EXT_SCENE_MODE_EXT_DUSK_DAWN,
+	CAM_EXT_SCENE_MODE_EXT_PET_PORTRAIT,
 };
 
 static struct v4l2_ctrl_config scene_mode_ext = {
@@ -1606,6 +1610,41 @@ static struct v4l2_ctrl_config raw_to_yuv_gain = {
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
 			| CAMERA_EXT_CTRL_FLAG_NEED_DEF
 			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+};
+
+static const u64 effect_mode_items_ext[] = {
+	CAM_EXT_EFFECT_MODE_EXT_NULL,
+	CAM_EXT_EFFECT_MODE_EXT_BLACK_BLUE,
+	CAM_EXT_EFFECT_MODE_EXT_PURE,
+	CAM_EXT_EFFECT_MODE_EXT_MIRROR,
+	CAM_EXT_EFFECT_MODE_EXT_BUBBLE,
+	CAM_EXT_EFFECT_MODE_EXT_NEON,
+	CAM_EXT_EFFECT_MODE_EXT_CARTOON,
+	CAM_EXT_EFFECT_MODE_EXT_SOFT,
+	CAM_EXT_EFFECT_MODE_EXT_DIORAMA,
+
+};
+
+static struct v4l2_ctrl_config effect_mode_ext = {
+	.id = CAM_EXT_CID_EFFECT_MODE_EXT,
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.name = "effect mode extension",
+	.max = CAM_EXT_EFFECT_MODE_EXT_MAX,
+	.qmenu_int = effect_mode_items_ext,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_NEED_MENU_MASK,
+};
+
+static struct v4l2_ctrl_config zsl_buffer_depth = {
+	.id = CAM_EXT_CID_ZSL_BUFFER_DEPTH,
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.name = "zsl buffer depth",
+	.max = CTRL_MAX_INT,
+	.step = 1,
+	.flags = CAMERA_EXT_CTRL_FLAG_NEED_STEP
+		| CAMERA_EXT_CTRL_FLAG_NEED_MIN
+		| CAMERA_EXT_CTRL_FLAG_NEED_MAX
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
 #define __ITEM(ID, item) \
@@ -1741,6 +1780,8 @@ __ITEM(SUPPLEMENTAL_KEY_MASK, supplemental_key_mask),
 __ITEM(GROUP_IND, group_ind),
 __ITEM(VIDEO_RECORD_HINT, video_record_hint),
 __ITEM(RAW_TO_YUV_GAIN, raw_to_yuv_gain),
+__ITEM(EFFECT_MODE_EXT, effect_mode_ext),
+__ITEM(ZSL_BUFFER_DEPTH, zsl_buffer_depth),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
