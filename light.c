@@ -764,6 +764,9 @@ static int gb_lights_channel_flash_config(struct gb_channel *channel)
 	if (ret < 0)
 		return ret;
 
+	if (!conf.intensity_step_uA)
+		return -EINVAL;
+
 	/*
 	 * Intensity constraints for flash related modes: flash, torch,
 	 * indicator.  They will be needed for v4l2 registration.
