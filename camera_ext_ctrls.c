@@ -1596,6 +1596,18 @@ static struct v4l2_ctrl_config video_record_hint = {
 	.flags = CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config raw_to_yuv_gain = {
+	.id = CAM_EXT_CID_RAW_TO_YUV_GAIN,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.name = "raw to yuv conversion gain",
+	.max = CAM_EXT_CTRL_FLOAT_STR_LEN - 1,
+	.step = 1,
+	.dims = {3},
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+			| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+			| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1728,6 +1740,7 @@ __ITEM(PHONE_VERSION, phone_version),
 __ITEM(SUPPLEMENTAL_KEY_MASK, supplemental_key_mask),
 __ITEM(GROUP_IND, group_ind),
 __ITEM(VIDEO_RECORD_HINT, video_record_hint),
+__ITEM(RAW_TO_YUV_GAIN, raw_to_yuv_gain),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
