@@ -41,6 +41,7 @@ struct mods_uart_err_stats {
 	uint32_t rx_crc;
 	uint32_t rx_timeout;
 	uint32_t rx_abort;
+	uint32_t rx_len;
 };
 
 struct mods_uart_data {
@@ -79,9 +80,11 @@ static ssize_t uart_stats_show(struct device *dev,
 	struct mods_uart_data *mud = platform_get_drvdata(pdev);
 
 	return scnprintf(buf, PAGE_SIZE,
-			 "tx err:%d, rx crc:%d, rx timeout:%d, rx abort:%d\n",
+			 "tx err:%d, rx crc:%d, rx timeout:%d, rx abort:%d, "
+			 "rx len:%d\n",
 			 mud->stats.tx_failure, mud->stats.rx_crc,
-			 mud->stats.rx_timeout, mud->stats.rx_abort);
+			 mud->stats.rx_timeout, mud->stats.rx_abort,
+			 mud->stats.rx_len);
 }
 
 static DEVICE_ATTR_RO(uart_stats);
@@ -569,6 +572,15 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 
 	hdr = (struct mhb_hdr *) mud->rx_data;
 	segment_size = le16_to_cpu(hdr->length);
+	if ((segment_size < sizeof(struct mhb_hdr) + sizeof(calc_crc)) ||
+	    (segment_size > MHB_MAX_MSG_SIZE)) {
+		mud->stats.rx_len++;
+		dev_err(dev, "%s: invalid len %zd\n", __func__, segment_size);
+
+		mud->rx_len = 0;
+		return 0;
+	}
+
 	content_size = segment_size - sizeof(calc_crc);
 
 	if (mud->rx_len < segment_size)
@@ -589,6 +601,8 @@ static int mods_uart_consume_segment(struct mods_uart_data *mud)
 		 * entire buf was technically received and parsed, return the
 		 * total count.
 		 */
+		mud->rx_len = 0;
+		return 0;
 	} else {
 		payload = ((uint8_t *)mud->rx_data) + sizeof(*hdr);
 		pr_debug("MHB RX: addr=%x, type=%x, result=%x, len=%zd\n",
