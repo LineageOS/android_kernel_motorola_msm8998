@@ -703,6 +703,7 @@ struct svc_op {
 	struct completion completion;
 	struct gb_message *request;
 	struct gb_message *response;
+	struct kref kref;
 	u16 msg_id;
 };
 
@@ -716,6 +717,52 @@ static inline size_t get_gb_msg_size(struct gb_message *msg)
 	return sizeof(*msg->header) + msg->payload_size;
 }
 
+static inline struct svc_op *svc_alloc_op(void)
+{
+	struct svc_op *op;
+
+	op = kzalloc(sizeof(*op), GFP_KERNEL);
+	if (!op)
+		return op;
+
+	kref_init(&op->kref);
+
+	return op;
+}
+
+static inline void svc_op_get_locked(struct svc_op *op)
+{
+	kref_get(&op->kref);
+}
+
+static inline void svc_op_get(struct svc_op *op)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&svc_ops_lock, flags);
+	svc_op_get_locked(op);
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
+}
+
+static void svc_op_kref_release(struct kref *kref)
+{
+	struct svc_op *op;
+
+	op = container_of(kref, struct svc_op, kref);
+	svc_gb_msg_free(op->request);
+	svc_gb_msg_free(op->response);
+	kfree(op);
+}
+
+static inline void svc_op_put(struct svc_op *op)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&svc_ops_lock, flags);
+	kref_put(&op->kref, svc_op_kref_release);
+	spin_unlock_irqrestore(&svc_ops_lock, flags);
+}
+
 static struct svc_op *svc_find_op(struct muc_svc_data *dd, uint16_t id)
 {
 	struct svc_op *e, *tmp;
@@ -723,8 +770,10 @@ static struct svc_op *svc_find_op(struct muc_svc_data *dd, uint16_t id)
 
 	spin_lock_irqsave(&svc_ops_lock, flags);
 	list_for_each_entry_safe(e, tmp, &dd->operations, entry)
-		if (e->msg_id == id)
+		if (e->msg_id == id) {
+			svc_op_get_locked(e);
 			goto found;
+		}
 	e = NULL;
 found:
 	spin_unlock_irqrestore(&svc_ops_lock, flags);
@@ -1232,11 +1281,15 @@ svc_gb_msg_recv(struct mods_dl_device *dld, uint8_t *data,
 		}
 
 		op->response = svc_gb_msg_alloc(MUC_SVC_RESPONSE_TYPE, payload_size);
-		if (!op->response)
+		if (!op->response) {
+			svc_op_put(op);
 			return -ENOMEM;
+		}
 
 		memcpy(op->response->header, data, msg_size);
 		complete(&op->completion);
+
+		svc_op_put(op);
 
 		return 0;
 	}
@@ -1261,7 +1314,7 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	uint16_t cycle;
 	unsigned long flags;
 
-	op = kzalloc(sizeof(*op), GFP_KERNEL);
+	op = svc_alloc_op();
 	if (!op)
 		return ERR_PTR(-ENOMEM);
 
@@ -1298,9 +1351,7 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 
 	/* If not waiting for response, we're done */
 	if (!response) {
-		svc_gb_msg_free(op->request);
-		kfree(op);
-
+		svc_op_put(op);
 		return NULL;
 	}
 
@@ -1320,18 +1371,17 @@ _svc_gb_msg_send_sync(struct mods_dl_device *dld, uint8_t *data, uint8_t type,
 	list_del(&op->entry);
 	spin_unlock_irqrestore(&svc_ops_lock, flags);
 
-	svc_gb_msg_free(op->request);
-	op->request = NULL;
-
 	msg = op->response;
-	kfree(op);
-
 	if (msg->header->result) {
 		int err = gb_operation_status_map(msg->header->result);
 
-		svc_gb_msg_free(msg);
+		svc_op_put(op);
 		return ERR_PTR(err);
 	}
+
+	/* We don't wish to free the response buffer yet */
+	op->response = NULL;
+	svc_op_put(op);
 
 	return msg;
 
@@ -1341,9 +1391,8 @@ remove_op:
 		list_del(&op->entry);
 	spin_unlock_irqrestore(&svc_ops_lock, flags);
 
-	svc_gb_msg_free(op->request);
 gb_msg_alloc:
-	kfree(op);
+	svc_op_put(op);
 
 	return ERR_PTR(ret);
 }
