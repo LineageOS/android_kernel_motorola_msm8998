@@ -525,7 +525,8 @@ static void apba_handle_unipro_stats_rsp(struct mhb_hdr *hdr,
 	if (hdr->result == MHB_RESULT_SUCCESS)
 		apba_handle_unipro_stats_not(hdr, payload, len);
 
-	complete(&g_ctrl->unipro_stats_comp);
+	if (!completion_done(&g_ctrl->unipro_stats_comp))
+		complete(&g_ctrl->unipro_stats_comp);
 }
 
 static void apba_handle_unipro_message(struct mhb_hdr *hdr, uint8_t *payload,
@@ -1835,14 +1836,13 @@ static ssize_t unipro_stats_show(struct device *dev,
 	if (!g_ctrl)
 		return -ENODEV;
 
-	if (apba_send_unipro_stats_req())
-		return -EIO;
-
-	if (!wait_for_completion_timeout(
+	reinit_completion(&g_ctrl->unipro_stats_comp);
+	if (apba_send_unipro_stats_req() == 0) {
+		if (!wait_for_completion_timeout(
 		    &g_ctrl->unipro_stats_comp,
 		    msecs_to_jiffies(APBA_UNIPRO_REQ_TIMEOUT))) {
-		pr_err("%s: timeout\n", __func__);
-		return -ETIMEDOUT;
+			pr_err("%s: timeout\n", __func__);
+		}
 	}
 
 	for (i = 0; i < ARRAY_SIZE(g_ctrl->unipro_stats); i++) {
