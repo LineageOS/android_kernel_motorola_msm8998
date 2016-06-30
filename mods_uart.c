@@ -197,7 +197,8 @@ int mods_uart_get_baud(void *uart_data)
 	return (int)speed;
 }
 
-static int config_tty(struct mods_uart_data *mud, speed_t speed)
+static int config_tty(struct mods_uart_data *mud, speed_t speed,
+		      struct tty_struct *tty)
 {
 	struct ktermios kt;
 
@@ -218,11 +219,11 @@ static int config_tty(struct mods_uart_data *mud, speed_t speed)
 	kt.c_lflag = 0;
 
 	/* Save off the previous c_line so we don't overwrite it */
-	kt.c_line = mud->tty->termios.c_line;
+	kt.c_line = tty->termios.c_line;
 
 	tty_termios_encode_baud_rate(&kt, speed, speed);
 
-	return tty_set_termios(mud->tty, &kt);
+	return tty_set_termios(tty, &kt);
 }
 
 int mods_uart_set_baud(void *uart_data, uint32_t baud)
@@ -231,7 +232,7 @@ int mods_uart_set_baud(void *uart_data, uint32_t baud)
 	int ret = -ENODEV;
 
 	if (mud && mud->tty)
-		ret = config_tty(mud, (speed_t)baud);
+		ret = config_tty(mud, (speed_t)baud, mud->tty);
 
 	return ret;
 }
@@ -317,6 +318,7 @@ int mods_uart_open(void *uart_data)
 	struct tty_driver *driver;
 	int tty_line = 0;
 	int ret;
+	struct tty_struct *tty_tmp;
 
 	if (mud->tty) {
 		dev_warn(&mud->pdev->dev, "%s: already open\n", __func__);
@@ -340,25 +342,24 @@ int mods_uart_open(void *uart_data)
 	}
 
 	/* Use existing tty if present */
-	mud->tty = driver->ttys[tty_line];
-	if (!mud->tty)
-		mud->tty = tty_init_dev(driver, tty_line);
+	tty_tmp = driver->ttys[tty_line];
+	if (!tty_tmp)
+		tty_tmp = tty_init_dev(driver, tty_line);
 
 	tty_driver_kref_put(driver);
 
-	if (IS_ERR(mud->tty)) {
-		ret = PTR_ERR(mud->tty);
-		mud->tty = NULL;
+	if (IS_ERR(tty_tmp)) {
+		ret = PTR_ERR(tty_tmp);
 		goto open_fail;
 	}
 
-	ret = mud->tty->ops->open(mud->tty, NULL);
+	ret = tty_tmp->ops->open(tty_tmp, NULL);
 	if (ret) {
 		dev_err(&mud->pdev->dev, "%s: Failed to open tty\n", __func__);
 		goto release_tty;
 	}
 
-	ret = config_tty(mud, 0 /* default speed */);
+	ret = config_tty(mud, 0 /* default speed */, tty_tmp);
 	if (ret) {
 		dev_err(&mud->pdev->dev, "%s: Failed to config tty\n", __func__);
 		goto close_tty_locked;
@@ -368,18 +369,18 @@ int mods_uart_open(void *uart_data)
 	 * Before the line discipline can be set, the tty must be unlocked.
 	 * If this is not done, the kernel will deadlock.
 	 */
-	tty_unlock(mud->tty);
+	tty_unlock(tty_tmp);
 
 	/*
 	 * Set the line discipline to the local ldisc. This will allow this
 	 * driver to know when new data is received without having to poll.
 	 */
-	ret = tty_set_ldisc(mud->tty, N_MODS_UART);
+	ret = tty_set_ldisc(tty_tmp, N_MODS_UART);
 	if (ret) {
 		dev_err(&mud->pdev->dev, "%s: Failed to set ldisc\n", __func__);
 		goto close_tty_unlocked;
 	}
-	mud->tty->disc_data = mud;
+	tty_tmp->disc_data = mud;
 
 	mud->mods_uart_pm_data = mods_uart_pm_initialize(mud);
 	if (!mud->mods_uart_pm_data) {
@@ -390,25 +391,26 @@ int mods_uart_open(void *uart_data)
 	/* Reset sysfs stat entries */
 	memset((void *)&mud->stats, 0, sizeof(struct mods_uart_err_stats));
 
+	mud->tty = tty_tmp;
+
 	return 0;
 
 set_ldisc_tty:
-	tty_set_ldisc(mud->tty, N_TTY);
+	tty_set_ldisc(tty_tmp, N_TTY);
 
 close_tty_unlocked:
 	/* TTY must be locked to close the connection */
-	tty_lock(mud->tty);
+	tty_lock(tty_tmp);
 
 close_tty_locked:
-	mud->tty->ops->close(mud->tty, NULL);
-	tty_unlock(mud->tty);
+	tty_tmp->ops->close(tty_tmp, NULL);
+	tty_unlock(tty_tmp);
 
 release_tty:
 	/* Release the TTY, which requires the mutex to be held */
 	mutex_lock(&tty_mutex);
-	release_tty(mud->tty, mud->tty->index);
+	release_tty(tty_tmp, tty_tmp->index);
 	mutex_unlock(&tty_mutex);
-	mud->tty = NULL;
 
 open_fail:
 	return ret;
