@@ -269,6 +269,12 @@ static int queue_buf(struct file *file, void *fh, struct v4l2_buffer *b)
 	unsigned int idx = b->index;
 	int fd = b->m.userptr;
 
+	if (!strm->bdata || idx >= strm->bcount) {
+		pr_err("queue buffer in invalid state: bdata %p, idx %d",
+			strm->bdata, idx);
+		return -EINVAL;
+	}
+
 	/* Make sure existing mapped fd is not overwritten with new one.
 	   REQ_BUF needs to be called when queuing a new set */
 	if (strm->bdata && idx < strm->bcount &&
