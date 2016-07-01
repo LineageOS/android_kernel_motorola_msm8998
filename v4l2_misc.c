@@ -21,6 +21,7 @@
 #include <linux/of.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-device.h>
+#include <video/v4l2_camera_ext_defs.h>
 
 #include "v4l2_hal.h"
 #include "v4l2_hal_internal.h"
@@ -239,12 +240,29 @@ errout:
 
 static int misc_dev_release(struct inode *inodep, struct file *filp)
 {
+	int i;
+
 	mutex_lock(&g_data->users_lock);
 	--g_data->users;
 	if (g_data->users == 0) {
-		if (g_data && g_data->v4l2_hal_data)
+		if (g_data->v4l2_hal_data) {
+			for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
+				if (!mutex_trylock(&g_data->command[i].lock)) {
+					complete(&g_data->command[i].comp);
+					mutex_lock(&g_data->command[i].lock);
+				}
+			}
+			/* if someone is listening v4l2 event,
+			   safe to report an error */
+			v4l2_hal_report_error(g_data->v4l2_hal_data,
+				CAMERA_EXT_ERROR_FATAL);
+
 			v4l2_hal_exit(g_data->v4l2_hal_data);
-		g_data->v4l2_hal_data = NULL;
+			g_data->v4l2_hal_data = NULL;
+
+			for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
+				mutex_unlock(&g_data->command[i].lock);
+		}
 	}
 	mutex_unlock(&g_data->users_lock);
 
