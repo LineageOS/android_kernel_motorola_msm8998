@@ -104,6 +104,15 @@ struct misc_report_mod_error {
 #define V4L2_PIX_FMT_MODS_META		v4l2_fourcc('M','E','T','A')
 #define V4L2_PIX_FMT_MODS_DNG		v4l2_fourcc('M','D','N','G')
 
+/* Rotation/flip flags needed for VT encoder and other quirky use cases  */
+#define V4L2_PIX_FMT_FLAG_ROTATE_0	0x00000000
+#define V4L2_PIX_FMT_FLAG_ROTATE_90	0x00010000
+#define V4L2_PIX_FMT_FLAG_ROTATE_180	0x00020000
+#define V4L2_PIX_FMT_FLAG_ROTATE_270	0x00040000
+#define V4L2_PIX_FMT_FLAG_FLIP_H	0x00080000
+#define V4L2_PIX_FMT_FLAG_FLIP_V	0x00100000
+
+
 static inline bool v4l2_hal_is_set_mapping_cid(__u32 id) {
 	if (id == V4L2_HAL_CID_SET_PARAMS_MEM ||
 	    id == V4L2_HAL_CID_SET_CAPS_MEM)
