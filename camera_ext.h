@@ -94,10 +94,14 @@ struct camera_ext_predefined_ctrl_v4l2_cfg {
 		/* TODO: use 4/8 bytes to transfer float/double over greybus */
 		camera_ext_ctrl_float menu_float[CAMERA_EXT_MAX_MENU_NUM + 1];
 	};
-	/* idx will be store as v4l2_cfg->priv which type is void*,
-	 * sizeof(long) == sizeof(void*) for 32 or 64 bit system.
-	 */
-	unsigned long idx;
+	unsigned int idx;
+};
+
+struct camera_ext_v4l2_ctrl_priv {
+	unsigned int idx;
+	/* default value for array or string type ctrl */
+	void *def;
+	size_t def_size;
 };
 
 typedef int (*register_custom_mod_ctrl_func_t)(

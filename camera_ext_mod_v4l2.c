@@ -489,6 +489,31 @@ void camera_ext_mod_v4l2_event_notify(struct camera_ext *cam_dev,
 	v4l2_event_queue(cam_dev->vdev_mod, &ev);
 }
 
+static void reset_ctrls_value(struct v4l2_ctrl_handler *hdl)
+{
+	struct v4l2_ctrl *ctrl;
+
+	list_for_each_entry(ctrl, &hdl->ctrls, node) {
+		if (ctrl->type == V4L2_CTRL_TYPE_BUTTON ||
+			(ctrl->flags & V4L2_CTRL_FLAG_READ_ONLY))
+				continue;
+		if (ctrl->is_ptr) {
+			struct camera_ext_v4l2_ctrl_priv *priv = ctrl->priv;
+
+			if (priv->def != NULL && priv->def_size > 0) {
+				memcpy(ctrl->p_cur.p_char, priv->def,
+							priv->def_size);
+				memcpy(ctrl->p_new.p_char, priv->def,
+							priv->def_size);
+			}
+		} else if (ctrl->type == V4L2_CTRL_TYPE_INTEGER64)
+			*ctrl->p_cur.p_s64 = *ctrl->p_new.p_s64 =
+						ctrl->default_value;
+		else
+			ctrl->cur.val = ctrl->val = ctrl->default_value;
+	}
+}
+
 static int mod_v4l2_open(struct file *file)
 {
 	int rc;
@@ -534,6 +559,7 @@ static int mod_v4l2_open(struct file *file)
 		goto err_power_on;
 
 	/* reset all none readonly controls */
+	reset_ctrls_value(&cam_dev->hdl_ctrls);
 	do {
 		rc = v4l2_ctrl_handler_setup(&cam_dev->hdl_ctrls);
 	} while (rc == -EAGAIN && ++retry_count < MAX_RETRY_TIMES);
@@ -666,7 +692,7 @@ static const struct v4l2_ctrl_ops mod_ctrl_ops = {
 static int custom_ctrl_register(
 	struct camera_ext_predefined_ctrl_v4l2_cfg *mod_cfg, void *ctx)
 {
-	void *priv;
+	struct camera_ext_v4l2_ctrl_priv *priv;
 	struct v4l2_ctrl *ctrl;
 	struct camera_ext *cam_dev = ctx;
 	struct v4l2_ctrl_config *cfg = camera_ext_get_ctrl_config(mod_cfg->id);
@@ -675,7 +701,10 @@ static int custom_ctrl_register(
 		return -EINVAL;
 
 	cfg->ops = &mod_ctrl_ops;
-	priv = (void *)mod_cfg->idx;
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (priv == NULL)
+		return -ENOMEM;
+	priv->idx = mod_cfg->idx;
 
 	if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_MIN)
 		cfg->min = mod_cfg->min;
@@ -729,10 +758,13 @@ static int custom_ctrl_register(
 		}
 	}
 
+	/* If v4l2_ctrl_new_custom succeeds, priv will be free'd when cleanup all
+	 * controls in release_ctrl_priv_mem. Otherwise, it should be free'd here.*/
 	ctrl = v4l2_ctrl_new_custom(&cam_dev->hdl_ctrls, cfg, priv);
 
 	if (ctrl == NULL) {
 		pr_err("register id 0x%x failed\n", mod_cfg->id);
+		kfree(priv);
 		return -EINVAL;
 	} else if (cfg->flags & CAMERA_EXT_CTRL_FLAG_NEED_DEF
 		&& (ctrl->elems > 1
@@ -747,6 +779,11 @@ static int custom_ctrl_register(
 		}
 		memcpy(ctrl->p_cur.p_char, mod_cfg->p_def, size);
 		memcpy(ctrl->p_new.p_char, mod_cfg->p_def, size);
+		priv->def = kmalloc(size, GFP_KERNEL);
+		if (priv->def == NULL)
+			return -ENOMEM;
+		memcpy(priv->def, mod_cfg->p_def, size);
+		priv->def_size = size;
 	}
 	return 0;
 }
@@ -764,6 +801,21 @@ static void camera_ext_dev_release(struct video_device *dev)
 
 	video_device_release(dev);
 	camera_ext_put(cam);
+}
+
+static void release_ctrl_priv_mem(struct v4l2_ctrl_handler *hdl)
+{
+	struct camera_ext_v4l2_ctrl_priv *priv;
+	struct v4l2_ctrl *ctrl;
+
+	list_for_each_entry(ctrl, &hdl->ctrls, node) {
+		priv = ctrl->priv;
+		if (priv == NULL) /* mod_ctrl_class ctrl */
+			continue;
+		if (priv->def != NULL)
+			kfree(priv->def);
+		kfree(priv);
+	}
 }
 
 /* TODO: make this function asynchronously if it takes too long */
@@ -834,6 +886,7 @@ error_reg_vdev:
 error_alloc_vdev:
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
 error_ctrl_process:
+	release_ctrl_priv_mem(&cam_dev->hdl_ctrls);
 	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
 	return retval;
 }
@@ -843,6 +896,7 @@ void camera_ext_mod_v4l2_exit(struct camera_ext *cam_dev)
 	video_unregister_device(cam_dev->vdev_mod);
 	device_remove_file(cam_dev->v4l2_dev.dev, &dev_attr_open_mode.attr);
 	v4l2_device_unregister(&cam_dev->v4l2_dev);
+	release_ctrl_priv_mem(&cam_dev->hdl_ctrls);
 	v4l2_ctrl_handler_free(&cam_dev->hdl_ctrls);
 	camera_ext_put(cam_dev);
 }
