@@ -950,13 +950,14 @@ int gb_camera_ext_g_volatile_ctrl(struct gb_connection *conn,
 	struct camera_ext_predefined_ctrl_mod_req req;
 	size_t mod_ctrl_val_size;
 	uint8_t *mod_ctrl_val;
+	struct camera_ext_v4l2_ctrl_priv *priv = ctrl->priv;
 
 	mod_ctrl_val_size = ctrl->elems * ctrl->elem_size;
 	mod_ctrl_val = kmalloc(mod_ctrl_val_size, GFP_KERNEL);
 	if (mod_ctrl_val == NULL)
 		return -ENOMEM;
 
-	req.idx = cpu_to_le32((uint32_t)(unsigned long)ctrl->priv);
+	req.idx = cpu_to_le32(priv->idx);
 	req.data_size = cpu_to_le32(mod_ctrl_val_size);
 
 	retval = gb_operation_sync(conn,
@@ -1015,6 +1016,7 @@ static int gb_camera_ext_s_or_try_ctrl(struct gb_connection *conn,
 	uint32_t data_size;
 	struct camera_ext_predefined_ctrl_mod_req *req;
 	size_t mod_ctrl_val_size;
+	struct camera_ext_v4l2_ctrl_priv *priv = ctrl->priv;
 	int op = is_try ? GB_CAMERA_EXT_TYPE_CTRL_TRY
 			: GB_CAMERA_EXT_TYPE_CTRL_SET;
 
@@ -1027,7 +1029,7 @@ static int gb_camera_ext_s_or_try_ctrl(struct gb_connection *conn,
 		return -ENOMEM;
 	}
 
-	req->idx = cpu_to_le32((uint32_t)(unsigned long)ctrl->priv);
+	req->idx = cpu_to_le32(priv->idx);
 	req->data_size = cpu_to_le32(data_size);
 	retval = ctrl_val_v4l2_to_mod(ctrl, req->data);
 	if (retval == 0)
