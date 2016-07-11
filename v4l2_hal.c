@@ -607,10 +607,10 @@ static int v4l2_hal_open(struct file *file)
 	int ret;
 
 	mutex_lock(&hal_state_lock);
-	pr_err("%s E", __func__);
 	if (hal_state != HAL_READY) { /* it's in freeing right now */
 		mutex_unlock(&hal_state_lock);
-		pr_err("hal_state is NOT HAL_READY. current hal_state: %d", hal_state);
+		pr_err("hal_state is NOT HAL_READY. current hal_state: %d",
+		       hal_state);
 		return -ENODEV;
 	}
 	hal_data_get(data);
@@ -663,13 +663,12 @@ close_misc:
 
 release_stream:
 	mutex_lock(&data->lock);
-	pr_err("%s release stream", __func__);
 	data->strms[idx].used = false;
 	data->strms[idx].handled = false;
 	mutex_unlock(&data->lock);
 	hal_data_put(data);
 
-	pr_err("%s release_stream ret: %d", __func__, ret);
+	pr_err("%s ret: %d", __func__, ret);
 	return ret;
 }
 
