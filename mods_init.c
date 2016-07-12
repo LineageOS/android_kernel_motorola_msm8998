@@ -63,6 +63,12 @@ static int __init mods_init(void)
 		goto spi_fail;
 	}
 
+	err = muc_i2c_init();
+	if (err) {
+		pr_err("muc_i2c_init failed: %d\n", err);
+		goto i2c_fail;
+	}
+
 	err = apba_ctrl_init();
 	if (err) {
 		pr_err("apba_ctrl_init failed: %d\n", err);
@@ -80,6 +86,8 @@ static int __init mods_init(void)
 uart_fail:
 	apba_ctrl_exit();
 apba_fail:
+	muc_i2c_exit();
+i2c_fail:
 	muc_spi_exit();
 spi_fail:
 	mods_ap_exit();
@@ -98,6 +106,7 @@ static void __exit mods_exit(void)
 {
 	mods_uart_exit();
 	apba_ctrl_exit();
+	muc_i2c_exit();
 	muc_spi_exit();
 	mods_ap_exit();
 	muc_svc_exit();

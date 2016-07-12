@@ -151,6 +151,9 @@ extern struct muc_data *muc_misc_data;
 int muc_spi_init(void);
 void muc_spi_exit(void);
 
+int muc_i2c_init(void);
+void muc_i2c_exit(void);
+
 int muc_core_init(void);
 void muc_core_exit(void);
 
