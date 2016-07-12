@@ -1038,9 +1038,10 @@ static ssize_t erase_partition_store(struct device *dev,
 
 static DEVICE_ATTR_WO(erase_partition);
 
-/* The TFTF header is 512 bytes at the beginning of the firmware file.
- * This function will compare the TFTF header and a part of the firmware
- * immediately following the header against what is stored in the flash.
+/*
+ * This function will compare the entire contents of the firmware file
+ * described by fw against the flash contents read from the mtd device,
+ * comparing one page at a time.
  * The flash contents will have two FFFF headers prepended before the TFTF
  * header, so this function reads from the flash after the FFFF headers.
  *
@@ -1053,23 +1054,46 @@ static int apba_compare_partition(struct apba_ctrl *ctrl,
 {
 	int err;
 	tftf_header *fsfw = (tftf_header *)fw->data;
+	unsigned long fwsize = fw->size;
 	tftf_header *tftf;
+	void *buf;
 	size_t retlen = 0;
 	/* Assume different */
 	int compare_result = 1;
+	unsigned long cur = 0;
+	size_t readlen;
 
 	tftf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!tftf)
 		goto skip_compare;
 
-	err = mtd_read(mtd_info, TFTF_OFFSET, PAGE_SIZE, &retlen, (void *)tftf);
-	if (err < 0)
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
 		goto cleanup;
 
-	if (retlen < PAGE_SIZE)
-		goto cleanup;
+	while (cur < fwsize) {
+		readlen = min(fwsize - cur, PAGE_SIZE);
 
-	compare_result = memcmp(tftf, fw->data, PAGE_SIZE);
+		compare_result = 1;
+		err = mtd_read(mtd_info, TFTF_OFFSET + cur, readlen,
+			       &retlen, buf);
+		if (err < 0 || retlen < readlen) {
+			pr_err("%s: mtd_read failure. err:%d, retlen:%zd\n",
+			       __func__, err, retlen);
+			goto cleanup;
+		}
+
+		/* Store away the page w/ TFTF header for later check */
+		if (cur == 0)
+			memcpy(tftf, buf, readlen);
+
+		compare_result = memcmp(buf, fw->data + cur, readlen);
+
+		if (compare_result)
+			break;
+
+		cur += readlen;
+	}
 
 	/* log header values only if header sentinal is valid */
 	if (memcmp(tftf->sentinel, TFTF_SENTINEL, TFTF_SENTINEL_LENGTH)) {
@@ -1099,6 +1123,7 @@ static int apba_compare_partition(struct apba_ctrl *ctrl,
 
 cleanup:
 	kfree(tftf);
+	kfree(buf);
 
 skip_compare:
 	return compare_result;
