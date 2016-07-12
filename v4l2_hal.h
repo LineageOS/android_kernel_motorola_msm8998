@@ -111,6 +111,7 @@ struct misc_report_mod_error {
 #define V4L2_PIX_FMT_FLAG_ROTATE_270	0x00040000
 #define V4L2_PIX_FMT_FLAG_FLIP_H	0x00080000
 #define V4L2_PIX_FMT_FLAG_FLIP_V	0x00100000
+#define V4L2_PIX_FMT_FLAG_AVTIMER_SRC	0x00200000
 
 
 static inline bool v4l2_hal_is_set_mapping_cid(__u32 id) {
