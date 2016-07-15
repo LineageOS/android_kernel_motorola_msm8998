@@ -106,11 +106,6 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	size_t pkt_size;
 	__le16 calc_crc;
 
-	if (!mud->tty) {
-		dev_err(dev, "%s: no tty\n", __func__);
-		return -ENODEV;
-	}
-
 	if (len > MHB_MAX_MSG_SIZE) {
 		mud->stats.tx_failure++;
 		return -E2BIG;
@@ -131,6 +126,13 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	calc_crc = crc16(0, pkt, pkt_size);
 
 	mutex_lock(&mud->tx_mutex);
+
+	if (!mud->tty) {
+		mutex_unlock(&mud->tx_mutex);
+		kfree(pkt);
+		dev_err(dev, "%s: no tty\n", __func__);
+		return -ENODEV;
+	}
 
 	/*
 	 * This call may block if APBA is in sleep.
