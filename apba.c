@@ -825,6 +825,10 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 		return;
 	}
 
+	/* prevent UART transmissions while changing apba state */
+	if (ctrl->mods_uart)
+		mods_uart_lock_tx(ctrl->mods_uart, true);
+
 	pr_info("%s: %s\n", __func__, on ? "on" : "off");
 	mods_ext_bus_vote(on);
 
@@ -834,13 +838,15 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 			dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
 				__func__);
 			apba_seq(ctrl, &ctrl->disable_seq);
+			if (ctrl->mods_uart)
+				mods_uart_lock_tx(ctrl->mods_uart, false);
 			return;
 		}
 
-		if (ctrl->mods_uart)
+		if (ctrl->mods_uart) {
 			mods_uart_open(ctrl->mods_uart);
-		if (ctrl->mods_uart)
 			mods_uart_pm_on(ctrl->mods_uart, true);
+		}
 
 		apba_seq(ctrl, &ctrl->enable_postclk_seq);
 		enable_irq(ctrl->irq);
@@ -855,6 +861,9 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 		apba_seq(ctrl, &ctrl->disable_seq);
 	}
 	ctrl->on = on;
+
+	if (ctrl->mods_uart)
+		mods_uart_lock_tx(ctrl->mods_uart, false);
 }
 
 static int apba_attach_notifier(struct notifier_block *nb,
