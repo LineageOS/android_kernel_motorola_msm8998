@@ -262,5 +262,6 @@ void mods_uart_pm_uninitialize(void *uart_pm_data)
 	data = (struct mods_uart_pm_data *)uart_pm_data;
 
 	del_timer(&data->idle_timer);
+	cancel_work_sync(&data->idle_timer_work);
 	kfree(uart_pm_data);
 }
