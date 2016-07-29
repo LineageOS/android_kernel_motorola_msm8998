@@ -37,11 +37,13 @@ struct mods_uart_pm_data {
 
 void mods_uart_pm_update_idle_timer(void *uart_pm_data)
 {
-	struct mods_uart_pm_data *data;
+	struct mods_uart_pm_data *data =
+		(struct mods_uart_pm_data *)uart_pm_data;
 
-	data = (struct mods_uart_pm_data *)uart_pm_data;
-	mod_timer(&data->idle_timer,
-		  jiffies + msecs_to_jiffies(MODS_UART_PM_IDLE_TIMEOUT));
+	if (data && data->on)
+		mod_timer(&data->idle_timer,
+			  jiffies +
+			    msecs_to_jiffies(MODS_UART_PM_IDLE_TIMEOUT));
 }
 
 static void idle_timer_callback(unsigned long timer_data)
@@ -59,6 +61,14 @@ static void idle_timer_callback(unsigned long timer_data)
 	schedule_work(&data->idle_timer_work);
 }
 
+static void consider_remote_awake(struct mods_uart_pm_data *data)
+{
+	atomic_set(&data->pm_state_remote, 1);
+	apba_wake_assert(false);
+	if (!completion_done(&data->pm_handshake_comp))
+		complete(&data->pm_handshake_comp);
+}
+
 /*
  * Called from Wake ISR handler thread. Send out an ack with special flag
  * so that PM status is updated in context of UART TX.
@@ -67,15 +77,19 @@ void mods_uart_pm_handle_wake_interrupt(void *uart_data)
 {
 	struct mods_uart_pm_data *data;
 
-	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
-
 	pr_debug("%s: wake interrupt\n", __func__);
 
-	apba_send_pm_wake_rsp();
+	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
+	if (data && data->on) {
+		/* Getting an interrupt from APBA is a sign that it's alive.
+		   This can complete a pending wake handshake completion. */
+		consider_remote_awake(data);
 
-	/* Start idle time in case wake ack is dropped. */
-	if (data)
+		apba_send_pm_wake_rsp();
+
+		/* Start idle time in case wake ack is dropped. */
 		mods_uart_pm_update_idle_timer(data);
+	}
 }
 
 /*
@@ -100,20 +114,25 @@ static void local_pm_update(struct mods_uart_pm_data *data, bool on)
 static void apba_pm_wake_handshake(struct mods_uart_pm_data *data)
 {
 	pr_debug("%s: wake handshake\n", __func__);
-	mutex_lock(&data->pm_handshake_mutex);
+	if (data && data->on) {
+		mutex_lock(&data->pm_handshake_mutex);
 
-	/* Wake INT then wait for an ack message. */
-	apba_wake_assert(true);
+		/* must reinit because the interrupt can call complete */
+		reinit_completion(&data->pm_handshake_comp);
 
-	if (!wait_for_completion_timeout(
-		    &data->pm_handshake_comp,
-		    msecs_to_jiffies(MODS_UART_PM_HANDSHAKE_TIMEOUT))) {
-		pr_err("%s: WAKE HANDSHAKE () timeout\n", __func__);
-		apba_wake_assert(false);
+		/* Wake INT then wait for an ack message. */
+		apba_wake_assert(true);
+
+		if (!wait_for_completion_timeout(
+			 &data->pm_handshake_comp,
+			 msecs_to_jiffies(MODS_UART_PM_HANDSHAKE_TIMEOUT))) {
+			pr_err("%s: WAKE HANDSHAKE () timeout\n", __func__);
+			apba_wake_assert(false);
+		}
+
+		mutex_unlock(&data->pm_handshake_mutex);
+		pr_debug("%s: wake attempt done\n", __func__);
 	}
-
-	mutex_unlock(&data->pm_handshake_mutex);
-	pr_debug("%s: wake attempt done\n", __func__);
 }
 
 /*
@@ -126,36 +145,39 @@ void mods_uart_pm_pre_tx(void *uart_pm_data, int flag)
 	struct mods_uart_pm_data *data;
 
 	data = (struct mods_uart_pm_data *)uart_pm_data;
-	/*
-	 * Responding to sleep ind from APBA. Consder APBA went
-	 * into sleep so next TX will kick off wake handshake.
-	 */
-	if (flag == UART_PM_FLAG_SLEEP_ACK) {
-		atomic_set(&data->pm_state_remote, 0);
+
+	if (data && data->on) {
+		/*
+		 * Responding to sleep ind from APBA. Consder APBA went
+		 * into sleep so next TX will kick off wake handshake.
+		 */
+		if (flag == UART_PM_FLAG_SLEEP_ACK) {
+			atomic_set(&data->pm_state_remote, 0);
+
+			/*
+			 * Do not continue. Otherwise wake handshake will be
+			 * done to send this SLEEP ACK.
+			 */
+			return;
+		}
 
 		/*
-		 * Do no continue. (Otherwise wake handshake will be done
-		 * to send this SLEEP ACK.
+		 * Responding to wake interrupt from APBA. Consider APBA
+		 * awake so we don't start wake up handshake.
 		 */
-		return;
+		if (flag == UART_PM_FLAG_WAKE_ACK)
+			atomic_set(&data->pm_state_remote, 1);
+
+		/* Make sure we are on. Try fail through. */
+		local_pm_update(data, true);
+
+		/* If remote is up, no further action. */
+		if (atomic_read(&data->pm_state_remote))
+			return;
+
+		/* If APBA is in sleep, wake it up first. */
+		apba_pm_wake_handshake(data);
 	}
-
-	/*
-	 * Responded to wake interrupt from APBA. Consider APBA
-	 * is wake so we don't start wake up handshake.
-	 */
-	if (flag == UART_PM_FLAG_WAKE_ACK)
-		atomic_set(&data->pm_state_remote, 1);
-
-	/* Make sure we are on. Try fail through. */
-	local_pm_update(data, true);
-
-	/* If remote is up, no further action. */
-	if (atomic_read(&data->pm_state_remote))
-		return;
-
-	/* If APBA is in sleep, wake it up first. */
-	apba_pm_wake_handshake(data);
 }
 
 /*
@@ -168,17 +190,12 @@ void mods_uart_pm_post_tx(void *uart_pm_data, int flag)
 	struct mods_uart_pm_data *data;
 
 	data = (struct mods_uart_pm_data *)uart_pm_data;
-	if (!data)
-		return;
+	if (data && data->on) {
+		if (flag == UART_PM_FLAG_SLEEP_IND)
+			atomic_set(&data->pm_state_remote, 0);
 
-	/*
-	 * Notifyied to wake interrupt from APBA. Consider APBA
-	 * is wake so we don't start wake up handshake.
-	 */
-	if (flag == UART_PM_FLAG_SLEEP_IND)
-		atomic_set(&data->pm_state_remote, 0);
-
-	mods_uart_pm_update_idle_timer(data);
+		mods_uart_pm_update_idle_timer(data);
+	}
 }
 
 static void idle_timeout_work_func(struct work_struct *work)
@@ -186,7 +203,7 @@ static void idle_timeout_work_func(struct work_struct *work)
 	struct mods_uart_pm_data *data;
 
 	data = container_of(work, struct mods_uart_pm_data, idle_timer_work);
-	if (!data)
+	if (!data || !data->on)
 		return;
 
 	pr_debug("%s: idle timeout\n", __func__);
@@ -213,24 +230,36 @@ void mods_uart_pm_handle_pm_wake_rsp(void *uart_data)
 	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
 
 	pr_debug("%s: wake_ack\n", __func__);
-	atomic_set(&data->pm_state_remote, 1);
-	apba_wake_assert(false);
-	complete(&data->pm_handshake_comp);
+
+	if (data && data->on)
+		consider_remote_awake(data);
 }
 
-void mods_uart_pm_on(void *uart_data, bool on)
+/* assume tx is locked.  don't do anything that would send a message */
+void mods_uart_pm_on(void *uart_data)
 {
 	struct mods_uart_pm_data *data;
 
 	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
 
-	/* pm data may be null if uart is not open */
 	if (data) {
-		local_pm_update(data, false);
-		atomic_set(&data->pm_state_remote, 0);
-		del_timer(&data->idle_timer);
+		local_pm_update(data, true);
+		atomic_set(&data->pm_state_remote, 1);
+		data->on = true;
+	}
+}
 
-		data->on = on;
+void  mods_uart_pm_off(void *uart_data)
+{
+	struct mods_uart_pm_data *data;
+	data = (struct mods_uart_pm_data *)mods_uart_get_pm_data(uart_data);
+
+	if (data) {
+		data->on = false;
+
+		/* In case we happened to be waiting for a handshake,
+		   finish the completion early. */
+		complete_all(&data->pm_handshake_comp);
 	}
 }
 
@@ -255,12 +284,19 @@ void *mods_uart_pm_initialize(void *uart_data)
 	return data;
 }
 
-void mods_uart_pm_uninitialize(void *uart_pm_data)
+void mods_uart_pm_cancel_timer(void *uart_pm_data)
 {
 	struct mods_uart_pm_data *data;
 
 	data = (struct mods_uart_pm_data *)uart_pm_data;
 
-	del_timer(&data->idle_timer);
+	if (data) {
+		cancel_work_sync(&data->idle_timer_work);
+		del_timer(&data->idle_timer);
+	}
+}
+
+void mods_uart_pm_uninitialize(void *uart_pm_data)
+{
 	kfree(uart_pm_data);
 }
