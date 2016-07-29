@@ -826,33 +826,32 @@ static void apba_on(struct apba_ctrl *ctrl, bool on)
 	}
 
 	pr_info("%s: %s\n", __func__, on ? "on" : "off");
-	mods_ext_bus_vote(on);
 
 	if (on) {
+		mods_ext_bus_vote(true);
 		apba_seq(ctrl, &ctrl->enable_preclk_seq);
 		if (clk_prepare_enable(g_ctrl->mclk)) {
 			dev_err(g_ctrl->dev, "%s: failed to prepare clock.\n",
 				__func__);
 			apba_seq(ctrl, &ctrl->disable_seq);
+			mods_ext_bus_vote(false);
 			return;
 		}
 
 		if (ctrl->mods_uart)
 			mods_uart_open(ctrl->mods_uart);
-		if (ctrl->mods_uart)
-			mods_uart_pm_on(ctrl->mods_uart, true);
 
 		apba_seq(ctrl, &ctrl->enable_postclk_seq);
 		enable_irq(ctrl->irq);
 	} else {
 		ctrl->mode = 0;
 		disable_irq(ctrl->irq);
-		clk_disable_unprepare(g_ctrl->mclk);
-		if (ctrl->mods_uart) {
-			mods_uart_pm_on(ctrl->mods_uart, false);
+		if (ctrl->mods_uart)
 			mods_uart_close(ctrl->mods_uart);
-		}
+
+		clk_disable_unprepare(g_ctrl->mclk);
 		apba_seq(ctrl, &ctrl->disable_seq);
+		mods_ext_bus_vote(false);
 	}
 	ctrl->on = on;
 }
@@ -1376,10 +1375,11 @@ static ssize_t apba_enable_store(struct device *dev,
 	else if (val != 0 && val != 1)
 		return -EINVAL;
 
+	/* serialize on/off operations through the work queue */
 	if (val)
-		apba_enable();
+		queue_work(g_ctrl->wq, &apba_enable_work);
 	else
-		apba_disable();
+		queue_work(g_ctrl->wq, &apba_disable_work);
 
 	return count;
 }
@@ -1957,7 +1957,7 @@ static irqreturn_t apba_isr(int irq, void *data)
 	pr_debug("%s: ctrl=%p, value=%d\n", __func__, ctrl, value);
 
 
-	if (!ctrl->desired_on || !ctrl->mods_uart) {
+	if (!ctrl->desired_on || !ctrl->mods_uart || value) {
 		pr_err("%s: int ignored\n", __func__);
 		return IRQ_HANDLED;
 	}
@@ -2342,7 +2342,7 @@ static int apba_ctrl_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ctrl);
 
-	ctrl->wq = alloc_workqueue("apba", WQ_UNBOUND, 1);
+	ctrl->wq = create_singlethread_workqueue("apba");
 	if (!ctrl->wq) {
 		dev_err(&pdev->dev, "Failed to create workqueue\n");
 		ret = -ENOMEM;

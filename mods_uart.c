@@ -106,11 +106,6 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	size_t pkt_size;
 	__le16 calc_crc;
 
-	if (!mud->tty) {
-		dev_err(dev, "%s: no tty\n", __func__);
-		return -ENODEV;
-	}
-
 	if (len > MHB_MAX_MSG_SIZE) {
 		mud->stats.tx_failure++;
 		return -E2BIG;
@@ -131,6 +126,13 @@ static int mods_uart_send_internal(struct mods_uart_data *mud,
 	calc_crc = crc16(0, pkt, pkt_size);
 
 	mutex_lock(&mud->tx_mutex);
+
+	if (!mud->tty) {
+		mutex_unlock(&mud->tx_mutex);
+		kfree(pkt);
+		dev_err(dev, "%s: no tty\n", __func__);
+		return -ENODEV;
+	}
 
 	/*
 	 * This call may block if APBA is in sleep.
@@ -320,7 +322,9 @@ int mods_uart_open(void *uart_data)
 	int ret;
 	struct tty_struct *tty_tmp;
 
+	mutex_lock(&mud->tx_mutex);
 	if (mud->tty) {
+		mutex_unlock(&mud->tx_mutex);
 		dev_warn(&mud->pdev->dev, "%s: already open\n", __func__);
 		return -EEXIST;
 	}
@@ -393,6 +397,10 @@ int mods_uart_open(void *uart_data)
 
 	mud->tty = tty_tmp;
 
+	mods_uart_pm_on(mud);
+
+	mutex_unlock(&mud->tx_mutex);
+
 	return 0;
 
 set_ldisc_tty:
@@ -413,33 +421,42 @@ release_tty:
 	mutex_unlock(&tty_mutex);
 
 open_fail:
+	mutex_unlock(&mud->tx_mutex);
+
 	return ret;
 }
 
 int mods_uart_close(void *uart_data)
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
-	struct tty_struct *tty = mud->tty;
 	int ret;
 
-	if (!tty) {
+	dev_dbg(&mud->pdev->dev, "%s: closing uart\n", __func__);
+	mods_uart_pm_off(mud);
+
+	if (mud->mods_uart_pm_data)
+		mods_uart_pm_cancel_timer(mud->mods_uart_pm_data);
+
+	mutex_lock(&mud->tx_mutex);
+	if (!mud->tty) {
+		mutex_unlock(&mud->tx_mutex);
 		dev_warn(&mud->pdev->dev, "%s: already closed\n", __func__);
 		return -ENODEV;
 	}
 
-	dev_dbg(&mud->pdev->dev, "%s: closing uart\n", __func__);
+	dev_dbg(&mud->pdev->dev, "%s: really closing\n", __func__);
 
-	if (tty_set_ldisc(tty, N_TTY))
+	if (tty_set_ldisc(mud->tty, N_TTY))
 		dev_err(&mud->pdev->dev, "%s: Failed to set ldisc\n", __func__);
 
 	/* TTY must be locked to close the connection */
-	tty_lock(tty);
-	tty->ops->close(tty, NULL);
-	tty_unlock(tty);
+	tty_lock(mud->tty);
+	mud->tty->ops->close(mud->tty, NULL);
+	tty_unlock(mud->tty);
 
 	/* Release the TTY, which requires the mutex to be held */
 	mutex_lock(&tty_mutex);
-	release_tty(tty, tty->index);
+	release_tty(mud->tty, mud->tty->index);
 	mutex_unlock(&tty_mutex);
 	mud->tty = NULL;
 
@@ -451,6 +468,8 @@ int mods_uart_close(void *uart_data)
 	ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_default);
 	if (ret)
 		dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
+
+	mutex_unlock(&mud->tx_mutex);
 
 	return ret;
 }
@@ -683,6 +702,7 @@ static int n_mods_uart_receive_buf2(struct tty_struct *tty,
 
 		to_be_consumed -= copy_size;
 	}
+
 	mods_uart_pm_update_idle_timer(mud->mods_uart_pm_data);
 
 	return count;

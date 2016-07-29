@@ -18,10 +18,12 @@
 #define UART_PM_FLAG_SLEEP_ACK 2
 #define UART_PM_FLAG_SLEEP_IND 3
 
-void mods_uart_pm_on(void *uart_data, bool on);
+void mods_uart_pm_on(void *uart_data);
+void mods_uart_pm_off(void *uart_data);
 void mods_uart_pm_handle_wake_interrupt(void *uart_data);
 
 void mods_uart_pm_update_idle_timer(void *uart_pm_data);
+void mods_uart_pm_cancel_timer(void *uart_pm_data);
 
 void mods_uart_pm_pre_tx(void *uart_pm_data, int flag);
 void mods_uart_pm_post_tx(void *uart_pm_data, int flag);
