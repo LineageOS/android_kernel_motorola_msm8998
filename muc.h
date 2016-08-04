@@ -52,6 +52,19 @@ static inline bool muc_gpio_optional(int index)
 
 #define MUC_MAX_SEQ (MUC_MAX_GPIOS*8)
 
+/*
+ * Maximum allowed datagram size (in bytes). A datagram may be split into
+ * multiple packets.
+ */
+#define MAX_DATAGRAM_SZ     (64 * 1024)
+
+struct muc_buffers {
+	__u8 *rx_pkt;
+	__u8 *rx_datagram;
+	__u8 *tx_pkt;
+	__u8 *tx_datagram;
+};
+
 /* BPLUS State Transitions */
 enum bplus_state {
 	MUC_BPLUS_DISABLED = 0,
@@ -144,10 +157,17 @@ void muc_register_spi_flash(void);
 void muc_deregister_spi_flash(void);
 void muc_register_i2c(void);
 void muc_force_detect(u32 val);
+size_t muc_i2c_get_pkt_sz(size_t pl_size);
+size_t muc_spi_get_pkt_sz(size_t pl_size);
+struct muc_buffers *muc_get_buffers(void);
+
 /* Global variables */
 extern struct muc_data *muc_misc_data;
 
 /* Driver Initializations */
+int muc_buffer_init(void);
+void muc_buffer_exit(void);
+
 int muc_spi_init(void);
 void muc_spi_exit(void);
 

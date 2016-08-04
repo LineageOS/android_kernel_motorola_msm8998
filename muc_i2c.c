@@ -36,12 +36,6 @@
 #define MSG_TYPE_NW    (1 << 6)     /* Packet for/from network layer */
 
 /*
- * Maximum allowed datagram size (in bytes). A datagram may be split into
- * multiple packets.
- */
-#define MAX_DATAGRAM_SZ     (64 * 1024)
-
-/*
  * Default size of a I2C packet (in bytes). This can be negotiated to be
  * larger, all the way up to the maximum size of a datagram.
  */
@@ -170,6 +164,11 @@ struct i2c_dl_msg {
 		struct i2c_dl_msg_bus_config_resp    bus_resp;
 	};
 } __packed;
+
+size_t muc_i2c_get_pkt_sz(size_t pl_size)
+{
+	return PKT_SIZE(pl_size);
+}
 
 static inline struct muc_i2c_data *dld_to_dd(struct mods_dl_device *dld)
 {
@@ -649,57 +648,19 @@ static struct mods_dl_driver muc_i2c_dl_driver = {
 	.message_send		= muc_i2c_message_send,
 };
 
-static __u8 *rx_pkt;
-static __u8 *rx_datagram;
-static __u8 *tx_pkt;
-static __u8 *tx_datagram;
-
 static int allocate_buffers(struct muc_i2c_data *dd)
 {
-	dd->rx_pkt = rx_pkt;
-	dd->tx_pkt = tx_pkt;
-	dd->rx_datagram = rx_datagram;
-	dd->tx_datagram = tx_datagram;
+	struct muc_buffers *b = muc_get_buffers();
+
+	if (!b)
+		return -ENOMEM;
+
+	dd->rx_pkt = b->rx_pkt;
+	dd->tx_pkt = b->tx_pkt;
+	dd->rx_datagram = b->rx_datagram;
+	dd->tx_datagram = b->tx_datagram;
 
 	return 0;
-}
-
-static int _allocate_buffers(void)
-{
-	tx_pkt = kzalloc(PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
-	if (!tx_pkt)
-		goto done;
-
-	rx_pkt = kzalloc(PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
-	if (!rx_pkt)
-		goto free_tx_pkt;
-
-	rx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL);
-	if (!rx_datagram)
-		goto free_rx_pkt;
-
-	tx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL);
-	if (!tx_datagram)
-		goto free_rx_dg;
-
-	return 0;
-
-free_rx_dg:
-	kfree(rx_datagram);
-free_rx_pkt:
-	kfree(rx_pkt);
-free_tx_pkt:
-	kfree(tx_pkt);
-done:
-	return -ENOMEM;
-}
-
-static void _deallocate_buffers(void)
-{
-	kfree(tx_pkt);
-	kfree(rx_pkt);
-	kfree(rx_datagram);
-	kfree(tx_datagram);
 }
 
 static int muc_i2c_probe(struct i2c_client *client,
@@ -813,17 +774,9 @@ int __init muc_i2c_init(void)
 {
 	int err;
 
-	err = _allocate_buffers();
-	if (err) {
-		pr_err("muc_i2c buffer allocation failed\n");
-		return err;
-	}
-
 	err = i2c_register_driver(THIS_MODULE, &muc_i2c_driver);
-	if (err != 0) {
-		_deallocate_buffers();
+	if (err != 0)
 		pr_err("muc_i2c initialization failed\n");
-	}
 
 	return err;
 }
@@ -831,5 +784,4 @@ int __init muc_i2c_init(void)
 void muc_i2c_exit(void)
 {
 	i2c_del_driver(&muc_i2c_driver);
-	_deallocate_buffers();
 }

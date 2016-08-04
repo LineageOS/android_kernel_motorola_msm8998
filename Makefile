@@ -29,6 +29,7 @@ gb-mods-y :=	muc_core.o \
 		muc_gpio.o \
 		muc_svc.o \
 		mods_init.o \
+		muc_buffer.o \
 		muc_spi.o \
 		muc_i2c.o \
 		apba.o \
