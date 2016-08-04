@@ -46,12 +46,6 @@
 #define MUC_SUPPORTS(d, f)  (d->proto_ver >= PROTO_VER_##f)
 
 /*
- * Maximum allowed datagram size (in bytes). A datagram may be split into
- * multiple packets.
- */
-#define MAX_DATAGRAM_SZ     (64 * 1024)
-
-/*
  * Default size of a SPI packet (in bytes). This can be negotiated to be
  * larger, all the way up to the maximum size of a datagram.
  */
@@ -187,6 +181,11 @@ struct spi_dl_msg {
 		struct spi_dl_msg_bus_config_resp    bus_resp;
 	};
 } __packed;
+
+size_t muc_spi_get_pkt_sz(size_t pl_size)
+{
+	return PKT_SIZE(pl_size);
+}
 
 static enum ack parse_rx_pkt(struct muc_spi_data *dd);
 static int __muc_spi_message_send(struct muc_spi_data *dd, __u8 msg_type,
@@ -796,50 +795,19 @@ static const struct file_operations muc_spi_stats_fops = {
 	.read	= muc_spi_stats_read,
 };
 
-
-static __u8 *tx_pkt;
-static __u8 *rx_pkt;
-static __u8 *rx_datagram;
-
 static int allocate_buffers(struct muc_spi_data *dd)
 {
-	dd->tx_pkt = tx_pkt;
-	dd->rx_pkt = rx_pkt;
-	dd->rx_datagram = rx_datagram;
+	struct muc_buffers *b = muc_get_buffers();
 
-	return 0;
-}
-
-static int _allocate_buffers(void)
-{
-	tx_pkt = kzalloc(PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
-	if (!tx_pkt)
+	if (!b)
 		return -ENOMEM;
 
-	rx_pkt = kzalloc(PKT_SIZE(MAX_DATAGRAM_SZ), GFP_KERNEL);
-	if (!rx_pkt)
-		goto free_tx;
-
-	rx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL);
-	if (!rx_datagram)
-		goto free_rx;
+	dd->tx_pkt = b->tx_pkt;
+	dd->rx_pkt = b->rx_pkt;
+	dd->rx_datagram = b->rx_datagram;
 
 	return 0;
-free_rx:
-	kfree(rx_pkt);
-free_tx:
-	kfree(tx_pkt);
-
-	return -ENOMEM;
 }
-
-static void _deallocate_buffers(void)
-{
-	kfree(tx_pkt);
-	kfree(rx_pkt);
-	kfree(rx_datagram);
-}
-
 static void muc_spi_quirks_init(struct muc_spi_data *dd)
 {
 	struct device_node *np = dd->spi->dev.of_node;
@@ -976,17 +944,9 @@ int __init muc_spi_init(void)
 {
 	int err;
 
-	err = _allocate_buffers();
-	if (err) {
-		pr_err("muc_spi buffer allocation failed\n");
-		return err;
-	}
-
 	err = spi_register_driver(&muc_spi_driver);
-	if (err != 0) {
-		_deallocate_buffers();
+	if (err != 0)
 		pr_err("muc_spi initialization failed\n");
-	}
 
 	return err;
 }
@@ -994,5 +954,4 @@ int __init muc_spi_init(void)
 void muc_spi_exit(void)
 {
 	spi_unregister_driver(&muc_spi_driver);
-	_deallocate_buffers();
 }
