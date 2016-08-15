@@ -27,6 +27,7 @@
 
 static BLOCKING_NOTIFIER_HEAD(muc_attach_chain_head);
 static void do_muc_ff_reset(struct work_struct *work);
+static int muc_pinctrl_select_state_con(struct muc_data *cdata);
 
 static int muc_attach_notifier_call_chain(unsigned long val)
 {
@@ -249,14 +250,21 @@ static void muc_handle_detection(bool force_removal)
 
 	/* Send enable sequence when detected and in disabled. */
 	if (detected && cdata->bplus_state == MUC_BPLUS_DISABLED) {
-		muc_register_spi();
-
 		cdata->bplus_state = MUC_BPLUS_TRANSITIONING;
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
 		cdata->bplus_state = MUC_BPLUS_ENABLED;
 
-		if (pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con))
-			pr_warn("%s: select SPI active pinctrl failed\n",
+		/* Select SPI/I2C based on CLK signal */
+		if (gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
+			pr_info("%s: I2C selected\n", __func__);
+			muc_register_i2c();
+		} else {
+			pr_info("%s: SPI selected\n", __func__);
+			muc_register_spi();
+		}
+
+		if (muc_pinctrl_select_state_con(cdata))
+			pr_warn("%s: select active pinctrl failed\n",
 				__func__);
 
 		/* Re-read state after BPLUS settle time */
@@ -411,7 +419,8 @@ int muc_gpio_ack_cfg(bool en)
 	int ret;
 
 	/* Only allow the configuration to change if the muc is detected */
-	if (!muc_gpio_ack_is_supported() || !muc_misc_data->muc_detected)
+	if (!muc_gpio_ack_is_supported() || !muc_misc_data->muc_detected ||
+	    !muc_misc_data->spi_transport_done)
 		return -ENODEV;
 
 	if (en)
@@ -426,6 +435,20 @@ int muc_gpio_ack_cfg(bool en)
 			__func__, en);
 
 	return ret;
+}
+
+static int muc_pinctrl_select_state_con(struct muc_data *cdata)
+{
+	if (cdata->spi_transport_done)
+		return pinctrl_select_state(cdata->pinctrl,
+					    cdata->pins_spi_con);
+	else if (cdata->i2c_transport_done)
+		return pinctrl_select_state(cdata->pinctrl,
+					    cdata->pins_i2c_con);
+
+	dev_err(cdata->dev, "No transport done to select pinctrl\n");
+
+	return -ENODEV;
 }
 
 static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
@@ -457,6 +480,13 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 	if (IS_ERR(cdata->pins_spi_ack)) {
 		dev_info(dev, "Failed to lookup 'spi_ack' pinctrl\n");
 		cdata->pins_spi_ack = NULL;
+	}
+
+	cdata->pins_i2c_con = pinctrl_lookup_state(cdata->pinctrl,
+				"i2c_active");
+	if (IS_ERR(cdata->pins_i2c_con)) {
+		dev_err(dev, "Failed to lookup 'i2c_active' pinctrl\n");
+		return PTR_ERR(cdata->pins_i2c_con);
 	}
 
 	/* Default to connected initially until detection is complete */
@@ -827,7 +857,7 @@ static void do_muc_ff_reset(struct work_struct *work)
 		cd->bplus_state = MUC_BPLUS_DISABLED;
 	} else {
 		if (cd->bplus_state == MUC_BPLUS_ENABLED)
-			pinctrl_select_state(cd->pinctrl, cd->pins_spi_con);
+			muc_pinctrl_select_state_con(cd);
 		muc_handle_detection(false);
 	}
 }
@@ -891,8 +921,8 @@ static void do_muc_poweroff(struct work_struct *work)
 	}
 
 	cd->pinctrl_disconnect = true;
-	if (pinctrl_select_state(cd->pinctrl, cd->pins_spi_con))
-		pr_warn("%s: select spi pinctrl failed\n", __func__);
+	if (muc_pinctrl_select_state_con(cd))
+		pr_warn("%s: select pinctrl failed\n", __func__);
 }
 
 void muc_poweroff(void)
