@@ -31,6 +31,7 @@ enum {
 	MUC_GPIO_BPLUS_ISET = 8,
 	MUC_GPIO_BPLUS_DISCHARG = 9,
 	MUC_GPIO_BPLUS_FAULT_N = 10,
+	MUC_GPIO_CLK = 11,
 	MUC_MAX_GPIOS
 };
 
@@ -116,6 +117,7 @@ struct muc_data {
 	struct pinctrl_state *pins_discon;
 	struct pinctrl_state *pins_spi_con;
 	struct pinctrl_state *pins_spi_ack;
+	struct pinctrl_state *pins_i2c_con;
 	bool pinctrl_disconnect;
 
 	bool need_det_output;
