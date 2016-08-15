@@ -141,7 +141,9 @@ void muc_register_spi(void)
 		goto put_spi_np;
 	}
 
+	of_node_set_flag(dev->of_node, OF_POPULATED_BUS);
 	muc_misc_data->spi_transport_done = true;
+
 put_spi_np:
 	of_node_put(spi_np);
 put_np:
@@ -183,6 +185,7 @@ void muc_register_i2c(void)
 		goto put_i2c_np;
 	}
 
+	of_node_set_flag(dev->of_node, OF_POPULATED_BUS);
 	muc_misc_data->i2c_transport_done = true;
 
 put_i2c_np:
@@ -205,6 +208,8 @@ static int muc_remove(struct platform_device *pdev)
 		of_dev_put(ps_muc->spi_pdev);
 	if (ps_muc->i2c_pdev)
 		of_dev_put(ps_muc->i2c_pdev);
+
+	of_node_clear_flag(dev->of_node, OF_POPULATED_BUS);
 
 	return 0;
 }
