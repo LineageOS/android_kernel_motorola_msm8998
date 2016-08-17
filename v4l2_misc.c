@@ -473,10 +473,7 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 	switch (cmd) {
 	case VIOC_HAL_IFACE_START: {
 		int i;
-		void *data = v4l2_hal_init();
-
-		if (data == NULL)
-			ret = -EFAULT;
+		void *data;
 
 		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
 			/* a req from last session could stuck there */
@@ -485,10 +482,16 @@ static long misc_dev_ioctl(struct file *filp, unsigned int cmd,
 				mutex_lock(&g_data->command[i].lock);
 			}
 			init_completion(&g_data->command[i].comp);
-			mutex_unlock(&g_data->command[i].lock);
 		}
 
+		data = v4l2_hal_init();
+		if (data == NULL)
+			ret = -EFAULT;
+
 		g_data->v4l2_hal_data = data;
+
+		for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++)
+			mutex_unlock(&g_data->command[i].lock);
 		break;
 	}
 	case VIOC_HAL_IFACE_STOP: {
@@ -671,6 +674,7 @@ static int v4l2_hal_probe(struct platform_device *pdev)
 	for (i = 0; i < V4L2_HAL_MAX_STREAMS + 1; i++) {
 		init_waitqueue_head(&data->command[i].wait);
 		mutex_init(&data->command[i].lock);
+		init_completion(&data->command[i].comp);
 	}
 	mutex_init(&data->users_lock);
 
