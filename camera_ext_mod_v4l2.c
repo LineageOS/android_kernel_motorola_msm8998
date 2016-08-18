@@ -409,7 +409,7 @@ static int request_bufs(struct file *file, void *fh,
 	INIT_LIST_HEAD(&g_v4l2_data->strm.available_buffers);
 
 	ret = vb2_reqbufs(q, req);
-	g_v4l2_data->buf_requested = ret ? false : true;
+	g_v4l2_data->buf_requested = (req->count > 0 && ret == 0);
 
 	mutex_unlock(&g_v4l2_data->mod_mutex);
 
