@@ -35,7 +35,7 @@ struct gb_ptp {
 
 /* Version of the Greybus ptp protocol we support */
 #define	GB_PTP_VERSION_MAJOR		0x00
-#define	GB_PTP_VERSION_MINOR		0x02
+#define	GB_PTP_VERSION_MINOR		0x03
 
 /* Greybus ptp operation types */
 #define GB_PTP_TYPE_GET_FUNCTIONALITY		0x02
@@ -49,6 +49,11 @@ struct gb_ptp {
 #define GB_PTP_TYPE_POWER_AVAILABLE		0x0A /* added in ver 00.02 */
 #define GB_PTP_TYPE_POWER_SOURCE		0x0B /* added in ver 00.02 */
 #define GB_PTP_TYPE_GET_MAX_OUTPUT_CURRENT	0x0C /* added in ver 00.02 */
+#define GB_PTP_TYPE_GET_CURRENT_FLOW		0x0D /* added in ver 00.03 */
+#define GB_PTP_TYPE_SET_MAX_OUTPUT_VOLTAGE	0x0E /* added in ver 00.03 */
+#define GB_PTP_TYPE_GET_OUTPUT_VOLTAGE		0x0F /* added in ver 00.03 */
+#define GB_PTP_TYPE_GET_MAX_INPUT_VOLTAGE	0x10 /* added in ver 00.03 */
+#define GB_PTP_TYPE_SET_INPUT_VOLTAGE		0x11 /* added in ver 00.03 */
 
 /* Check for operation support */
 #define GB_PTP_SUPPORTS(p, name) \
@@ -65,6 +70,18 @@ struct gb_ptp {
 #define GB_PTP_SUPPORT_POWER_SOURCE_MINOR		0x02
 #define GB_PTP_SUPPORT_MAX_OUTPUT_CURRENT_MAJOR		0x00
 #define GB_PTP_SUPPORT_MAX_OUTPUT_CURRENT_MINOR		0x02
+
+/* Operations added in ver 00.03 */
+#define GB_PTP_SUPPORT_GET_CURRENT_FLOW_MAJOR		0x00
+#define GB_PTP_SUPPORT_GET_CURRENT_FLOW_MINOR		0x03
+#define GB_PTP_SUPPORT_SET_MAX_OUTPUT_VOLTAGE_MAJOR	0x00
+#define GB_PTP_SUPPORT_SET_MAX_OUTPUT_VOLTAGE_MINOR	0x03
+#define GB_PTP_SUPPORT_GET_OUTPUT_VOLTAGE_MAJOR		0x00
+#define GB_PTP_SUPPORT_GET_OUTPUT_VOLTAGE_MINOR		0x03
+#define GB_PTP_SUPPORT_GET_MAX_INPUT_VOLTAGE_MAJOR	0x00
+#define GB_PTP_SUPPORT_GET_MAX_INPUT_VOLTAGE_MINOR	0x03
+#define GB_PTP_SUPPORT_SET_INPUT_VOLTAGE_MAJOR		0x00
+#define GB_PTP_SUPPORT_SET_INPUT_VOLTAGE_MINOR		0x03
 
 /* Mod internal source send power capabilities */
 #define GB_PTP_INT_SND_NEVER		0x00
@@ -108,6 +125,9 @@ struct gb_ptp {
 #define GB_PTP_POWER_SOURCE_WIRED	0x02
 #define GB_PTP_POWER_SOURCE_WIRELESS	0x03
 
+/* Mod that does not support variable voltage charging */
+#define GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED	5000000		/* uV */
+
 static enum power_supply_property gb_ptp_props[] = {
 	POWER_SUPPLY_PROP_PTP_INTERNAL_SEND,
 	POWER_SUPPLY_PROP_PTP_INTERNAL_RECEIVE,
@@ -119,6 +139,10 @@ static enum power_supply_property gb_ptp_props[] = {
 	POWER_SUPPLY_PROP_PTP_POWER_REQUIRED,
 	POWER_SUPPLY_PROP_PTP_POWER_AVAILABLE,
 	POWER_SUPPLY_PROP_PTP_POWER_SOURCE,
+	POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_OUTPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_MAX_INPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE,
 };
 
 /* Greybus messages */
@@ -153,9 +177,29 @@ struct gb_ptp_current_flow_request {
 	__u8 direction;
 } __packed;
 
+struct gb_ptp_current_flow_response {
+	__u8 direction;
+} __packed;
+
 struct gb_ptp_max_input_current_request {
 	__le32 curr;
 } __packed;
+
+struct gb_ptp_max_output_voltage_request {
+	__le32 voltage;
+} __packed;
+
+struct gb_ptp_output_voltage_response {
+	__le32 voltage;
+} __packed;
+
+struct gb_ptp_max_input_voltage_response {
+	__le32 voltage;
+} __packed;
+
+struct gb_ptp_input_voltage_request {
+	__le32 voltage;
+} __packed ;
 
 /* Internal structure */
 struct gb_ptp_functionality {
@@ -447,6 +491,37 @@ static int gb_ptp_set_current_flow(struct gb_ptp *ptp, int direction)
 				 &request, sizeof(request), NULL, 0);
 }
 
+static int gb_ptp_get_current_flow(struct gb_ptp *ptp, int *direction)
+{
+	struct gb_ptp_current_flow_response response;
+	int retval;
+
+	if (!GB_PTP_SUPPORTS(ptp, GET_CURRENT_FLOW))
+		return -ENODEV;
+
+	retval = gb_operation_sync(ptp->connection,
+				   GB_PTP_TYPE_GET_CURRENT_FLOW, NULL, 0,
+				   &response, sizeof(response));
+	if (retval)
+		return retval;
+
+	switch (response.direction) {
+	case GB_PTP_CURRENT_OFF:
+		*direction = POWER_SUPPLY_PTP_CURRENT_OFF;
+		break;
+	case GB_PTP_CURRENT_TO_MOD:
+		*direction = POWER_SUPPLY_PTP_CURRENT_FROM_PHONE;
+		break;
+	case GB_PTP_CURRENT_FROM_MOD:
+		*direction = POWER_SUPPLY_PTP_CURRENT_TO_PHONE;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int gb_ptp_set_maximum_input_current(struct gb_ptp *ptp, int curr)
 {
 	struct gb_ptp_max_input_current_request request;
@@ -454,6 +529,73 @@ static int gb_ptp_set_maximum_input_current(struct gb_ptp *ptp, int curr)
 	request.curr = cpu_to_le32((u32)curr);
 	return gb_operation_sync(ptp->connection,
 				 GB_PTP_TYPE_SET_MAX_INPUT_CURRENT, &request,
+				 sizeof(request), NULL, 0);
+}
+
+static int gb_ptp_set_maximum_output_voltage(struct gb_ptp *ptp, int voltage)
+{
+	struct gb_ptp_max_output_voltage_request request;
+
+	if (!GB_PTP_SUPPORTS(ptp, SET_MAX_OUTPUT_VOLTAGE))
+		return 0;
+
+	request.voltage = cpu_to_le32((u32)voltage);
+	return gb_operation_sync(ptp->connection,
+				 GB_PTP_TYPE_SET_MAX_OUTPUT_VOLTAGE, &request,
+				 sizeof(request), NULL, 0);
+}
+
+static int gb_ptp_get_output_voltage(struct gb_ptp *ptp, int *voltage)
+{
+	struct gb_ptp_output_voltage_response response;
+	int retval;
+
+	if (!GB_PTP_SUPPORTS(ptp, GET_OUTPUT_VOLTAGE)) {
+		*voltage = GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED;
+		return 0;
+	}
+
+	retval = gb_operation_sync(ptp->connection,
+				   GB_PTP_TYPE_GET_OUTPUT_VOLTAGE, NULL, 0,
+				   &response, sizeof(response));
+	if (retval)
+		return retval;
+
+	*voltage = le32_to_cpu(response.voltage);
+	return 0;
+}
+
+static int gb_ptp_get_max_input_voltage(struct gb_ptp *ptp, int *voltage)
+{
+	struct gb_ptp_max_input_voltage_response response;
+	int retval;
+
+	if (!GB_PTP_SUPPORTS(ptp, GET_MAX_INPUT_VOLTAGE)) {
+		*voltage = GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED;
+		return 0;
+	}
+
+	retval = gb_operation_sync(ptp->connection,
+				   GB_PTP_TYPE_GET_MAX_INPUT_VOLTAGE, NULL, 0,
+				   &response, sizeof(response));
+	if (retval)
+		return retval;
+
+	*voltage = le32_to_cpu(response.voltage);
+	return 0;
+}
+
+static int gb_ptp_set_input_voltage(struct gb_ptp *ptp, int voltage)
+{
+	struct gb_ptp_input_voltage_request request;
+
+	if (!GB_PTP_SUPPORTS(ptp, SET_INPUT_VOLTAGE))
+		return voltage == GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED ?
+			0 : -EINVAL;
+
+	request.voltage = cpu_to_le32((u32)voltage);
+	return gb_operation_sync(ptp->connection,
+				 GB_PTP_TYPE_SET_INPUT_VOLTAGE, &request,
 				 sizeof(request), NULL, 0);
 }
 
@@ -514,6 +656,8 @@ static int gb_ptp_get_property(struct power_supply *psy,
 			val->intval = func.ext;
 		break;
 	case POWER_SUPPLY_PROP_PTP_CURRENT_FLOW:
+		retval = gb_ptp_get_current_flow(ptp, &val->intval);
+		break;
 	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT:
 		retval = -ENODEV; /* to make power_supply_uevent() happy */
 		break;
@@ -531,6 +675,18 @@ static int gb_ptp_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_PTP_POWER_SOURCE:
 		retval = gb_ptp_power_source(ptp, &val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE:
+		retval = -ENODEV; /* to make power_supply_uevent() happy */
+		break;
+	case POWER_SUPPLY_PROP_PTP_OUTPUT_VOLTAGE:
+		retval = gb_ptp_get_output_voltage(ptp, &val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_VOLTAGE:
+		retval = gb_ptp_get_max_input_voltage(ptp, &val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE:
+		retval = -ENODEV; /* to make power_supply_uevent() happy */
 		break;
 	default:
 		retval = -EINVAL;
@@ -563,6 +719,12 @@ static int gb_ptp_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT:
 		retval = gb_ptp_set_maximum_input_current(ptp, val->intval);
 		break;
+	case POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE:
+		retval = gb_ptp_set_maximum_output_voltage(ptp, val->intval);
+		break;
+	case POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE:
+		retval = gb_ptp_set_input_voltage(ptp, val->intval);
+		break;
 	default:
 		retval = -EINVAL;
 	}
@@ -576,7 +738,9 @@ static int gb_ptp_property_is_writeable(struct power_supply *psy,
 				 enum power_supply_property psp)
 {
 	return psp == POWER_SUPPLY_PROP_PTP_CURRENT_FLOW ||
-	       psp == POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT;
+	       psp == POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT ||
+	       psp == POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE ||
+	       psp == POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE;
 }
 
 #ifdef DRIVER_OWNS_PSY_STRUCT
