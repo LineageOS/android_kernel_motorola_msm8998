@@ -203,7 +203,7 @@ static void idle_timeout_work_func(struct work_struct *work)
 	struct mods_uart_pm_data *data;
 
 	data = container_of(work, struct mods_uart_pm_data, idle_timer_work);
-	if (!data || !data->on)
+	if (!data->on)
 		return;
 
 	pr_debug("%s: idle timeout\n", __func__);
