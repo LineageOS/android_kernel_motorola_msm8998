@@ -274,10 +274,16 @@ static inline size_t sg_pcopy_from_buffer(struct scatterlist *sgl,
  * implemented later. So, before that this should return false.
  */
 #include <linux/leds.h>
+/*
+ * Check to see if the 3.19 functionality to disable led sysfs entries was
+ * backported to an older kernel
+ */
+#ifndef LED_SYSFS_DISABLE
 static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 {
 	return false;
 }
+#endif
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
