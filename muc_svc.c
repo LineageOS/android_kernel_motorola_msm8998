@@ -96,6 +96,7 @@ static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
 static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dev);
 static int muc_svc_version_heartbeat(void);
+static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev);
 
 static void muc_svc_send_kobj_uevent(struct kobject *kobj, const char *event)
 {
@@ -458,6 +459,19 @@ current_rsv_ack_store(struct mods_dl_device *mods_dev,
 	return count;
 }
 
+static ssize_t
+rtc_sync_store(struct mods_dl_device *mods_dev, const char *buf, size_t count)
+{
+	int ret;
+
+	/* any write to this file will send the rtc sync */
+	ret = muc_svc_send_rtc_sync(mods_dev);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
 struct muc_svc_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
@@ -488,6 +502,7 @@ static MUC_SVC_ATTR(capability_reason, 0444, capability_reason_show, NULL);
 static MUC_SVC_ATTR(capability_vendor, 0444, capability_vendor_show, NULL);
 static MUC_SVC_ATTR(current_rsv_ack, 0444, NULL, current_rsv_ack_store);
 static MUC_SVC_ATTR(vendor_updates, 0444, vendor_updates_show, NULL);
+static MUC_SVC_ATTR(rtc_sync, 0200, NULL, rtc_sync_store);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -539,6 +554,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_capability_vendor.attr,
 	&muc_svc_attr_current_rsv_ack.attr,
 	&muc_svc_attr_vendor_updates.attr,
+	&muc_svc_attr_rtc_sync.attr,
 	NULL,
 };
 
@@ -1901,6 +1917,9 @@ static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev)
 	struct timespec ts;
 	struct mb_control_rtc_sync_request req;
 
+	if (!MB_CONTROL_SUPPORTS(mods_dev, RTC_SYNC))
+		return 0;
+
 	getnstimeofday(&ts);
 	req.nsec = cpu_to_le64(timespec_to_ns(&ts));
 
@@ -1951,15 +1970,13 @@ muc_svc_create_hotplug_work(struct mods_dl_device *mods_dev)
 		goto free_route;
 	}
 
-	/* If supported, sync RTC clocks early so the time is correct if a
-	 * failure occurs later in the initialization sequence. This will
-	 * allow the event logs from both the AP and mod to be compared.
+	/* Sync RTC clocks early so the time is correct if a failure occurs
+	 * later in the initialization sequence. This will allow the event logs
+	 * from both the AP and mod to be compared.
 	 */
-	if (MB_CONTROL_SUPPORTS(mods_dev, RTC_SYNC)) {
-		ret = muc_svc_send_rtc_sync(mods_dev);
-		if (ret)
-			goto free_route;
-	}
+	ret = muc_svc_send_rtc_sync(mods_dev);
+	if (ret)
+		goto free_route;
 
 	/* Get the hotplug IDs */
 	ret = muc_svc_get_hotplug_data(svc_dd->dld, &hpw->hotplug, mods_dev);
