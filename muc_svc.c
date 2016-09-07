@@ -2074,6 +2074,8 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 	list_del(&mods_dev->list);
 	mutex_unlock(&svc_list_lock);
 
+	flush_work(&mods_dev->hpw->work);
+
 	muc_svc_generate_unplug(mods_dev);
 
 	/* Destroy custom vendor control route */
