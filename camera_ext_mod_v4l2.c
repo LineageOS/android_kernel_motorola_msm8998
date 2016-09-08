@@ -400,7 +400,6 @@ static int camera_ext_vb2_q_init(struct camera_ext *cam_dev,
 
 	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	q->io_modes = VB2_MMAP;
-	q->io_flags = 0;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	q->buf_struct_size = sizeof(struct vb2_metadata_buffer);
 
@@ -669,7 +668,7 @@ static int mod_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 static struct v4l2_file_operations camera_ext_mod_v4l2_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mod_v4l2_open,
-	.ioctl		= video_ioctl2,
+	.unlocked_ioctl	= video_ioctl2,
 	.release	= mod_v4l2_close,
 	.poll		= mod_v4l2_poll,
 	.mmap		= mod_v4l2_mmap,
