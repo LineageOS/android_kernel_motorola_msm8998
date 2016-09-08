@@ -484,7 +484,7 @@ static int gb_ptp_get_property(struct power_supply *psy,
 	if (!ptp->connection) {
 		mutex_unlock(&ptp->conn_lock);
 		pr_warn("%s: supply already free'd: %s\n",
-			__func__, psy->name);
+			__func__, power_supply_name(psy));
 		return -ENODEV;
 	}
 
@@ -543,7 +543,7 @@ static int gb_ptp_set_property(struct power_supply *psy,
 	if (!ptp->connection) {
 		mutex_unlock(&ptp->conn_lock);
 		pr_warn("%s: supply already free'd: %s\n",
-			__func__, psy->name);
+			__func__, power_supply_name(psy));
 		return -ENODEV;
 	}
 
