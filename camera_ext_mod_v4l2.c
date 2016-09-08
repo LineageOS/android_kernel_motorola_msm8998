@@ -40,6 +40,7 @@
 
 #include "camera_ext.h"
 #include "connection.h"
+#include "kernel_ver.h"
 
 #define CAM_EXT_CTRL_NUM_HINT   100
 #define MAX_RETRY_TIMES         50
@@ -305,7 +306,7 @@ int camera_ext_mod_v4l2_buffer_notify(struct camera_ext *cam_dev,
 	return 0;
 }
 
-static int camera_ext_queue_setup(struct vb2_queue *q,
+static int _camera_ext_queue_setup(struct vb2_queue *q,
 	const struct v4l2_format *fmt,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[], void *alloc_ctxs[])
@@ -317,6 +318,21 @@ static int camera_ext_queue_setup(struct vb2_queue *q,
 
 	return 0;
 }
+
+#ifdef V4L2_VIDEOBUF2_VOID_FORMAT
+static int camera_ext_queue_setup(struct vb2_queue *q,
+	const void *parg,
+	unsigned int *num_buffers, unsigned int *num_planes,
+	unsigned int sizes[], void *alloc_ctxs[])
+{
+	const struct v4l2_format *fmt = parg;
+
+	return _camera_ext_queue_setup(q, fmt, num_buffers,
+				num_planes, sizes, alloc_ctxs);
+}
+#else
+#define camera_ext_queue_setup _camera_ext_queue_setup
+#endif
 
 static void camera_ext_buf_queue(struct vb2_buffer *vb)
 {
