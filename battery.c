@@ -226,7 +226,8 @@ static int get_property(struct power_supply *b,
 	mutex_lock(&gb->conn_lock);
 	if (!gb->connection) {
 		mutex_unlock(&gb->conn_lock);
-		pr_err("%s: supply already free'd: %s\n", __func__, b->name);
+		pr_err("%s: supply already free'd: %s\n",
+			__func__, power_supply_name(b));
 		return -ENODEV;
 	}
 
