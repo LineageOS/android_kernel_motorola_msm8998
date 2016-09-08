@@ -301,4 +301,11 @@ static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 #include <media/v4l2-flash-led-class.h>
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+/*
+ * v4l2 videobuf2 queue_setup changing arguments.
+ */
+#define V4L2_VIDEOBUF2_VOID_FORMAT
+#endif
+
 #endif	/* __GREYBUS_KERNEL_VER_H */
