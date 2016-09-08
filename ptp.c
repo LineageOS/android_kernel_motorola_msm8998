@@ -21,7 +21,16 @@
 struct gb_ptp {
 	struct gb_connection	*connection;
 	struct mutex		conn_lock;
-	struct power_supply	psy;
+#ifdef DRIVER_OWNS_PSY_STRUCT
+	struct power_supply psy;
+#define to_gb_ptp(x) container_of(x, struct gb_ptp, psy)
+#define power_supply_ptr(x) (&x->psy)
+#else
+	struct power_supply *psy;
+	struct power_supply_desc desc;
+#define to_gb_ptp(x) power_supply_get_drvdata(x)
+#define power_supply_ptr(x) (x->psy)
+#endif
 };
 
 /* Version of the Greybus ptp protocol we support */
@@ -465,7 +474,7 @@ static int gb_ptp_receive(u8 type, struct gb_operation *op)
 			return -EINVAL;
 	case GB_PTP_TYPE_EXT_POWER_CHANGED:
 	case GB_PTP_TYPE_POWER_REQUIRED_CHANGED:
-		power_supply_changed(&ptp->psy);
+		power_supply_changed(power_supply_ptr(ptp));
 		return 0;
 	default:
 		return -EINVAL;
@@ -476,7 +485,7 @@ static int gb_ptp_get_property(struct power_supply *psy,
 			       enum power_supply_property psp,
 			       union power_supply_propval *val)
 {
-	struct gb_ptp *ptp = container_of(psy, struct gb_ptp, psy);
+	struct gb_ptp *ptp = to_gb_ptp(psy);
 	struct gb_ptp_functionality func;
 	int retval;
 
@@ -536,7 +545,7 @@ static int gb_ptp_set_property(struct power_supply *psy,
 			       enum power_supply_property psp,
 			       const union power_supply_propval *val)
 {
-	struct gb_ptp *ptp = container_of(psy, struct gb_ptp, psy);
+	struct gb_ptp *ptp = to_gb_ptp(psy);
 	int retval;
 
 	mutex_lock(&ptp->conn_lock);
@@ -570,6 +579,7 @@ static int gb_ptp_property_is_writeable(struct power_supply *psy,
 	       psp == POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT;
 }
 
+#ifdef DRIVER_OWNS_PSY_STRUCT
 static void gb_ptp_psy_release(struct device *dev)
 {
 	struct power_supply *psy = dev_get_drvdata(dev);
@@ -578,10 +588,63 @@ static void gb_ptp_psy_release(struct device *dev)
 	if (!psy)
 		return;
 
-	ptp = container_of(psy, struct gb_ptp, psy);
+	ptp = to_gb_ptp(psy);
 	kfree(ptp);
 	kfree(dev);
 }
+
+static int
+init_and_register(struct gb_connection *connection, struct gb_ptp *ptp)
+{
+	int retval;
+
+	/* Create a power supply */
+	ptp->psy.name		= "gb_ptp";
+	ptp->psy.type		= POWER_SUPPLY_TYPE_PTP;
+	ptp->psy.properties	= gb_ptp_props;
+	ptp->psy.num_properties	= ARRAY_SIZE(gb_ptp_props);
+	ptp->psy.get_property	= gb_ptp_get_property;
+	ptp->psy.set_property	= gb_ptp_set_property;
+	ptp->psy.property_is_writeable = gb_ptp_property_is_writeable;
+
+	retval = power_supply_register(&connection->bundle->intf->dev,
+				       &ptp->psy);
+	if (retval)
+		goto error;
+
+	ptp->psy.dev->release = gb_ptp_psy_release;
+
+error:
+	return retval;
+}
+#else
+static int
+init_and_register(struct gb_connection *connection, struct gb_ptp *ptp)
+{
+	struct power_supply_config cfg = {};
+
+	cfg.drv_data = ptp;
+
+	/* Create a power supply */
+	ptp->desc.name		= "gb_ptp";
+	ptp->desc.type		= POWER_SUPPLY_TYPE_PTP;
+	ptp->desc.properties	= gb_ptp_props;
+	ptp->desc.num_properties	= ARRAY_SIZE(gb_ptp_props);
+	ptp->desc.get_property	= gb_ptp_get_property;
+	ptp->desc.set_property	= gb_ptp_set_property;
+	ptp->desc.property_is_writeable = gb_ptp_property_is_writeable;
+
+	ptp->psy = power_supply_register(&connection->bundle->dev,
+					&ptp->desc, &cfg);
+	if (IS_ERR(ptp->psy))
+		return PTR_ERR(ptp->psy);
+
+	return 0;
+}
+#endif
+
+
+
 
 static int gb_ptp_connection_init(struct gb_connection *connection)
 {
@@ -595,21 +658,11 @@ static int gb_ptp_connection_init(struct gb_connection *connection)
 	ptp->connection = connection;
 	mutex_init(&ptp->conn_lock);
 
-	/* Create a power supply */
-	ptp->psy.name		= "gb_ptp";
-	ptp->psy.type		= POWER_SUPPLY_TYPE_PTP;
-	ptp->psy.properties	= gb_ptp_props;
-	ptp->psy.num_properties	= ARRAY_SIZE(gb_ptp_props);
-	ptp->psy.get_property	= gb_ptp_get_property;
-	ptp->psy.set_property	= gb_ptp_set_property;
-	ptp->psy.property_is_writeable = gb_ptp_property_is_writeable;
-	retval = power_supply_register(&connection->bundle->intf->dev,
-				       &ptp->psy);
+	connection->private = ptp;
+
+	retval = init_and_register(connection, ptp);
 	if (retval)
 		goto error;
-
-	ptp->psy.dev->release = gb_ptp_psy_release;
-	connection->private = ptp;
 
 	return 0;
 
@@ -622,10 +675,15 @@ static void gb_ptp_connection_exit(struct gb_connection *connection)
 {
 	struct gb_ptp *ptp = connection->private;
 
+#ifdef DRIVER_OWNS_PSY_STRUCT
 	mutex_lock(&ptp->conn_lock);
 	ptp->connection = NULL;
 	mutex_unlock(&ptp->conn_lock);
 	power_supply_unregister(&ptp->psy);
+#else
+	power_supply_unregister(ptp->psy);
+	kfree(ptp);
+#endif
 }
 
 static struct gb_protocol ptp_protocol = {
