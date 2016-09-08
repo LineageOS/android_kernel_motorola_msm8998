@@ -22,6 +22,12 @@
 #define DRIVER_OWNS_PSY_STRUCT
 #endif
 
+#ifdef DRIVER_OWNS_PSY_STRUCT
+#define power_supply_name(p) (p->name)
+#else
+#define power_supply_name(p) (p->desc->name)
+#endif
+
 #ifndef __ATTR_WO
 #define __ATTR_WO(_name) {						\
 	.attr	= { .name = __stringify(_name), .mode = S_IWUSR },	\
