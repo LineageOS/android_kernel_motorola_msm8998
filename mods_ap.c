@@ -154,7 +154,7 @@ static int mods_ap_probe(struct platform_device *pdev)
 			&pdev->dev, MODS_INTF_AP);
 	if (IS_ERR(ap_data->dld)) {
 		err = PTR_ERR(ap_data->dld);
-		dev_err(&pdev->dev, "Unable to create greybus host driver.\n");
+		dev_err(&pdev->dev, "Unable to create DL device.\n");
 		if (err == -ENODEV) {
 			/* the AP is a special case that creates a route with
 			 * the SVC.  ENODEV means that the SVC isn't ready and
