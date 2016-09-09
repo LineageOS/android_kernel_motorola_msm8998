@@ -73,7 +73,12 @@ obj-m += gb-vendor-moto.o
 obj-m += gb-ptp.o
 obj-m += gb-camera_ext.o
 obj-m += gb-display.o
+
+# gb-usb_ext depends on MODS_USB_EXT_BRIDGE
+ifneq ($(filter m y, $(CONFIG_MODS_USB_EXT_BRIDGE)),)
 obj-m += gb-usb_ext.o
+endif
+
 obj-m += gb-sensors_ext.o
 
 KERNELVER		?= $(shell uname -r)
