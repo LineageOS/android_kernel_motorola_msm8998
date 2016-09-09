@@ -72,7 +72,11 @@ obj-m += gb-mods.o
 obj-m += gb-vendor-moto.o
 obj-m += gb-ptp.o
 obj-m += gb-camera_ext.o
+
+# gb-display depends on MOD_DISPLAY
+ifneq ($(filter m y, $(CONFIG_MOD_DISPLAY)),)
 obj-m += gb-display.o
+endif
 
 # gb-usb_ext depends on MODS_USB_EXT_BRIDGE
 ifneq ($(filter m y, $(CONFIG_MODS_USB_EXT_BRIDGE)),)
