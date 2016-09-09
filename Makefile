@@ -57,7 +57,12 @@ gb-sensors_ext-y := sensors_ext.o sensors_ext_iio.o
 
 obj-m += greybus.o
 #obj-m += gb-phy.o
+
+# gb-audio depends on MODS_CODEC_BUS
+ifneq ($(filter m y, $(CONFIG_MODS_CODEC_BUS)),)
 obj-m += gb-audio.o
+endif
+
 #obj-m += gb-vibrator.o
 obj-m += gb-battery.o
 #obj-m += gb-loopback.o
