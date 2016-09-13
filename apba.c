@@ -2046,7 +2046,8 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 
 		gpio = of_get_gpio_flags(dev->of_node, i, &flags);
 		if (!gpio_is_valid(gpio)) {
-			dev_err(dev, "of_get_gpio failed: %d\n", gpio);
+			dev_err(dev, "of_get_gpio failed: %d index: %d\n",
+				gpio, i);
 			ret = -EINVAL;
 			goto gpio_cleanup;
 		}
@@ -2054,20 +2055,29 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 		ret = of_property_read_string_index(dev->of_node,
 					label_prop, i, &label);
 		if (ret) {
-			dev_err(dev, "reading label failed: %d\n", ret);
+			dev_err(dev, "reading label failed: %d index: %d\n",
+				ret, i);
 			goto gpio_cleanup;
 		}
 
 		ret = devm_gpio_request_one(dev, gpio, flags, label);
-		if (ret)
+		if (ret) {
+			dev_err(dev, "failed request gpio: %d index: %d\n",
+				gpio, i);
 			goto gpio_cleanup;
+		}
 
 		ret = gpio_export(gpio, true);
-		if (ret)
+		if (ret) {
+			dev_err(dev, "failed to export gpio: %d index: %d\n",
+				gpio, i);
 			goto gpio_cleanup;
+		}
 
 		ret = gpio_export_link(dev, label, gpio);
 		if (ret) {
+			dev_err(dev, "failed to link gpio: %d index: %d\n",
+				gpio, i);
 			gpio_unexport(gpio);
 			goto gpio_cleanup;
 		}
