@@ -190,7 +190,6 @@ static void mods_codec_work(struct work_struct *work)
 				__func__, port_type);
 		else
 			*port_active = false;
-		priv->is_params_set = false;
 	}
 
 	mutex_lock(&gb_codec->lock);
@@ -521,6 +520,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
+	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			atomic_set(&priv->playback_pcm_triggered, 1);
 		else
@@ -528,6 +528,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 		queue_work(priv->workqueue, &priv->work);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
+	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			atomic_set(&priv->playback_pcm_triggered, 0);
 		else
@@ -535,9 +536,7 @@ static int mods_codec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 		queue_work(priv->workqueue, &priv->work);
 		break;
 	case SNDRV_PCM_TRIGGER_RESUME:
-	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
-	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		break;
 	default:
 		return -EINVAL;
@@ -612,6 +611,9 @@ static void mods_codec_shutdown(struct snd_pcm_substream *substream,
 	else
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, false);
+
+	if (!priv->rx_active && !priv->tx_active)
+		priv->is_params_set = false;
 
 	mutex_lock(&gb_codec->lock);
 	gb_mods_i2s_put(gb_codec);
