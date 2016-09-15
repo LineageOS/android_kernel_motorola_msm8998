@@ -898,6 +898,7 @@ static void populate_transports_node(struct apba_ctrl *ctrl)
 		goto put_spi_np;
 	}
 
+	of_node_set_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 	ctrl->flash_dev_populated = true;
 
 put_spi_np:
@@ -945,6 +946,8 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 		if (ctrl->flash_dev_populated) {
 			of_platform_depopulate(ctrl->dev);
 			of_dev_put(ctrl->pdev);
+			of_node_clear_flag(ctrl->dev->of_node,
+						OF_POPULATED_BUS);
 			ctrl->pdev = NULL;
 			ctrl->flash_dev_populated = false;
 		}
@@ -2397,6 +2400,7 @@ free_gpios:
 	of_platform_depopulate(ctrl->dev);
 	if (ctrl->pdev)
 		of_dev_put(ctrl->pdev);
+	of_node_clear_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 
 	/* Let muc core finish probe even if we bombed out. */
 	muc_enable_det();
@@ -2428,6 +2432,7 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 	of_platform_depopulate(ctrl->dev);
 	if (ctrl->pdev)
 		of_dev_put(ctrl->pdev);
+	of_node_clear_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 
 	g_ctrl = NULL;
 
