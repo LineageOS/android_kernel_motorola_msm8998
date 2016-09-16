@@ -61,7 +61,7 @@
 
 /* Version of the Greybus control protocol we support */
 #define MB_CONTROL_VERSION_MAJOR              0x00
-#define MB_CONTROL_VERSION_MINOR              0x08
+#define MB_CONTROL_VERSION_MINOR              0x09
 
 /* Greybus control request types */
 #define MB_CONTROL_TYPE_INVALID               0x00
@@ -79,6 +79,7 @@
 #define MB_CONTROL_TYPE_GET_PWRUP_REASON      0x0c
 #define MB_CONTROL_TYPE_CURRENT_RSV           0x0d
 #define MB_CONTROL_TYPE_CURRENT_RSV_ACK       0x0e
+#define MB_CONTROL_TYPE_TEST_MODE             0x0f
 
 /* Valid modes for the reboot request */
 #define MB_CONTROL_REBOOT_MODE_RESET          0x01
@@ -130,6 +131,9 @@
 
 #define MB_CONTROL_SUPPORT_CURRENT_RSV_MAJOR          0x00
 #define MB_CONTROL_SUPPORT_CURRENT_RSV_MINOR          0x08
+
+#define MB_CONTROL_SUPPORT_TEST_MODE_MAJOR            0x00
+#define MB_CONTROL_SUPPORT_TEST_MODE_MINOR            0x09
 
 /* Version Support Macros */
 #define MB_CONTROL_SUPPORTS(mods_dev, name) \
@@ -220,5 +224,10 @@ struct mb_control_current_rsv_ack_request {
 	__u8 rsv;
 } __packed;
 /* Control protocol current rsv ack has response has no payload */
+
+struct mb_control_test_mode_request {
+	__le32  value;
+} __packed;
+
 
 #endif /* __MODS_PROTOCOLS_H */

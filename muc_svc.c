@@ -97,6 +97,7 @@ static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit)
 static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dev);
 static int muc_svc_version_heartbeat(void);
 static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev);
+static int muc_svc_send_test_mode(struct mods_dl_device *mods_dev, uint32_t val);
 
 static void muc_svc_send_kobj_uevent(struct kobject *kobj, const char *event)
 {
@@ -472,6 +473,22 @@ rtc_sync_store(struct mods_dl_device *mods_dev, const char *buf, size_t count)
 	return count;
 }
 
+static ssize_t
+test_mode_store(struct mods_dl_device *mods_dev, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+
+	if (kstrtoul(buf, 16, &val) < 0)
+		return -EINVAL;
+
+	ret = muc_svc_send_test_mode(mods_dev, val & 0xFFFFFFFF);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
 struct muc_svc_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct mods_dl_device *dev, char *buf);
@@ -503,6 +520,7 @@ static MUC_SVC_ATTR(capability_vendor, 0444, capability_vendor_show, NULL);
 static MUC_SVC_ATTR(current_rsv_ack, 0444, NULL, current_rsv_ack_store);
 static MUC_SVC_ATTR(vendor_updates, 0444, vendor_updates_show, NULL);
 static MUC_SVC_ATTR(rtc_sync, 0200, NULL, rtc_sync_store);
+static MUC_SVC_ATTR(test_mode, 0200, NULL, test_mode_store);
 
 #define to_muc_svc_attr(a) \
 	container_of(a, struct muc_svc_attribute, attr)
@@ -555,6 +573,7 @@ static struct attribute *muc_svc_default_attrs[] = {
 	&muc_svc_attr_current_rsv_ack.attr,
 	&muc_svc_attr_vendor_updates.attr,
 	&muc_svc_attr_rtc_sync.attr,
+	&muc_svc_attr_test_mode.attr,
 	NULL,
 };
 
@@ -1928,6 +1947,32 @@ static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev)
 				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
 
 	return ret;
+}
+
+static int muc_svc_send_test_mode(struct mods_dl_device *mods_dev, uint32_t val)
+{
+	struct device *dev = &svc_dd->pdev->dev;
+	struct gb_message *msg;
+	struct mb_control_test_mode_request request;
+
+	if (!MB_CONTROL_SUPPORTS(mods_dev, TEST_MODE))
+		return -ENOTSUPP;
+
+	request.value = cpu_to_le32(val);
+
+	msg = svc_gb_msg_send_sync(svc_dd->dld, (uint8_t *)&request,
+				MB_CONTROL_TYPE_TEST_MODE, sizeof(request),
+				SVC_VENDOR_CTRL_CPORT(mods_dev->intf_id));
+
+	if (IS_ERR(msg)) {
+		dev_err(dev, "[%d] Failed to send TEST_MODE\n",
+			mods_dev->intf_id);
+		return PTR_ERR(msg);
+	}
+
+	svc_gb_msg_free(msg);
+
+	return 0;
 }
 
 static struct muc_svc_hotplug_work *
