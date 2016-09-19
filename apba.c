@@ -394,6 +394,9 @@ static int apba_send_unipro_read_attr_req(uint16_t attribute, uint16_t selector,
 	struct mhb_hdr req_hdr;
 	struct mhb_unipro_read_attr_req req;
 
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
+
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
 	req_hdr.type = MHB_TYPE_UNIPRO_READ_ATTR_REQ;
@@ -416,6 +419,9 @@ static int apba_send_unipro_write_attr_req(uint16_t attribute, uint16_t selector
 	int ret;
 	struct mhb_hdr req_hdr;
 	struct mhb_unipro_write_attr_req req;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
@@ -440,6 +446,9 @@ static int apba_send_unipro_gear_req(uint8_t tx, uint8_t rx, uint8_t pwrmode,
 	int ret;
 	struct mhb_hdr req_hdr;
 	struct mhb_unipro_control_req req;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
@@ -493,6 +502,9 @@ static int apba_send_unipro_stats_req(void)
 {
 	int ret;
 	struct mhb_hdr req_hdr;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UNIPRO;
@@ -661,6 +673,9 @@ static int apba_send_uart_config_req(unsigned long val)
 	struct mhb_hdr req_hdr;
 	struct mhb_uart_config_req req;
 
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
+
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_UART;
 	req_hdr.type = MHB_TYPE_UART_CONFIG_REQ;
@@ -681,6 +696,9 @@ static int apba_send_diag_mode_req(__u32 mode)
 	struct mhb_hdr req_hdr;
 	struct mhb_diag_mode_req req;
 
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
+
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = MHB_ADDR_DIAG;
 	req_hdr.type = MHB_TYPE_DIAG_MODE_REQ;
@@ -699,6 +717,9 @@ static int apba_send_diag_log_req(uint8_t addr)
 {
 	int ret;
 	struct mhb_hdr req_hdr;
+
+	if (!g_ctrl->mods_uart)
+		return -ENODEV;
 
 	memset(&req_hdr, 0, sizeof(req_hdr));
 	req_hdr.addr = addr;
