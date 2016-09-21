@@ -178,7 +178,6 @@ struct apba_ctrl {
 	uint32_t last_unipro_value;
 	uint32_t last_unipro_status;
 	uint32_t unipro_stats[32];
-	struct platform_device *pdev;
 	struct notifier_block attach_nb;
 	unsigned long present;
 	struct workqueue_struct *wq;
@@ -878,6 +877,7 @@ static void populate_transports_node(struct apba_ctrl *ctrl)
 {
 	struct device_node *np;
 	struct device_node *spi_np;
+	struct platform_device *pdev;
 
 	np = of_find_node_by_name(ctrl->dev->of_node, "transports");
 	if (!np) {
@@ -892,8 +892,8 @@ static void populate_transports_node(struct apba_ctrl *ctrl)
 	}
 
 	dev_dbg(ctrl->dev, "%s: creating platform device\n", __func__);
-	ctrl->pdev = of_platform_device_create(spi_np, NULL, ctrl->dev);
-	if (!ctrl->pdev) {
+	pdev = of_platform_device_create(spi_np, NULL, ctrl->dev);
+	if (!pdev) {
 		dev_warn(ctrl->dev, "failed to populate transport devices\n");
 		goto put_spi_np;
 	}
@@ -945,10 +945,8 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 	} else {
 		if (ctrl->flash_dev_populated) {
 			of_platform_depopulate(ctrl->dev);
-			of_dev_put(ctrl->pdev);
 			of_node_clear_flag(ctrl->dev->of_node,
 						OF_POPULATED_BUS);
-			ctrl->pdev = NULL;
 			ctrl->flash_dev_populated = false;
 		}
 
@@ -2398,8 +2396,6 @@ free_gpios:
 	apba_gpio_free(ctrl, &pdev->dev);
 
 	of_platform_depopulate(ctrl->dev);
-	if (ctrl->pdev)
-		of_dev_put(ctrl->pdev);
 	of_node_clear_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 
 	/* Let muc core finish probe even if we bombed out. */
@@ -2430,8 +2426,6 @@ static int apba_ctrl_remove(struct platform_device *pdev)
 	apba_gpio_free(ctrl, &pdev->dev);
 
 	of_platform_depopulate(ctrl->dev);
-	if (ctrl->pdev)
-		of_dev_put(ctrl->pdev);
 	of_node_clear_flag(ctrl->dev->of_node, OF_POPULATED_BUS);
 
 	g_ctrl = NULL;
