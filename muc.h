@@ -129,10 +129,6 @@ struct muc_data {
 	/* Mod short detection */
 	int short_count;
 
-	/* Platform Device Pointers */
-	struct platform_device *spi_pdev;
-	struct platform_device *i2c_pdev;
-
 	u32 intr_count;
 
 	/* BPLUS Fault Interrupts */

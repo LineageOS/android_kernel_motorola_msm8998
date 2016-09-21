@@ -110,6 +110,7 @@ void muc_register_spi(void)
 	struct device *dev = muc_misc_data->dev;
 	struct device_node *np;
 	struct device_node *spi_np;
+	struct platform_device *pdev;
 
 	if (muc_misc_data->spi_transport_done)
 		return;
@@ -117,10 +118,6 @@ void muc_register_spi(void)
 	muc_misc_data->i2c_transport_done = false;
 
 	of_platform_depopulate(dev);
-	if (muc_misc_data->i2c_pdev) {
-		of_dev_put(muc_misc_data->i2c_pdev);
-		muc_misc_data->i2c_pdev = NULL;
-	}
 
 	np = of_find_node_by_name(dev->of_node, "transports");
 	if (!np) {
@@ -135,8 +132,8 @@ void muc_register_spi(void)
 		goto put_np;
 	}
 
-	muc_misc_data->spi_pdev = of_platform_device_create(spi_np, NULL, dev);
-	if (!muc_misc_data->spi_pdev) {
+	pdev = of_platform_device_create(spi_np, NULL, dev);
+	if (!pdev) {
 		dev_err(dev, "Failed to populate SPI transport devices\n");
 		goto put_spi_np;
 	}
@@ -155,16 +152,13 @@ void muc_register_i2c(void)
 	struct device *dev = muc_misc_data->dev;
 	struct device_node *np;
 	struct device_node *i2c_np;
+	struct platform_device *pdev;
 
 	if (muc_misc_data->i2c_transport_done)
 		return;
 
 	muc_misc_data->spi_transport_done = false;
 	of_platform_depopulate(dev);
-	if (muc_misc_data->spi_pdev) {
-		of_dev_put(muc_misc_data->spi_pdev);
-		muc_misc_data->spi_pdev = NULL;
-	}
 
 	np = of_find_node_by_name(dev->of_node, "transports");
 	if (!np) {
@@ -179,8 +173,8 @@ void muc_register_i2c(void)
 		goto put_np;
 	}
 
-	muc_misc_data->i2c_pdev = of_platform_device_create(i2c_np, NULL, dev);
-	if (!muc_misc_data->i2c_pdev) {
+	pdev = of_platform_device_create(i2c_np, NULL, dev);
+	if (!pdev) {
 		dev_err(dev, "Failed to populate I2C transport devices\n");
 		goto put_i2c_np;
 	}
@@ -204,11 +198,6 @@ static int muc_remove(struct platform_device *pdev)
 	muc_gpio_exit(dev, ps_muc);
 
 	of_platform_depopulate(dev);
-	if (ps_muc->spi_pdev)
-		of_dev_put(ps_muc->spi_pdev);
-	if (ps_muc->i2c_pdev)
-		of_dev_put(ps_muc->i2c_pdev);
-
 	of_node_clear_flag(dev->of_node, OF_POPULATED_BUS);
 
 	return 0;
