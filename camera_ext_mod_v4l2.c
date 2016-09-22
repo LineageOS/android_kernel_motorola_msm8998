@@ -872,11 +872,11 @@ int camera_ext_mod_v4l2_init(struct camera_ext *cam_dev)
 	cam_dev->vdev_mod->release = camera_ext_dev_release;
 	cam_dev->vdev_mod->fops = &camera_ext_mod_v4l2_fops;
 	cam_dev->vdev_mod->ioctl_ops = &camera_ext_v4l2_ioctl_ops;
-	cam_dev->vdev_mod->vfl_type = VFL_TYPE_GRABBER;
+	cam_dev->vdev_mod->vfl_type = VFL_TYPE_MOT_GRABBER;
 
 	video_set_drvdata(cam_dev->vdev_mod, cam_dev);
 	retval = video_register_device(cam_dev->vdev_mod,
-				VFL_TYPE_GRABBER, -1);
+				VFL_TYPE_MOT_GRABBER, -1);
 	if (retval) {
 		pr_err("%s: failed to register video device. rc %d\n",
 			__func__, retval);
