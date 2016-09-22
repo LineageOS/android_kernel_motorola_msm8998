@@ -472,6 +472,26 @@ buffer_full:
 	return (size < 0 || size == PAGE_SIZE) ? 0 : size;
 }
 
+static inline uint64_t gb_sensors_rtc_to_mono(uint64_t rtc)
+{
+	struct timespec rtc_ts;
+	struct timespec mon_ts;
+	uint64_t m_0;
+	uint64_t r_0;
+	uint64_t r_t;
+
+	ktime_get_ts(&mon_ts);
+	ktime_get_real_ts(&rtc_ts);
+	m_0 = timespec_to_ns(&mon_ts);
+	r_0 = timespec_to_ns(&rtc_ts);
+	r_t = rtc;
+
+	/*                              */
+	/* mono  = rtc   - rtc  + mono  */
+	/*     t      t       0       0 */
+	return r_t - r_0 + m_0;
+}
+
 /** This function processes data from a single sensor. */
 static size_t gb_sensors_rcv_data_sensor(
 		struct gb_sensors_ext_report_data *report, size_t size)
@@ -501,7 +521,8 @@ static size_t gb_sensors_rcv_data_sensor(
 	}
 
 	report->readings       = le16_to_cpu(report->readings);
-	report->reference_time = le64_to_cpu(report->reference_time);
+	report->reference_time =
+		gb_sensors_rtc_to_mono(le64_to_cpu(report->reference_time));
 
 	pr_debug("SensorID=%d, readings=%d flags=%d\n",
 			report->sensor_id, report->readings, report->flags);
