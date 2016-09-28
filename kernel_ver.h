@@ -308,4 +308,9 @@ static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 #define V4L2_VIDEOBUF2_VOID_FORMAT
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
+/* Commit: 3e1b6c9 iio: Move buffer registration to the core */
+#define IIO_CORE_REGISTERS_BUFFER
+#endif
+
 #endif	/* __GREYBUS_KERNEL_VER_H */
