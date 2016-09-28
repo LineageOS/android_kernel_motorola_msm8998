@@ -33,6 +33,7 @@
 #include <linux/platform_device.h>
 #include <linux/random.h>
 
+#include "kernel_ver.h"
 #include "sensors_ext_iio.h"
 #include "sensors_ext.h"
 
@@ -926,6 +927,33 @@ static const struct iio_trigger_ops sensors_ext_iio_trigger_ops = {
 	.owner = THIS_MODULE,
 };
 
+#ifdef IIO_CORE_REGISTERS_BUFFER
+static inline int
+gb_sensors_buffer_register(struct iio_dev *indio_dev,
+				const struct iio_chan_spec *channels,
+				int num_channels)
+{
+	return 0;
+}
+
+static inline void gb_sensors_buffer_unregister(struct iio_dev *indio_dev)
+{}
+#else
+static inline int
+gb_sensors_buffer_register(struct iio_dev *indio_dev,
+				const struct iio_chan_spec *channels,
+				int num_channels)
+{
+	return iio_buffer_register(indio_dev, channels, num_channels);
+}
+
+static inline void gb_sensors_buffer_unregister(struct iio_dev *indio_dev)
+{
+	iio_buffer_unregister(indio_dev);
+}
+#endif
+
+
 /** Creates an IIO device for the given sensor.
  *
  * If successful, SysFS will contain a new directory corresponding to this
@@ -1110,7 +1138,7 @@ static int gb_sensors_add_sensor(struct gb_sensor *sensor)
 	}
 
 
-	retval = iio_buffer_register(indio_dev, indio_dev->channels,
+	retval = gb_sensors_buffer_register(indio_dev, indio_dev->channels,
 			indio_dev->num_channels);
 	if (retval < 0) {
 		pr_err("Failed to register IIO buffer (%d).\n", retval);
@@ -1145,7 +1173,7 @@ error_register:
 error_free_trig:
 	iio_trigger_free(sensor->trig);
 error_trigger_alloc:
-	iio_buffer_unregister(indio_dev);
+	gb_sensors_buffer_unregister(indio_dev);
 error_pollfunc:
 	iio_dealloc_pollfunc(indio_dev->pollfunc);
 error_buffer:
@@ -1172,7 +1200,7 @@ static void gb_sensors_rm_sensor(struct gb_sensor *sensor)
 
 	pr_debug("Removing %s\n", sensor->name_len ? sensor->name : "Unknown");
 	iio_device_unregister(indio_dev);
-	iio_buffer_unregister(indio_dev);
+	gb_sensors_buffer_unregister(indio_dev);
 	iio_trigger_unregister(sensor->trig);
 	iio_trigger_free(sensor->trig);
 	iio_dealloc_pollfunc(indio_dev->pollfunc);
