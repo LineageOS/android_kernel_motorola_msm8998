@@ -953,6 +953,11 @@ static inline void gb_sensors_buffer_unregister(struct iio_dev *indio_dev)
 }
 #endif
 
+#ifdef IIO_KFIFO_ALLOC_NO_PARAMS
+#define TO_KFIFO_ALLOC_PARAM(dev)
+#else
+#define TO_KFIFO_ALLOC_PARAM(dev) (dev)
+#endif
 
 /** Creates an IIO device for the given sensor.
  *
@@ -1093,7 +1098,7 @@ static int gb_sensors_add_sensor(struct gb_sensor *sensor)
 
 	/* Configure the buffer. TODO: Switch to a ring buffer, so we discard
 	 * the oldest entries if we reach the limit. */
-	buffer = iio_kfifo_allocate(indio_dev);
+	buffer = iio_kfifo_allocate(TO_KFIFO_ALLOC_PARAM(indio_dev));
 	if (buffer == NULL) {
 		pr_err("Failed to allocate IIO kfifo\n");
 		retval = -ENOMEM;
