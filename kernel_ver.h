@@ -313,4 +313,9 @@ static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 #define IIO_CORE_REGISTERS_BUFFER
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
+/* Commit: 7ab374a iio: kfifo: Remove unused argument in iio_kfifo_allocate */
+#define IIO_KFIFO_ALLOC_NO_PARAMS
+#endif
+
 #endif	/* __GREYBUS_KERNEL_VER_H */
