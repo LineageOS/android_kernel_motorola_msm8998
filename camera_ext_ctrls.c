@@ -1670,6 +1670,17 @@ static struct v4l2_ctrl_config frag_uvc_cfg = {
 			| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
+static struct v4l2_ctrl_config continuous_snapshot_fps = {
+	.id = CAM_EXT_CID_CONTINUOUS_SNAPSHOT_FPS,
+	.type = V4L2_CTRL_TYPE_STRING,
+	.name = "continuous snapshot fps",
+	.max = CAM_EXT_CTRL_FLOAT_STR_LEN -  1,
+	.step = 1,
+	.flags = V4L2_CTRL_FLAG_READ_ONLY
+		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
+		| CAMERA_EXT_CTRL_FLAG_STRING_AS_NUMBER,
+};
+
 #define __ITEM(ID, item) \
 	[CAM_EXT_CID_##ID - CID_CAM_EXT_CLASS_BASE] = &item
 
@@ -1807,6 +1818,7 @@ __ITEM(EFFECT_MODE_EXT, effect_mode_ext),
 __ITEM(ZSL_BUFFER_DEPTH, zsl_buffer_depth),
 __ITEM(CUSTOM_PARAMETER, custom_parameter),
 __ITEM(UVC_FRAG_CFG, frag_uvc_cfg),
+__ITEM(CONTINUOUS_SNAPSHOT_FPS, continuous_snapshot_fps),
 };
 
 struct v4l2_ctrl_config *camera_ext_get_ctrl_config(uint32_t id)
