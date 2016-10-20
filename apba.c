@@ -1084,11 +1084,11 @@ static int apba_compare_partition(struct apba_ctrl *ctrl,
 	unsigned long cur = 0;
 	size_t readlen;
 
-	tftf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	tftf = kmalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!tftf)
 		goto skip_compare;
 
-	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!buf)
 		goto cleanup;
 
@@ -1239,7 +1239,7 @@ static int apba_flash_partition(struct apba_ctrl *ctrl,
 		goto cleanup;
 	}
 
-	buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	buffer = kzalloc(PAGE_SIZE, GFP_KERNEL | GFP_DMA);
 	if (!buffer) {
 		err = -ENOMEM;
 		goto cleanup;
