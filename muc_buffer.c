@@ -35,19 +35,19 @@ int muc_buffer_init(void)
 	if (!_buffers)
 		goto done;
 
-	_buffers->tx_pkt = kzalloc(pkt_sz, GFP_KERNEL);
+	_buffers->tx_pkt = kzalloc(pkt_sz, GFP_KERNEL | GFP_DMA);
 	if (!_buffers->tx_pkt)
 		goto free_buf;
 
-	_buffers->rx_pkt = kzalloc(pkt_sz, GFP_KERNEL);
+	_buffers->rx_pkt = kzalloc(pkt_sz, GFP_KERNEL | GFP_DMA);
 	if (!_buffers->rx_pkt)
 		goto free_tx_pkt;
 
-	_buffers->tx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL);
+	_buffers->tx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL | GFP_DMA);
 	if (!_buffers->tx_datagram)
 		goto free_rx_pkt;
 
-	_buffers->rx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL);
+	_buffers->rx_datagram = kzalloc(MAX_DATAGRAM_SZ, GFP_KERNEL | GFP_DMA);
 	if (!_buffers->rx_datagram)
 		goto free_tx_dg;
 
