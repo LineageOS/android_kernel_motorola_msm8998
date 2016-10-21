@@ -318,4 +318,16 @@ static inline bool led_sysfs_is_disabled(struct led_classdev *led_cdev)
 #define IIO_KFIFO_ALLOC_NO_PARAMS
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+/* Commit: 4890140 ASoC: Remove snd_soc_codec dapm field */
+
+#include <sound/soc.h>
+
+static inline struct snd_soc_dapm_context
+*snd_soc_codec_get_dapm(struct snd_soc_codec *codec)
+{
+	return &codec->dapm;
+}
+#endif
+
 #endif	/* __GREYBUS_KERNEL_VER_H */

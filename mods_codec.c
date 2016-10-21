@@ -28,7 +28,9 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+
 #include "audio.h"
+#include "kernel_ver.h"
 
 struct mods_codec_dai {
 	struct gb_snd_codec *snd_codec;
@@ -660,7 +662,7 @@ static int mods_codec_probe(struct snd_soc_codec *codec)
 			goto cleanup;
 		}
 	}
-	snd_soc_dapm_sync(&codec->dapm);
+	snd_soc_dapm_sync(snd_soc_codec_get_dapm(codec));
 
 	pr_info("mods codec probed\n");
 
