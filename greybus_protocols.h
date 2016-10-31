@@ -1598,5 +1598,35 @@ struct gb_lights_get_flash_fault_response {
 #define GB_LIGHTS_FLASH_FAULT_LED_OVER_TEMPERATURE	0x00000080
 } __packed;
 
+/* Vendor */
+
+#define GB_VENDOR_MOTO_VERSION_MAJOR		0x00
+#define GB_VENDOR_MOTO_VERSION_MINOR		0x03
+
+/* Greybus Motorola vendor specific request types */
+#define GB_VENDOR_MOTO_TYPE_GET_DMESG		0x02
+#define GB_VENDOR_MOTO_TYPE_GET_LAST_DMESG	0x03
+#define GB_VENDOR_MOTO_TYPE_GET_PWR_UP_REASON	0x04
+#define GB_VENDOR_MOTO_TYPE_GET_DMESG_SIZE	0x05
+#define GB_VENDOR_MOTO_TYPE_GET_UPTIME		0x06
+
+#define GB_VENDOR_MOTO_DEFAULT_DMESG_SIZE   1000
+#define GB_VENDOR_MOTO_VER_DMESG_SIZE       2
+#define GB_VENDOR_MOTO_VER_UPTIME           3
+
+/* power up reason request has no payload */
+struct gb_vendor_moto_pwr_up_reason_response {
+	__le32 reason;
+} __packed;
+
+/* get dmesg size request has no payload */
+struct gb_vendor_moto_get_dmesg_size_resp {
+	__le16 size;
+} __packed;
+
+struct gb_vendor_moto_get_uptime_response {
+	__le32 secs;
+} __packed;
+
 #endif /* __GREYBUS_PROTOCOLS_H */
 
