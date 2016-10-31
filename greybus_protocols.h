@@ -1936,5 +1936,112 @@ struct gb_sensors_ext_stop_reporting_request {
 	__u8	sensor_id;
 } __packed;
 
+/* CAMERA EXT */
+
+/* Version of the Greybus camera protocol we support */
+#define GB_CAMERA_EXT_VERSION_MAJOR 0x01
+#define GB_CAMERA_EXT_VERSION_MINOR 0x01
+
+/* Used to indicate enum index is not found */
+#define GB_CAMERA_EXT_INVALID_INDEX cpu_to_le32(0xFFFFFFFF)
+
+/* Greybus camera request types */
+#define GB_CAMERA_EXT_TYPE_INVALID		0x00
+#define GB_CAMERA_EXT_TYPE_PROTOCOL_VERSION	0x01
+
+#define GB_CAMERA_EXT_TYPE_POWER_ON		0x02
+#define GB_CAMERA_EXT_TYPE_POWER_OFF		0x03
+
+#define GB_CAMERA_EXT_TYPE_INPUT_ENUM		0x04
+#define GB_CAMERA_EXT_TYPE_INPUT_GET		0x05
+#define GB_CAMERA_EXT_TYPE_INPUT_SET		0x06
+
+#define GB_CAMERA_EXT_TYPE_FMT_ENUM		0x07
+#define GB_CAMERA_EXT_TYPE_FMT_GET		0x08
+#define GB_CAMERA_EXT_TYPE_FMT_SET		0x09
+
+#define GB_CAMERA_EXT_TYPE_FMSIZE_ENUM		0x0A
+#define GB_CAMERA_EXT_TYPE_FRMIVAL_ENUM		0x0B
+
+#define GB_CAMERA_EXT_TYPE_STREAM_ON		0x0C
+#define GB_CAMERA_EXT_TYPE_STREAM_OFF		0x0D
+
+#define GB_CAMERA_EXT_TYPE_STREAM_PARM_SET	0x0E
+#define GB_CAMERA_EXT_TYPE_STREAM_PARM_GET	0x0F
+
+#define GB_CAMERA_EXT_TYPE_CTRL_GET_CFG		0x10
+
+#define GB_CAMERA_EXT_TYPE_CTRL_GET		0x11
+#define GB_CAMERA_EXT_TYPE_CTRL_SET		0x12
+#define GB_CAMERA_EXT_TYPE_CTRL_TRY		0x13
+
+#define GB_CAMERA_EXT_ASYNC_MESSAGE		0x14
+
+struct camera_ext_predefined_ctrl_mod_req {
+	/* Phone access MOD control by index (0, 1, ...).
+	 */
+	__le32 idx;
+	/* required response size
+	 * Expected responding config data size (including header) for
+	 * GB_CAMERA_EXT_TYPE_CTRL_GET_CFG.
+	 * Expected control value size for GB_CAMERA_EXT_TYPE_CTRL_GET.
+	 * Size of control value to set/try for GB_CAMERA_EXT_TYPE_CTRL_SET/TRY.
+	 */
+	__le32 data_size;
+	/* control value to set for GB_CAMERA_EXT_TYPE_CTRL_SET/TRY
+	 */
+	uint8_t data[0];
+};
+
+/* max control value size */
+#define CAMERA_EXT_CTRL_MAX_VAL_SIZE (16 * 1024)
+
+/* next available control info (to calc expected gb response size) */
+struct camera_ext_ctrl_size_info {
+	/* id, -1 if no more */
+	__le32 id;
+	/* if control has menu/dims from MOD, indicating the array
+	 * item number
+	 */
+	__le32 array_size;
+	/* control's value size.  */
+	__le32 val_size;
+} __packed;
+
+/* ctrl config from MOD, playload is decided by
+ * CAMERA_EXT_CTRL_FLAG_NEED_XXX. MOD side must provide all fields
+ * each field is tagged by its NEED_XXX flag.
+ */
+struct camera_ext_predefined_ctrl_mod_cfg {
+	/* control id at position idx (camera_ext_predefined_ctrl_mod_req) */
+	__le32 id;
+	struct camera_ext_ctrl_size_info next;
+	/* FLAG0 DATA0 FLAG1 DATA1 ... */
+	uint8_t data[0];
+} __packed;
+
+/* event send from MOD to AP */
+struct camera_ext_event_hdr {
+	__le32 type;
+	uint8_t data[0];
+} __packed;
+
+struct camera_ext_event_error {
+	__le32 error_code;
+} __packed;
+
+/* use 1024 as metadata length*/
+#define CAMERA_EXT_EVENT_METADATA_DESC_LEN 1024
+
+struct camera_ext_event_metadata {
+	char desc[CAMERA_EXT_EVENT_METADATA_DESC_LEN];
+} __packed;
+
+/* open mode hint value sent along with power up request */
+#define CAMERA_EXT_BOOTMODE_NORMAL	0
+#define CAMERA_EXT_BOOTMODE_PREVIEW	1
+#define CAMERA_EXT_BOOTMODE_DFU		2
+#define CAMERA_EXT_BOOTMODE_MAX		3
+
 #endif /* __GREYBUS_PROTOCOLS_H */
 
