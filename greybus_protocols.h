@@ -1834,5 +1834,32 @@ struct gb_display_set_display_state_request {
 } __packed;
 /* set display state has no response */
 
+
+/* USB-EXT */
+
+#define GB_USB_EXT_VERSION_MAJOR     0x00
+#define GB_USB_EXT_VERSION_MINOR     0x01
+
+#define GB_USB_EXT_TYPE_READY        0x02
+#define GB_USB_EXT_TYPE_ATTACH_STATE 0x03
+
+#define GB_USB_EXT_PROTOCOL_2_0      0x00
+#define GB_USB_EXT_PROTOCOL_3_1      0x01
+
+#define GB_USB_EXT_PATH_ENTERPRISE   0x00
+#define GB_USB_EXT_PATH_BRIDGE       0x01
+
+#define GB_USB_EXT_REMOTE_DEVICE     0x00
+#define GB_USB_EXT_REMOTE_HOST       0x01
+
+struct gb_usb_ext_attach_request {
+	__u8 active;        /* attach or detach */
+	__u8 protocol;      /* 2.0 or 3.1 */
+	__u8 path;          /* tsb bridge or shared dp/usb */
+	__u8 remote_type;   /* host or device */
+} __packed;
+
+/* no data for gb_usb_ext_attach_response */
+
 #endif /* __GREYBUS_PROTOCOLS_H */
 
