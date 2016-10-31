@@ -308,13 +308,14 @@ static void attach_work(struct work_struct *work)
 static DEFINE_RATELIMIT_STATE(bpf_rate_state, HZ, 1);
 static irqreturn_t muc_bplus_fault(int irq, void *data)
 {
+	struct muc_data *cdata = data;
 	int level;
 
-	level = gpio_get_value(muc_misc_data->gpios[MUC_GPIO_BPLUS_FAULT_N]);
+	level = gpio_get_value(cdata->gpios[MUC_GPIO_BPLUS_FAULT_N]);
 
 	/* Accounting and logging when asserted only */
 	if (!level) {
-		muc_misc_data->bplus_fault_cnt++;
+		cdata->bplus_fault_cnt++;
 
 		if (__ratelimit(&bpf_rate_state))
 			muc_send_uevent("MOD_ERROR=BPLUS_FAULT_DETECTED");
@@ -335,7 +336,7 @@ static irqreturn_t muc_isr(int irq, void *data)
 	if (cdata->bplus_state == MUC_BPLUS_TRANSITIONING)
 		return IRQ_HANDLED;
 
-	muc_misc_data->intr_count++;
+	cdata->intr_count++;
 
 	pr_debug("%s: detected: %d previous state: %d\n",
 			__func__, det, cdata->muc_detected);
