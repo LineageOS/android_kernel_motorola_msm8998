@@ -23,30 +23,6 @@ struct gb_display_device {
 	int			minor;		/* display minor number */
 };
 
-/* Version of the Greybus display protocol we support */
-#define	GB_DISPLAY_VERSION_MAJOR		0x00
-#define	GB_DISPLAY_VERSION_MINOR		0x02
-
-/* Greybus Display operation types */
-#define	GB_DISPLAY_HOST_READY			0x02
-#define	GB_DISPLAY_GET_CONFIG_SIZE		0x03
-#define	GB_DISPLAY_GET_CONFIG			0x04
-#define	GB_DISPLAY_SET_CONFIG			0x05
-#define	GB_DISPLAY_GET_STATE			0x06
-#define	GB_DISPLAY_SET_STATE			0x07
-#define	GB_DISPLAY_NOTIFICATION			0x08
-
-#define GB_DISPLAY_STATE_OFF			0x00
-#define GB_DISPLAY_STATE_ON			0x01
-
-#define GB_DISPLAY_NOTIFY_INVALID		0x00
-#define GB_DISPLAY_NOTIFY_FAILURE		0x01
-#define GB_DISPLAY_NOTIFY_AVAILABLE		0x02
-#define GB_DISPLAY_NOTIFY_UNAVAILABLE		0x03
-#define GB_DISPLAY_NOTIFY_CONNECT		0x04
-#define GB_DISPLAY_NOTIFY_DISCONNECT		0x05
-#define GB_DISPLAY_NOTIFY_NUM_EVENTS		0x06
-
 /* Helper Functions */
 
 char* display_event_values[] = {
@@ -122,19 +98,6 @@ static int host_ready(void *data)
 	return ret;
 }
 
-/* get display config size request has no payload */
-struct gb_display_get_display_config_size_response {
-	__le32	size;
-} __packed;
-
-/* get display config request has no payload */
-struct gb_display_get_display_config_response {
-	__u8	display_type;
-	__u8	config_type;
-	__u8	reserved[2];
-	__u8	data[0];
-} __packed;
-
 #define MAX_DISPLAY_CONFIG_SIZE 1024
 
 static int get_display_config(void *data, struct mod_display_panel_config **display_config)
@@ -192,11 +155,6 @@ exit:
 	return ret;
 }
 
-struct gb_display_set_display_config_request {
-	__u8	index;
-} __packed;
-/* set display config has no response */
-
 static int set_display_config(void *data, u8 index)
 {
 	struct gb_display_device *disp = (struct gb_display_device *)data;
@@ -210,11 +168,6 @@ static int set_display_config(void *data, u8 index)
 
 	return ret;
 }
-
-/* get display config request has no payload */
-struct gb_display_get_display_state_response {
-	__u8	state;
-} __packed;
 
 static int get_display_state(void *data, u8 *state)
 {
@@ -234,11 +187,6 @@ exit:
 }
 
 #define SET_STATE_TIMEOUT (10 * 1000) /* 10 seconds */
-
-struct gb_display_set_display_state_request {
-	__u8	state;
-} __packed;
-/* set display state has no response */
 
 static int set_display_state(void *data, u8 state)
 {

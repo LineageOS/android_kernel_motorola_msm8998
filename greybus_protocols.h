@@ -1780,5 +1780,59 @@ struct gb_vendor_moto_get_uptime_response {
 	__le32 secs;
 } __packed;
 
+/* DISPLAY */
+
+/* Version of the Greybus display protocol we support */
+#define	GB_DISPLAY_VERSION_MAJOR		0x00
+#define	GB_DISPLAY_VERSION_MINOR		0x02
+
+/* Greybus Display operation types */
+#define	GB_DISPLAY_HOST_READY			0x02
+#define	GB_DISPLAY_GET_CONFIG_SIZE		0x03
+#define	GB_DISPLAY_GET_CONFIG			0x04
+#define	GB_DISPLAY_SET_CONFIG			0x05
+#define	GB_DISPLAY_GET_STATE			0x06
+#define	GB_DISPLAY_SET_STATE			0x07
+#define	GB_DISPLAY_NOTIFICATION			0x08
+
+#define GB_DISPLAY_STATE_OFF			0x00
+#define GB_DISPLAY_STATE_ON			0x01
+
+#define GB_DISPLAY_NOTIFY_INVALID		0x00
+#define GB_DISPLAY_NOTIFY_FAILURE		0x01
+#define GB_DISPLAY_NOTIFY_AVAILABLE		0x02
+#define GB_DISPLAY_NOTIFY_UNAVAILABLE		0x03
+#define GB_DISPLAY_NOTIFY_CONNECT		0x04
+#define GB_DISPLAY_NOTIFY_DISCONNECT		0x05
+#define GB_DISPLAY_NOTIFY_NUM_EVENTS		0x06
+
+/* get display config size request has no payload */
+struct gb_display_get_display_config_size_response {
+	__le32	size;
+} __packed;
+
+/* get display config request has no payload */
+struct gb_display_get_display_config_response {
+	__u8	display_type;
+	__u8	config_type;
+	__u8	reserved[2];
+	__u8	data[0];
+} __packed;
+
+struct gb_display_set_display_config_request {
+	__u8	index;
+} __packed;
+/* set display config has no response */
+
+/* get display config request has no payload */
+struct gb_display_get_display_state_response {
+	__u8	state;
+} __packed;
+
+struct gb_display_set_display_state_request {
+	__u8	state;
+} __packed;
+/* set display state has no response */
+
 #endif /* __GREYBUS_PROTOCOLS_H */
 
