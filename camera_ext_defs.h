@@ -30,6 +30,7 @@
 #define __CAMERA_EXT_DEFS_H
 
 #include <uapi/video/v4l2_camera_ext_defs.h>
+#include "greybus_protocols.h"
 
 /*
  * These structs defined here are transferred via greybus.
@@ -203,70 +204,5 @@ struct camera_ext_streamparm {
 #define CAM_EXT_CTRL_DOUBLE_STR_LEN 19
 typedef char camera_ext_ctrl_float[CAM_EXT_CTRL_FLOAT_STR_LEN];
 typedef char camera_ext_ctrl_double[CAM_EXT_CTRL_DOUBLE_STR_LEN];
-
-struct camera_ext_predefined_ctrl_mod_req {
-	/* Phone access MOD control by index (0, 1, ...).
-	 */
-	__le32 idx;
-	/* required response size
-	 * Expected responding config data size (including header) for
-	 * GB_CAMERA_EXT_TYPE_CTRL_GET_CFG.
-	 * Expected control value size for GB_CAMERA_EXT_TYPE_CTRL_GET.
-	 * Size of control value to set/try for GB_CAMERA_EXT_TYPE_CTRL_SET/TRY.
-	 */
-	__le32 data_size;
-	/* control value to set for GB_CAMERA_EXT_TYPE_CTRL_SET/TRY
-	 */
-	uint8_t data[0];
-};
-
-/* max control value size */
-#define CAMERA_EXT_CTRL_MAX_VAL_SIZE (16 * 1024)
-
-/* next available control info (to calc expected gb response size) */
-struct camera_ext_ctrl_size_info {
-	/* id, -1 if no more */
-	__le32 id;
-	/* if control has menu/dims from MOD, indicating the array
-	 * item number */
-	__le32 array_size;
-	/* control's value size.  */
-	__le32 val_size;
-} __packed;
-
-/* ctrl config from MOD, playload is decided by
- * CAMERA_EXT_CTRL_FLAG_NEED_XXX. MOD side must provide all fields
- * each field is tagged by its NEED_XXX flag.
- */
-struct camera_ext_predefined_ctrl_mod_cfg {
-	/* control id at position idx (camera_ext_predefined_ctrl_mod_req) */
-	__le32 id;
-	struct camera_ext_ctrl_size_info next;
-	/* FLAG0 DATA0 FLAG1 DATA1 ... */
-	uint8_t data[0];
-} __packed;
-
-/* event send from MOD to AP */
-struct camera_ext_event_hdr {
-	__le32 type;
-	uint8_t data[0];
-} __packed;
-
-struct camera_ext_event_error {
-	__le32 error_code;
-} __packed;
-
-/* use 1024 as metadata length*/
-#define CAMERA_EXT_EVENT_METADATA_DESC_LEN 1024
-
-struct camera_ext_event_metadata {
-	char desc[CAMERA_EXT_EVENT_METADATA_DESC_LEN];
-} __packed;
-
-/* open mode hint value sent along with power up request */
-#define CAMERA_EXT_BOOTMODE_NORMAL	0
-#define CAMERA_EXT_BOOTMODE_PREVIEW	1
-#define CAMERA_EXT_BOOTMODE_DFU		2
-#define CAMERA_EXT_BOOTMODE_MAX		3
 
 #endif /* __CAMERA_EXT_DEFS_H */

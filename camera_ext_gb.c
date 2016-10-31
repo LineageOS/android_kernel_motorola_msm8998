@@ -36,45 +36,6 @@
 
 #define MAX_CTRLS_SUPPORT 1000
 
-/* Version of the Greybus camera protocol we support */
-#define GB_CAMERA_EXT_VERSION_MAJOR 0x01
-#define GB_CAMERA_EXT_VERSION_MINOR 0x01
-
-/* Used to indicate enum index is not found */
-#define GB_CAMERA_EXT_INVALID_INDEX cpu_to_le32(0xFFFFFFFF)
-
-/* Greybus camera request types */
-#define GB_CAMERA_EXT_TYPE_INVALID		0x00
-#define GB_CAMERA_EXT_TYPE_PROTOCOL_VERSION	0x01
-
-#define GB_CAMERA_EXT_TYPE_POWER_ON		0x02
-#define GB_CAMERA_EXT_TYPE_POWER_OFF		0x03
-
-#define GB_CAMERA_EXT_TYPE_INPUT_ENUM		0x04
-#define GB_CAMERA_EXT_TYPE_INPUT_GET		0x05
-#define GB_CAMERA_EXT_TYPE_INPUT_SET		0x06
-
-#define GB_CAMERA_EXT_TYPE_FMT_ENUM		0x07
-#define GB_CAMERA_EXT_TYPE_FMT_GET		0x08
-#define GB_CAMERA_EXT_TYPE_FMT_SET		0x09
-
-#define GB_CAMERA_EXT_TYPE_FMSIZE_ENUM		0x0A
-#define GB_CAMERA_EXT_TYPE_FRMIVAL_ENUM		0x0B
-
-#define GB_CAMERA_EXT_TYPE_STREAM_ON		0x0C
-#define GB_CAMERA_EXT_TYPE_STREAM_OFF		0x0D
-
-#define GB_CAMERA_EXT_TYPE_STREAM_PARM_SET	0x0E
-#define GB_CAMERA_EXT_TYPE_STREAM_PARM_GET	0x0F
-
-#define GB_CAMERA_EXT_TYPE_CTRL_GET_CFG		0x10
-
-#define GB_CAMERA_EXT_TYPE_CTRL_GET		0x11
-#define GB_CAMERA_EXT_TYPE_CTRL_SET		0x12
-#define GB_CAMERA_EXT_TYPE_CTRL_TRY		0x13
-
-#define GB_CAMERA_EXT_ASYNC_MESSAGE		0x14
-
 int gb_camera_ext_power_on(struct gb_connection *conn, uint8_t mode)
 {
 	return gb_operation_sync(conn,
