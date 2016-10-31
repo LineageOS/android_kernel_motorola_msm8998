@@ -50,7 +50,7 @@ static int muc_probe(struct platform_device *pdev)
 {
 	struct muc_data *ps_muc;
 	struct device *dev = &pdev->dev;
-	int err = -1;
+	int err;
 
 	dev_dbg(dev, "probe begun\n");
 
