@@ -164,6 +164,9 @@ struct muc_buffers *muc_get_buffers(void);
 int register_muc_attach_notifier(struct notifier_block *nb);
 int unregister_muc_attach_notifier(struct notifier_block *nb);
 
+int register_muc_reset_notifier(struct notifier_block *nb);
+int unregister_muc_reset_notifier(struct notifier_block *nb);
+
 /* Global variables */
 extern struct muc_data *muc_misc_data;
 
