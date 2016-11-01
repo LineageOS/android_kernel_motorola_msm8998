@@ -39,7 +39,6 @@
 #include "mods_uart.h"
 #include "mods_uart_pm.h"
 #include "muc.h"
-#include "muc_attach.h"
 
 #define MAX_PARTITION_NAME           (16)
 

@@ -17,6 +17,7 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/notifier.h>
 #include <linux/workqueue.h>
 
 enum {
@@ -158,6 +159,10 @@ void muc_force_detect(u32 val);
 size_t muc_i2c_get_pkt_sz(size_t pl_size);
 size_t muc_spi_get_pkt_sz(size_t pl_size);
 struct muc_buffers *muc_get_buffers(void);
+
+/* Notification Registers */
+int register_muc_attach_notifier(struct notifier_block *nb);
+int unregister_muc_attach_notifier(struct notifier_block *nb);
 
 /* Global variables */
 extern struct muc_data *muc_misc_data;
