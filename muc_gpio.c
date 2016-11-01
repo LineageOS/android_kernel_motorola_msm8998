@@ -43,7 +43,7 @@ static int muc_attach_notifier_call_chain(unsigned long val)
 		cd->intr_count = 0;
 	}
 
-	ret  = blocking_notifier_call_chain(&muc_attach_chain_head,
+	ret = blocking_notifier_call_chain(&muc_attach_chain_head,
 			val, NULL);
 	return notifier_to_errno(ret);
 }

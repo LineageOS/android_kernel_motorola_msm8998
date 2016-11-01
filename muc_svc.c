@@ -26,7 +26,6 @@
 
 #include "mods_protocols.h"
 #include "muc.h"
-#include "muc_attach.h"
 #include "muc_svc.h"
 #include "mods_nw.h"
 

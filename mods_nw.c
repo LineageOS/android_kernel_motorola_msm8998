@@ -27,7 +27,6 @@
 
 #include "greybus.h"
 #include "muc_svc.h"
-#include "muc_attach.h"
 #include "mods_nw.h"
 #include "mods_trace.h"
 
