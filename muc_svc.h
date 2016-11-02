@@ -7,6 +7,7 @@
 /* SVC and AP are pre-defined interfaces */
 #define MODS_INTF_SVC 0
 #define MODS_INTF_AP  1
+#define MODS_INTF_SIM  5
 
 extern struct mods_dl_device *mods_create_dl_device(struct mods_dl_driver *drv,
 		struct device *parent, u8 intf_id);
