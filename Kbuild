@@ -1747,6 +1747,8 @@ ifeq ($(CONFIG_ARCH_SDM845), y)
 CDEFINES += -DENABLE_SMMU_S1_TRANSLATION
 endif
 
+CDEFINES += -DMOTO_UTAGS_MAC
+
 KBUILD_CPPFLAGS += $(CDEFINES)
 
 # Currently, for versions of gcc which support it, the kernel Makefile

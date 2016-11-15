@@ -33,6 +33,8 @@
 
 /* Include Files */
 
+#include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/firmware.h>
 #include <linux/string.h>
 #include <wlan_hdd_includes.h>
@@ -45,6 +47,21 @@
 #include <wlan_hdd_misc.h>
 #include <wlan_hdd_napi.h>
 #include <cds_concurrency.h>
+#include <crypto/md5.h>
+#include <crypto/hash.h>
+
+#ifdef MOTO_UTAGS_MAC
+#define WIFI_MAC_BOOTARG "androidboot.wifimacaddr="
+#define DEVICE_SERIALNO_BOOTARG "androidboot.serialno="
+#define MACSTRLEN 12
+#define MACSTRCOLON 58
+#define MACADDRESSUSED 1
+#endif
+
+struct sdesc {
+   struct shash_desc shash;
+   char ctx[];
+};
 
 static void
 cb_notify_set_roam_prefer5_g_hz(hdd_context_t *pHddCtx, unsigned long notifyId)
@@ -5160,6 +5177,133 @@ static void update_mac_from_string(hdd_context_t *pHddCtx,
 	}
 }
 
+QDF_STATUS hdd_update_mac_serial(hdd_context_t *pHddCtx)
+{
+    QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
+
+    int len = 0;
+    int serialnoLen = 0;
+
+    char *buffer = NULL;
+    char *bufferPtr = NULL;
+    char *computedMac = NULL;
+    const char *cmd_line = NULL;
+
+    struct device_node *chosen_node = NULL;
+    computedMac = (char*)qdf_mem_malloc(QDF_MAC_ADDR_SIZE);
+
+    chosen_node = of_find_node_by_name(NULL, "chosen");
+    hdd_err("%s: get chosen node \n", __func__);
+
+    if (!chosen_node)
+    {
+        hdd_err("%s: get chosen node read failed \n", __func__);
+        goto config_exit;
+    } else {
+        cmd_line = of_get_property(chosen_node, "bootargs", &len);
+        if (!cmd_line || len <= 0) {
+            hdd_err("%s: get the barcode bootargs failed \n", __func__);
+            qdf_status = QDF_STATUS_E_FAILURE;
+            goto config_exit;
+        } else {
+            buffer = strstr(cmd_line, DEVICE_SERIALNO_BOOTARG);
+            if (buffer == NULL) {
+                hdd_err("%s: " DEVICE_SERIALNO_BOOTARG" not present cmd line argc",
+                                                                    __func__);
+                qdf_status = QDF_STATUS_E_FAILURE;
+                goto config_exit;
+            } else {
+                buffer += strlen(DEVICE_SERIALNO_BOOTARG);
+                bufferPtr = buffer;
+                while (*bufferPtr != ' ') {
+                    bufferPtr++;
+                    serialnoLen = serialnoLen + 1;
+                }
+            }
+        }
+    }
+    /*Data have been read from boot serial no     */
+    /*Now generate random unique the 6 byte string */
+    if (hdd_generate_random_mac_from_serialno(buffer, serialnoLen,
+                computedMac) != QDF_STATUS_SUCCESS) {
+        qdf_status = QDF_STATUS_E_FAILURE;
+        goto config_exit;
+    }
+    qdf_mem_copy(&pHddCtx->config->intfMacAddr[0].bytes[0],
+                       (uint8_t *)computedMac, QDF_MAC_ADDR_SIZE);
+
+config_exit:
+    qdf_mem_free(computedMac);
+    return qdf_status;
+}
+
+QDF_STATUS hdd_generate_random_mac_from_serialno(char *serialNo, int serialnoLen,
+                                                                  char *macAddr)
+{
+    unsigned int size;
+    struct crypto_shash *md5;
+    struct sdesc *sdescmd5;
+    char *hashBuf = NULL;
+
+    QDF_STATUS cryptoStatus = QDF_STATUS_SUCCESS;
+    hashBuf = (char*)qdf_mem_malloc(16);
+
+    /*Motorola OUI*/
+    macAddr[0] = 0xA4;
+    macAddr[1] = 0x07;
+    macAddr[2] = 0xd6;
+
+    md5 = crypto_alloc_shash("md5", 0, 0);
+    if (IS_ERR(md5)) {
+        cryptoStatus = QDF_STATUS_E_FAILURE;
+        hdd_err("%s: Crypto md5 allocation error \n", __func__);
+        qdf_mem_free(hashBuf);
+        return QDF_STATUS_E_FAILURE;
+    }
+
+    size = sizeof(struct shash_desc) + crypto_shash_descsize(md5);
+
+    sdescmd5 = kmalloc(size, GFP_KERNEL);
+    if (!sdescmd5) {
+        cryptoStatus = QDF_STATUS_E_FAILURE;
+        hdd_err("%s: Memory allocation error \n", __func__);
+        goto crypto_hash_err;
+    }
+
+    sdescmd5->shash.tfm = md5;
+    sdescmd5->shash.flags = 0x0;
+
+    if (crypto_shash_init(&sdescmd5->shash)) {
+        cryptoStatus = QDF_STATUS_E_FAILURE;
+        goto crypto_hash_err;
+    }
+
+    if (crypto_shash_update(&sdescmd5->shash, serialNo, serialnoLen)) {
+        cryptoStatus = QDF_STATUS_E_FAILURE;
+        goto crypto_hash_err;
+    }
+
+    if (crypto_shash_final(&sdescmd5->shash, &hashBuf[0])) {
+        cryptoStatus = QDF_STATUS_E_FAILURE;
+        goto crypto_hash_err;
+    }
+
+    macAddr[3] = hashBuf[0];
+    macAddr[4] = hashBuf[1];
+    macAddr[5] = hashBuf[2];
+
+    hdd_err("%02X:%02X:%02X:%02X:%02X:%02X is the new MAC generated from serial number \n", macAddr[0],
+                                             macAddr[1], macAddr[2], macAddr[3],
+                                                        macAddr[4], macAddr[5]);
+    crypto_hash_err:
+    qdf_mem_free(hashBuf);
+    crypto_free_shash(md5);
+    kfree(sdescmd5);
+
+    return cryptoStatus;
+}
+
+
 /**
  * hdd_apply_cfg_ini() - apply the ini configuration file
  * @pHddCtx: the pointer to hdd context
@@ -6517,20 +6661,35 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
  */
 QDF_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 {
-	int status, i = 0;
-	const struct firmware *fw = NULL;
-	char *line, *buffer = NULL;
+#ifndef MOTO_UTAGS_MAC
+    const struct firmware *fw = NULL;
+    char *line = NULL;
 	char *temp = NULL;
 	char *name, *value;
 	int max_mac_addr = QDF_MAX_CONCURRENCY_PERSONA;
-	tCfgIniEntry macTable[QDF_MAX_CONCURRENCY_PERSONA];
+    int status, i = 0;
+#else
+    int len = 0;
+    int iteration = 0;
+
+    char *bufferPtr = NULL;
+    char buffer_temp[MACSTRLEN];
+    const char *cmd_line = NULL;
+    struct device_node *chosen_node = NULL;
+#endif
+    char *buffer = NULL;
+
+    tCfgIniEntry macTable[QDF_MAX_CONCURRENCY_PERSONA];
 	tSirMacAddr customMacAddr;
 
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
 
 	memset(macTable, 0, sizeof(macTable));
-	status = request_firmware(&fw, WLAN_MAC_FILE, pHddCtx->parent_dev);
 
+    /*Implemenation of QCOM is to read the MAC address from the predefined*/
+    /*location where WLAN MMAC File have the MAC Address                  */
+#ifndef MOTO_UTAGS_MAC
+    status = request_firmware(&fw, WLAN_MAC_FILE, pHddCtx->parent_dev);
 	if (status) {
 		hdd_alert("request_firmware failed %d", status);
 		qdf_status = QDF_STATUS_E_FAILURE;
@@ -6554,7 +6713,36 @@ QDF_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 	buffer = temp;
 	qdf_mem_copy(buffer, fw->data, fw->size);
 	buffer[fw->size] = 0x0;
+#else
+    /* Read MACs from bootparams. */
+    chosen_node = of_find_node_by_name(NULL, "chosen");
+    hdd_err("%s: get chosen node \n", __func__);
+    if (!chosen_node)
+    {
+        hdd_err("%s: get chosen node read failed \n", __func__);
+        goto config_exit;
+    } else {
+        cmd_line = of_get_property(chosen_node, "bootargs", &len);
 
+        if (!cmd_line || len <= 0) {
+            hdd_err("%s: get wlan MACs bootargs failed \n", __func__);
+		    qdf_status = QDF_STATUS_E_FAILURE;
+            goto config_exit;
+        } else {
+            buffer = strstr(cmd_line, WIFI_MAC_BOOTARG);
+            if (buffer == NULL) {
+                hdd_err("%s: " WIFI_MAC_BOOTARG " bootarg cmd line is null", __func__);
+		        qdf_status = QDF_STATUS_E_FAILURE;
+                goto config_exit;
+            } else {
+                buffer += strlen(WIFI_MAC_BOOTARG);
+                bufferPtr = buffer;
+            }
+        }
+    }
+#endif
+
+#ifndef MOTO_UTAGS_MAC
 	/* data format:
 	 * Intf0MacAddress=00AA00BB00CC
 	 * Intf1MacAddress=00AA00BB00CD
@@ -6605,11 +6793,44 @@ QDF_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 	qdf_mem_copy(&customMacAddr,
 		     &pHddCtx->config->intfMacAddr[0].bytes[0],
 		     sizeof(tSirMacAddr));
+#else
+
+    /* Mac address data format used by qcom:
+     * Intf0MacAddress=00AA00BB00CC
+     * Intf1MacAddress=00AA00BB00CD
+     * xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+     * From bootarg we need to strip off : from macaddress
+     */
+    for (iteration = 0; iteration < MACSTRLEN; iteration++) {
+        if (*bufferPtr != MACSTRCOLON) {
+            buffer_temp[iteration] = *bufferPtr;
+        } else {
+            iteration = iteration - 1;
+        }
+        bufferPtr++;
+    }
+    /* Mac address data format used by qcom:
+     * Intf0MacAddress used for 1 macaddress
+     * if gp2pdeviceAdmistered is set to 1
+     * if s020deviceAdmisnited is set to 0
+     * it will use Intf1MacAddress for P2P seprately
+     * Motorola decided to use gp2pdeviceAdmistered = 1 i.e use
+     * locally gerated bin MAC addr for P2P
+     */
+    macTable[0].name = "Intf0MacAddress";
+    macTable[0].value = &buffer_temp[0];
+    update_mac_from_string(pHddCtx, &macTable[0], MACADDRESSUSED);
+    qdf_mem_copy(&customMacAddr,
+             &pHddCtx->config->intfMacAddr[0].bytes[0],
+             sizeof(tSirMacAddr));
+#endif
 	sme_set_custom_mac_addr(customMacAddr);
 
 config_exit:
+#ifndef MOTO_UTAGS_MAC
 	qdf_mem_free(temp);
 	release_firmware(fw);
+#endif
 	return qdf_status;
 }
 
