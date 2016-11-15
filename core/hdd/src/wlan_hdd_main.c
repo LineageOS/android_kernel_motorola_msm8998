@@ -9895,6 +9895,12 @@ static int hdd_initialize_mac_address(hdd_context_t *hdd_ctx)
 	if (QDF_IS_STATUS_SUCCESS(status))
 		return 0;
 
+	hdd_warn("Can't update mac config via wlan_mac.bin, using MAC from serial number");
+
+	status = hdd_update_mac_serial(hdd_ctx);
+	if (QDF_IS_STATUS_SUCCESS(status))
+		return;
+
 	hdd_info("MAC is not programmed in wlan_mac.bin ret %d, use default MAC",
 		 status);
 
