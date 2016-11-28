@@ -50,6 +50,7 @@ struct netlink_sock {
 	struct rhash_head	node;
 	struct work_struct	work;
 	struct rcu_head		rcu;
+	struct work_struct	work;
 };
 
 static inline struct netlink_sock *nlk_sk(struct sock *sk)
