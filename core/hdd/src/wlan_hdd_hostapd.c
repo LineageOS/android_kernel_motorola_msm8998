@@ -3549,14 +3549,33 @@ static __iw_softap_setparam(struct net_device *dev,
 {
 	struct hdd_adapter *adapter = (netdev_priv(dev));
 	mac_handle_t mac_handle;
-	int *value = (int *)extra;
-	int sub_cmd = value[0];
-	int set_value = value[1];
+	//BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic
+	int *value;
+	int sub_cmd;
+	int set_value;
+	int *tmp = (int *) extra;
+	//END IKDREL3KK-11113
 	QDF_STATUS status;
 	int ret = 0;
 	struct hdd_context *hdd_ctx;
 
 	hdd_enter_dev(dev);
+
+	//BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic to 8998
+	if (tmp[0] < 0 || tmp[0] > QCASAP_SET_TM_LEVEL) {
+		value = (int *)(wrqu->data.pointer);
+	} else {
+		value = (int *)extra;
+	}
+
+	sub_cmd = value[0];
+	set_value = value[1];
+
+	if (!adapter || !adapter->hdd_ctx) {
+		hdd_err("Either hostpad adapter is null or Hal ctx is null");
+		return -EINVAL;
+	}
+	//END IKDREL3KK-11113
 
 	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
