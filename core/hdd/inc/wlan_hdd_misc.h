@@ -35,5 +35,5 @@
 #define WLAN_INI_FILE              "wlan/" PREFIX "qcom_cfg.ini"
 #define WLAN_MAC_FILE              "wlan/" PREFIX "wlan_mac.bin"
 #endif /* MSM_PLATFORM */
-
+uint8_t hdd_is_mcc_mode_enabled(void); // Motorola IKLOCSEN-2877
 #endif /* WLAN_HDD_MISC_H */
