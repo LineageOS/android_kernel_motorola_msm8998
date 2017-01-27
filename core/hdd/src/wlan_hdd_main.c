@@ -8913,6 +8913,37 @@ static void hdd_set_thermal_level_cb(hdd_handle_t hdd_handle, u_int8_t level)
 #endif
 
 /**
+ * Motorola, IKLOCSEN-2877
+ * hdd_is_mcc_mode_enabled() - Checks if MCC mode is enabled
+ *
+ * This is to check if MCC mode is enabled in ini file
+ *
+ * Return: 1 if it is enabled otherwise 0
+ */
+uint8_t hdd_is_mcc_mode_enabled(void)
+{
+	struct hdd_context *hdd_ctx = NULL;
+	void *cds_context = NULL;
+
+	/* Get the global VOSS context.*/
+	cds_context = cds_get_global_context();
+	if (!cds_context) {
+		hdd_err("Global CDS context is Null");
+		return (uint8_t)0;
+	}
+	/* Get the HDD context.*/
+	hdd_ctx = (struct hdd_context *)cds_get_context(QDF_MODULE_ID_HDD);
+
+	if (0 != wlan_hdd_validate_context(hdd_ctx)) {
+		hdd_err("invalid HDD context");
+		return (uint8_t)0;
+	} else {
+		hdd_debug("gEnableMCCMode is enabled");
+		return (uint8_t)hdd_ctx->config->enableMCC;
+	}
+}
+
+/**
  * hdd_switch_sap_channel() - Move SAP to the given channel
  * @adapter: AP adapter
  * @channel: Channel
