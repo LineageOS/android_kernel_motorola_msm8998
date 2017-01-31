@@ -1617,7 +1617,7 @@ static QDF_STATUS wlansap_update_csa_channel_params(ptSapContext sap_context,
 
 	mac_ctx = PMAC_STRUCT(hal);
 
-	if (channel <= CHAN_ENUM_14) {
+	if (channel <= CHAN_ENUM_13) {
 		/*
 		 * currently OBSS scan is done in hostapd, so to avoid
 		 * SAP coming up in HT40 on channel switch we are
@@ -3262,7 +3262,7 @@ void wlansap_extend_to_acs_range(uint8_t *startChannelNum,
 
 	if (*startChannelNum <= 14 && *endChannelNum <= 14) {
 		*bandStartChannel = CHAN_ENUM_1;
-		*bandEndChannel = CHAN_ENUM_14;
+		*bandEndChannel = CHAN_ENUM_13;
 		tmp_startChannelNum = *startChannelNum > 5 ?
 				   (*startChannelNum - ACS_2G_EXTEND) : 1;
 		tmp_endChannelNum = (*endChannelNum + ACS_2G_EXTEND) <= 14 ?
