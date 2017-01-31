@@ -4700,7 +4700,7 @@ static int __iw_get_channel_list(struct net_device *dev,
 
 	if (SIR_BAND_2_4_GHZ == cur_band) {
 		band_start_channel = CHAN_ENUM_1;
-		band_end_channel = CHAN_ENUM_14;
+		band_end_channel = CHAN_ENUM_13;
 	} else if (SIR_BAND_5_GHZ == cur_band) {
 		band_start_channel = CHAN_ENUM_36;
 		band_end_channel = CHAN_ENUM_184;
