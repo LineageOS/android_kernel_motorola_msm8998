@@ -123,6 +123,9 @@ int gb_mods_aud_get_speaker_preset_eq(
 int gb_mods_aud_get_mic_params(
 		struct gb_audio_get_mic_params_response *get_params,
 		struct gb_connection *connection);
+
+int register_mods_codec(bool register_mod);
+
 /*
  * Platform drivers
  */

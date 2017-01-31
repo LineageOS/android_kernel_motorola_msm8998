@@ -23,6 +23,7 @@
 #include <sound/initval.h>
 #include <sound/tlv.h>
 #include <linux/mods_codec_dev.h>
+#include "../../../drivers/misc/motomods/greybus/audio.h"
 
 #define MODS_RATES (SNDRV_PCM_RATE_5512 | SNDRV_PCM_RATE_8000 |\
 		SNDRV_PCM_RATE_11025 | SNDRV_PCM_RATE_16000 |\
@@ -213,6 +214,8 @@ static int mods_codec_shim_probe(struct snd_soc_codec *codec)
 	mutex_unlock(&mods_shim_lock);
 
 	pr_info("mods codec shim probed\n");
+
+	register_mods_codec(true);
 
 	return 0;
 }

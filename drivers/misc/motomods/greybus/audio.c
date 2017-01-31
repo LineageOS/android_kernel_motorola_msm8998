@@ -419,6 +419,30 @@ static struct gb_protocol gb_mods_audio_protocol = {
 	.request_recv		= gb_mods_audio_event_recv,
 };
 
+int register_mods_codec(bool register_mod) {
+
+    int err;
+
+    if (!register_mod)
+        return 0;
+
+    /* mods codec is registered with platform and will be used when
+    * pcm is routed through platform dependent I2S Intf
+    * instead of pcm tunneling.
+    */
+    err = gb_audio_register_mods_codec(&gb_audio_mods_driver);
+    if (err) {
+        pr_err("Can't register mods codec driver: %d\n", err);
+        goto err_unregister_mods_aud;
+    }
+
+    return 0;
+
+err_unregister_mods_aud:
+	gb_protocol_deregister(&gb_mods_audio_protocol);
+	return err;
+}
+
 /*
  * This is the basic hook get things initialized and registered w/ gb
  */
@@ -441,19 +465,10 @@ static int __init gb_audio_protocol_init(void)
 		goto err_unregister_i2s_mgmt;
 	}
 
-	/* mods codec is registered with platform and will be used when
-	 * pcm is routed through platform dependent I2S Intf
-	 * instead of pcm tunneling.
-	*/
-	err = gb_audio_register_mods_codec(&gb_audio_mods_driver);
-	if (err) {
-		pr_err("Can't register mods codec driver: %d\n", err);
-		goto err_unregister_mods_aud;
-	}
+	err = register_mods_codec(false);
+
 	return 0;
 
-err_unregister_mods_aud:
-	gb_protocol_deregister(&gb_mods_audio_protocol);
 err_unregister_i2s_mgmt:
 	gb_protocol_deregister(&gb_i2s_mgmt_protocol);
 	return err;
