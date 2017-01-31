@@ -47,7 +47,6 @@ const struct chan_map chan_mapping[NUM_CHANNELS] = {
 	[CHAN_ENUM_11] = {2462, 11},
 	[CHAN_ENUM_12] = {2467, 12},
 	[CHAN_ENUM_13] = {2472, 13},
-	[CHAN_ENUM_14] = {2484, 14},
 
 	[CHAN_ENUM_36] = {5180, 36},
 	[CHAN_ENUM_40] = {5200, 40},
