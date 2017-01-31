@@ -5127,7 +5127,7 @@ static int __iw_get_channel_list(struct net_device *dev,
 
 	if (BAND_2G == cur_band) {
 		band_start_channel = CHAN_ENUM_1;
-		band_end_channel = CHAN_ENUM_14;
+		band_end_channel = CHAN_ENUM_13;
 	} else if (BAND_5G == cur_band) {
 		band_start_channel = CHAN_ENUM_36;
 		band_end_channel = MAX_5GHZ_CHANNEL;

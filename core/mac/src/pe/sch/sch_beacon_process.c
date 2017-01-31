@@ -728,7 +728,7 @@ sch_bcn_process_sta_ibss(tpAniSirGlobal mac_ctx,
 	uint16_t aid;
 	uint8_t cb_mode;
 
-	if (CHAN_ENUM_14 >= session->currentOperChannel) {
+	if (CHAN_ENUM_13 >= session->currentOperChannel) {
 		if (session->force_24ghz_in_ht20)
 			cb_mode = WNI_CFG_CHANNEL_BONDING_MODE_DISABLE;
 		else

@@ -3258,7 +3258,7 @@ static QDF_STATUS sap_get_channel_list(struct sap_context *sap_ctx,
 
 	/* Check if LTE coex is enabled and 2.4GHz is selected */
 	if (en_lte_coex && (band_start_ch == CHAN_ENUM_1) &&
-	    (band_end_ch == CHAN_ENUM_14)) {
+	    (band_end_ch == CHAN_ENUM_13)) {
 		/* Set 2.4GHz upper limit to channel 9 for LTE COEX */
 		band_end_ch = CHAN_ENUM_9;
 	}
@@ -3342,7 +3342,7 @@ static QDF_STATUS sap_get_channel_list(struct sap_context *sap_ctx,
 			if (WLAN_REG_CH_NUM(loop_count) >=
 			    WLAN_REG_CH_NUM(CHAN_ENUM_1) &&
 			    WLAN_REG_CH_NUM(loop_count) <=
-			    WLAN_REG_CH_NUM(CHAN_ENUM_14))
+			    WLAN_REG_CH_NUM(CHAN_ENUM_13))
 				continue;
 		}
 
