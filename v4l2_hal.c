@@ -20,6 +20,7 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/v4l2-ctrls.h>
 
 #include "v4l2_hal.h"
@@ -386,7 +387,7 @@ static int set_ext_ctrls(struct file *file, void *fh,
 }
 
 static int v4l2_hal_queue_setup(struct vb2_queue *q,
-				const struct v4l2_format *fmt,
+				const void *parg,
 				unsigned int *num_buffers,
 				unsigned int *num_planes,
 				unsigned int sizes[], void *alloc_ctxs[])
@@ -424,10 +425,10 @@ static void v4l2_hal_buf_queue(struct vb2_buffer *vb)
 {
 	struct v4l2_stream_data *strm = vb->vb2_queue->drv_priv;
 	struct v4l2_hal_qbuf_data data;
-
-	data.index = vb->v4l2_buf.index;
-	data.fd = (int)vb->v4l2_planes[0].m.userptr;
-	data.length = vb->v4l2_planes[0].length;
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+	data.index = vb->index;
+	data.fd = (int)vbuf->vb2_buf.planes[0].m.userptr;
+	data.length = vbuf->vb2_buf.planes[0].length;
 
 	v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_QBUF,
 				  sizeof(data), &data);
@@ -450,7 +451,7 @@ static void v4l2_hal_stop_streaming(struct vb2_queue *q)
 
 static void *v4l2_hal_get_userptr(void *alloc_ctx,
 				  unsigned long vaddr,
-				  unsigned long size, int write)
+				  unsigned long size, enum dma_data_direction dma_dir)
 {
 	return (void *)vaddr;
 }
@@ -481,7 +482,6 @@ static int v4l2_hal_vb2_q_init(struct v4l2_stream_data *strm,
 
 	q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	q->io_modes = VB2_USERPTR;
-	q->io_flags = 0;
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	q->buf_struct_size = sizeof(struct vb2_buffer);
 
@@ -587,10 +587,11 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 	if (strm->used) {
 		vb = strm->vb2_q.bufs[index];
 		if (vb != NULL) {
-			vb->v4l2_buf.timestamp.tv_sec = ts_sec;
-			vb->v4l2_buf.timestamp.tv_usec = ts_usec;
-			vb->v4l2_buf.sequence = seq;
-			vb->v4l2_planes[0].bytesused = length;
+			struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+			vbuf->timestamp.tv_sec = ts_sec;
+			vbuf->timestamp.tv_usec = ts_usec;
+			vbuf->sequence = seq;
+			vbuf->vb2_buf.planes[0].bytesused = length;
 			vb2_buffer_done(vb, buffer_state);
 		} else
 			pr_warn("%s: return buffer in error status\n", __func__);
@@ -752,7 +753,7 @@ static struct v4l2_file_operations v4l2_hal_fops = {
 	.owner	 = THIS_MODULE,
 	.poll    = v4l2_hal_poll,
 	.open	 = v4l2_hal_open,
-	.ioctl	 = video_ioctl2,
+	.unlocked_ioctl	 = video_ioctl2,
 	.release = v4l2_hal_close,
 };
 
