@@ -282,11 +282,13 @@ static void muc_handle_detection(bool force_removal)
 		cdata->bplus_state = MUC_BPLUS_ENABLED;
 
 		/* Select SPI/I2C based on CLK signal */
-		if (gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
+		if (!cdata->i2c_transport_err &&
+				gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
 			pr_info("%s: I2C selected\n", __func__);
 			muc_register_i2c();
 		} else {
 			pr_info("%s: SPI selected\n", __func__);
+			cdata->i2c_transport_err = false;
 			muc_register_spi();
 		}
 

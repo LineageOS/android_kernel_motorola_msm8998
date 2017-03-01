@@ -186,6 +186,10 @@ static void muc_svc_recovery(void)
 static void muc_svc_wdog(struct work_struct *work)
 {
 	dev_err(&svc_dd->pdev->dev, "Watchdog waiting for DL device\n");
+
+	/* If we are handling watchdog for i2c transport, retry using SPI */
+	if (muc_misc_data && muc_misc_data->i2c_transport_done)
+		muc_misc_data->i2c_transport_err = true;
 	muc_svc_recovery();
 }
 

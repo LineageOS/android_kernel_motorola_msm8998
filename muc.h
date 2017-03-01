@@ -124,6 +124,7 @@ struct muc_data {
 	bool need_det_output;
 	bool spi_transport_done;
 	bool i2c_transport_done;
+	bool i2c_transport_err;
 	bool spi_shared_with_flash;
 	bool det_irq_enabled;
 
