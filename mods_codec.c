@@ -498,8 +498,13 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 	rate = params_rate(params);
 	chans = params_channels(params);
 	format = params_format(params);
-	bytes_per_chan = snd_pcm_format_width(params_format(params)) / 8;
-	is_le = snd_pcm_format_little_endian(params_format(params));
+	if (format == SNDRV_PCM_FORMAT_S16_LE && chans == 4) {
+		pr_err("%s: FIXME: Telling audio_ext 2x32 instead of 4x16");
+		chans = 2;
+		format = SNDRV_PCM_FORMAT_S32_LE;
+	}
+	bytes_per_chan = snd_pcm_format_width(format) / 8;
+	is_le = snd_pcm_format_little_endian(format);
 
 	err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans, format,
 						bytes_per_chan, is_le);
@@ -980,14 +985,14 @@ static struct snd_soc_dai_driver mods_codec_codec_dai = {
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
-		.channels_max	= 2,
+		.channels_max	= 4,
 	},
 	.capture = {
 		.stream_name = "Mods Dai Capture",
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
-		.channels_max	= 2,
+		.channels_max	= 4,
 	},
 	.ops = &mods_codec_dai_ops,
 };

@@ -222,6 +222,8 @@ static int gb_i2s_mgmt_convert_format_to_gb_i2s(uint32_t format)
 		return GB_I2S_MGMT_PCM_FMT_16;
 	case SNDRV_PCM_FORMAT_S24_LE:
 		return GB_I2S_MGMT_PCM_FMT_24;
+	case SNDRV_PCM_FORMAT_S32_LE:
+		return GB_I2S_MGMT_PCM_FMT_32;
 	default:
 		return -EINVAL;
 	}
