@@ -537,7 +537,7 @@ static int mods_uart_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to create sysfs attributes\n");
 		return ret;
 	}
-
+	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
 	/* apba_ctrl must be probed and initialized */
 	if (apba_uart_register(mud)) {
 		ret = -EPROBE_DEFER;
@@ -558,6 +558,7 @@ static int mods_uart_remove(struct platform_device *pdev)
 
 	apba_uart_register(NULL);
 	sysfs_remove_groups(&pdev->dev.kobj, uart_groups);
+	kobject_uevent(&pdev->dev.kobj, KOBJ_REMOVE);
 	mods_uart_close(mud);
 	platform_set_drvdata(pdev, NULL);
 
