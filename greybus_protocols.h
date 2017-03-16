@@ -920,13 +920,15 @@ struct gb_i2s_mgmt_stop_request {
 /* Capture use cases bit mask*/
 
 /* Default setting capture */
-#define GB_AUDIO_CAPTURE_DEFAULT_USE_CASE		BIT(0)
-/* Voice  */
+#define GB_AUDIO_CAPTURE_DEFAULT_USE_CASE	BIT(0)
+/* Optimized for Voice  */
 #define GB_AUDIO_CAPTURE_VOICE_USE_CASE		BIT(1)
 /* Unprocessed pcm capture */
 #define GB_AUDIO_CAPTURE_RAW_USE_CASE		BIT(2)
-/* Camcorder */
-#define GB_AUDIO_CAPTURE_CAMCORDER_USE_CASE		BIT(3)
+/* Optimized for Camcorder */
+#define GB_AUDIO_CAPTURE_CAMCORDER_USE_CASE	BIT(3)
+/* Ambisonic WXYZ 4-channel Capture */
+#define GB_AUDIO_CAPTURE_AMBISONIC_USE_CASE	BIT(4)
 
 /* audio output devices bit mask */
 #define GB_AUDIO_DEVICE_OUT_LOUDSPEAKER BIT(0)
