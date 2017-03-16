@@ -499,12 +499,6 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 	rate = params_rate(params);
 	chans = params_channels(params);
 	format = params_format(params);
-	if (format == SNDRV_PCM_FORMAT_S16_LE && chans == 4) {
-		pr_err("%s: FIXME: Telling audio_ext 2x32 instead of 4x16",
-			__func__);
-		chans = 2;
-		format = SNDRV_PCM_FORMAT_S32_LE;
-	}
 	bytes_per_chan = snd_pcm_format_width(format) / 8;
 	is_le = snd_pcm_format_little_endian(format);
 
