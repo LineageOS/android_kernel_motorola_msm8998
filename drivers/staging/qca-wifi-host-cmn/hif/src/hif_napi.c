@@ -1640,9 +1640,11 @@ int hif_napi_cpu_blacklist(struct qca_napi_data *napid,
 		ref_count++;
 		rc = 0;
 		if (ref_count == 1) {
+#ifdef CONFIG_SCHED_CORE_CTL
 			rc = hif_napi_core_ctl_set_boost(true);
 			NAPI_DEBUG("boost_on() returns %d - refcnt=%d",
 				rc, ref_count);
+#endif
 			hif_napi_bl_irq(napid, true);
 		}
 		break;
@@ -1651,9 +1653,11 @@ int hif_napi_cpu_blacklist(struct qca_napi_data *napid,
 			ref_count--;
 			rc = 0;
 			if (ref_count == 0) {
+#ifdef CONFIG_SCHED_CORE_CTL
 				rc = hif_napi_core_ctl_set_boost(false);
 				NAPI_DEBUG("boost_off() returns %d - refcnt=%d",
 					   rc, ref_count);
+#endif
 				hif_napi_bl_irq(napid, false);
 			}
 		}
