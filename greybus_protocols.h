@@ -359,10 +359,14 @@ struct gb_battery_current_now_response {
 #define GB_PTP_POWER_AVAILABLE_INT	0x02
 
 /* Mod power source supplying current to Phone*/
-#define GB_PTP_POWER_SOURCE_NONE	0x00
-#define GB_PTP_POWER_SOURCE_BATTERY	0x01
-#define GB_PTP_POWER_SOURCE_WIRED	0x02
-#define GB_PTP_POWER_SOURCE_WIRELESS	0x03
+#define GB_PTP_POWER_SOURCE_NONE		0x00
+#define GB_PTP_POWER_SOURCE_BATTERY		0x01
+#define GB_PTP_POWER_SOURCE_WIRED		0x02
+#define GB_PTP_POWER_SOURCE_WIRELESS		0x03
+#define GB_PTP_POWER_SOURCE_NONE_TURBO		0x04
+#define GB_PTP_POWER_SOURCE_BATTERY_TURBO	0x05
+#define GB_PTP_POWER_SOURCE_WIRED_TURBO		0x06
+#define GB_PTP_POWER_SOURCE_WIRELESS_TURBO	0x07
 
 /* Mod that does not support variable voltage charging */
 #define GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED	5000000		/* uV */
