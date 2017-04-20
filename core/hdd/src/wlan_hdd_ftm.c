@@ -359,6 +359,11 @@ QDF_STATUS wlan_hdd_ftm_testmode_cmd(void *data, int len)
 {
 	struct ar6k_testmode_cmd_data *cmd_data;
 
+        //Check if the tcmd data for the FTM access is whitelisted
+        if (vos_is_tcmd_data_white_listed(data, len) != QDF_STATUS_SUCCESS) {
+            return QDF_STATUS_E_PERM;
+        }
+
 	cmd_data = (struct ar6k_testmode_cmd_data *)
 		   qdf_mem_malloc(sizeof(*cmd_data));
 
@@ -386,4 +391,61 @@ QDF_STATUS wlan_hdd_ftm_testmode_cmd(void *data, int len)
 
 	return QDF_STATUS_SUCCESS;
 }
+
+void getHexDump(char *s0, char *s1, int len)
+{
+    int i = 0, j = 0;
+    printk(KERN_EMERG "%s\n :", s0);
+
+    if (len > 8)
+    {
+        for (j = 0; j < len/8; j++)
+        {
+            printk(KERN_EMERG "%02x %02x %02x %02x %02x %02x %02x %02x",
+                    s1[j*8], s1[j*8+1], s1[j*8+2], s1[j*8+3], s1[j*8+4],
+                    s1[j*8+5],s1[j*8+6],s1[j*8+7] );
+        }
+        len = len - j*8;
+    }
+    for (i = 0; i< len; i++) {
+        printk(KERN_EMERG "%02x ", s1[j*8+i]);
+    }
+    printk("\n");
+}
+
+//Function to check the data, and confirm if its whitelisted.
+//05 00 00 00 - ID
+//02 00 00 00 - version
+//00 00 00 00 - header
+//28 00 00 00 - length
+//24 FD 00 00 - checksum
+//00 00 00 00 - headerDepValue
+//00 00 00 00 - headerExtended
+//above raw data needs to be parsed, and to be reached for the
+//Tx code.
+//0E 00 00 00  --- > Tx ON code is 4 bytes and value is 14 (TLV 2).
+//E4 00 00 00  --- > PHY ON code is 4 bytes and value is 224 (TLV 2).
+//data recieved to the wlandriver starts for the TLV2 Stream Header
+//Whose value is for 28 bytes, the first byte is 5 (fixed)
+QDF_STATUS vos_is_tcmd_data_white_listed(u_int8_t *data, int len)
+{
+    //CMD_TX  = Tx command
+    //CMD_PHY = Phy command
+    u_int8_t whitelist_read_tx[]     = {0x0E, 0x00, 0x00, 0x00};
+    u_int8_t whitelist_read_tx_phy[] = {0xE4, 0x00, 0x00, 0x00};
+
+    //enable phy command
+    if (!qdf_mem_cmp((data + WLAN_FTM_OPCODE_PHY_ON),
+                          whitelist_read_tx_phy, sizeof(whitelist_read_tx_phy)))
+        return QDF_STATUS_SUCCESS;
+
+    //enable Txon command
+    if (!qdf_mem_cmp((data + WLAN_FTM_OPCODE_TX_ON),
+                          whitelist_read_tx, sizeof(whitelist_read_tx)))
+        return QDF_STATUS_SUCCESS;
+
+    //black list all other commands
+    return QDF_STATUS_E_PERM;
+}
+
 #endif /*QCA_WIFI_FTM */

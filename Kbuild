@@ -1488,6 +1488,13 @@ ifeq ($(CONFIG_QCA_WIFI_FTM), 1)
 CDEFINES += -DQCA_WIFI_FTM
 endif
 
+# WLAN_WHITE_LIST - WLAN Radiated Power Test
+# For user software build, wlan driver needs to allow the factory
+# commnds only for Tx_opcode and NART commands based off 12M doc
+ifeq ($(TARGET_BUILD_VARIANT),user)
+CDEFINES += -DWLAN_WHITE_LIST
+endif
+
 #Enable Checksum Offload support
 ifeq ($(CONFIG_CHECKSUM_OFFLOAD), 1)
 CDEFINES += -DCHECKSUM_OFFLOAD
