@@ -933,6 +933,8 @@ struct gb_i2s_mgmt_stop_request {
 #define GB_AUDIO_CAPTURE_CAMCORDER_USE_CASE	BIT(3)
 /* Ambisonic WXYZ 4-channel Capture */
 #define GB_AUDIO_CAPTURE_AMBISONIC_USE_CASE	BIT(4)
+/* Optimized for voice recognition */
+#define GB_AUDIO_CAPTURE_VOICE_REC_USE_CASE	BIT(5)
 
 /* audio output devices bit mask */
 #define GB_AUDIO_DEVICE_OUT_LOUDSPEAKER BIT(0)

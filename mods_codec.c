@@ -87,6 +87,7 @@ static const char *const mods_capture_use_case[] = {
 	"Raw",
 	"Camcorder",
 	"Ambisonic",
+	"Voice-Rec",
 };
 
 static const struct soc_enum mods_codec_enum[] = {
