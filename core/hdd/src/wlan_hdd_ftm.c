@@ -433,6 +433,10 @@ QDF_STATUS vos_is_tcmd_data_white_listed(u_int8_t *data, int len)
     //CMD_PHY = Phy command
     u_int8_t whitelist_read_tx[]     = {0x0E, 0x00, 0x00, 0x00};
     u_int8_t whitelist_read_tx_phy[] = {0xE4, 0x00, 0x00, 0x00};
+    
+    u_int8_t whitelist_read_tx_phy_off[] = {0xA6, 0x00, 0x00, 0x00};
+    u_int8_t whitelist_read_tx_off[]     = {0x35, 0x00, 0x00, 0x00};
+
 
     //enable phy command
     if (!qdf_mem_cmp((data + WLAN_FTM_OPCODE_PHY_ON),
@@ -442,6 +446,9 @@ QDF_STATUS vos_is_tcmd_data_white_listed(u_int8_t *data, int len)
     //enable Txon command
     if (!qdf_mem_cmp((data + WLAN_FTM_OPCODE_TX_ON),
                           whitelist_read_tx, sizeof(whitelist_read_tx)))
+        return QDF_STATUS_SUCCESS;
+
+     if ((!qdf_mem_cmp((data + 40), whitelist_read_tx_phy_off, sizeof(whitelist_read_tx))) && (!qdf_mem_cmp((data + 52), whitelist_read_tx_off, sizeof(whitelist_read_tx))))
         return QDF_STATUS_SUCCESS;
 
     //black list all other commands
