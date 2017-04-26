@@ -196,7 +196,7 @@ struct sk_buff *__qdf_nbuf_alloc(qdf_device_t osdev, size_t size, int reserve,
 	skb = dev_alloc_skb(size);
 
 	if (!skb) {
-		pr_err("ERROR:NBUF alloc failed\n");
+		pr_info("ERROR:NBUF alloc failed\n");
 		return NULL;
 	}
 	memset(skb->cb, 0x0, sizeof(skb->cb));
@@ -1403,6 +1403,7 @@ static void qdf_nbuf_track_memory_manager_destroy(void)
 
 	spin_unlock_irqrestore(&qdf_net_buf_track_free_list_lock, irq_flag);
 	kmem_cache_destroy(nbuf_tracking_cache);
+	qdf_net_buf_track_free_list = NULL;
 }
 
 /**
@@ -1641,7 +1642,7 @@ qdf_export_symbol(qdf_net_buf_debug_release_skb);
 void qdf_net_buf_debug_delete_node(qdf_nbuf_t net_buf)
 {
 }
-EXPORT_SYMBOL(qdf_net_buf_debug_delete_node);
+qdf_export_symbol(qdf_net_buf_debug_delete_node);
 #endif /*MEMORY_DEBUG */
 
 #if defined(FEATURE_TSO)
