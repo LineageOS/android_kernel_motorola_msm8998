@@ -44,7 +44,8 @@
 //A TLV stream contains a 28-byte stream header, and its payload. It represents
 //a command from host or a response from target.
 #define WLAN_FTM_OPCODE_TX_ON 28
-#define WLAN_FTM_OPCODE_PHY_ON 40
+#define WLAN_FTM_OPCODE_PHY   40
+#define WLAN_FTM_OPCODE_DATA  52
 
 int hdd_update_cds_config_ftm(hdd_context_t *hdd_ctx);
 void hdd_ftm_mc_process_msg(void *message);
