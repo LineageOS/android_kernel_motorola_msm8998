@@ -446,7 +446,7 @@ QDF_STATUS vos_is_tcmd_data_white_listed(u_int8_t *data, int len)
         return QDF_STATUS_SUCCESS;
 
     //enable Txon command
-    if (!qdf_mem_cmp((data + WLAN_FTM_OPCODE_ON_TX),
+    if (!qdf_mem_cmp((data + WLAN_FTM_OPCODE_TX_ON),
                           whitelist_read_tx, sizeof(whitelist_read_tx)))
         return QDF_STATUS_SUCCESS;
 
