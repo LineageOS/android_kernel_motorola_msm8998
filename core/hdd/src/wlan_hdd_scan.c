@@ -2444,15 +2444,20 @@ static int __wlan_hdd_cfg80211_vendor_scan(struct wiphy *wiphy,
 		wlan_hdd_copy_bssid(request,
 			nla_data(tb[QCA_WLAN_VENDOR_ATTR_SCAN_BSSID]));
 	}
-	request->no_cck =
-		nla_get_flag(tb[QCA_WLAN_VENDOR_ATTR_SCAN_TX_NO_CCK_RATE]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SCAN_TX_NO_CCK_RATE])
+		request->no_cck =
+		   nla_get_flag(tb[QCA_WLAN_VENDOR_ATTR_SCAN_TX_NO_CCK_RATE]);
 	request->wdev = wdev;
 	request->wiphy = wiphy;
 	request->scan_start = jiffies;
 
-	if (0 != __wlan_hdd_cfg80211_scan(wiphy, request, VENDOR_SCAN))
-		goto error;
-
+	ret = __wlan_hdd_cfg80211_scan(wiphy, request, VENDOR_SCAN);
+	if (0 != ret) {
+		hdd_err("Scan Failed. Ret = %d", ret);
+		qdf_mem_free(request);
+		return ret;
+	}
 	ret = wlan_hdd_send_scan_start_event(wiphy, wdev, (uintptr_t)request);
 
 	return ret;
