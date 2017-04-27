@@ -83,6 +83,11 @@ static void hal_data_kref_release(struct kref *kref)
 	struct v4l2_hal_data *hal_data;
 
 	hal_data = container_of(kref, struct v4l2_hal_data, kref);
+	/* Reset the v4l2_dev pointer on video device node
+	 * before calling kfree(hal_data).
+	 */
+	if(hal_data->vdev)
+		hal_data->vdev->v4l2_dev = NULL;
 	video_unregister_device(hal_data->vdev);
 	v4l2_device_unregister(&hal_data->v4l2_dev);
 	kfree(hal_data);
