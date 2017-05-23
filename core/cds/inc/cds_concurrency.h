@@ -857,6 +857,7 @@ QDF_STATUS cds_deregister_sap_restart_channel_switch_cb(void);
 #endif
 bool cds_is_any_mode_active_on_band_along_with_session(uint8_t session_id,
 						       enum cds_band band);
+QDF_STATUS cds_get_chan_by_session_id(uint8_t session_id, uint8_t *chan);
 QDF_STATUS cds_get_mac_id_by_session_id(uint8_t session_id, uint8_t *mac_id);
 QDF_STATUS cds_get_mcc_session_id_on_mac(uint8_t mac_id, uint8_t session_id,
 						uint8_t *mcc_session_id);
@@ -878,4 +879,10 @@ void cds_hw_mode_transition_cb(uint32_t old_hw_mode_index,
 			 struct sir_vdev_mac_map *vdev_mac_map);
 void cds_set_hw_mode_change_in_progress(enum cds_hw_mode_change value);
 enum cds_hw_mode_change cds_is_hw_mode_change_in_progress(void);
+void cds_enable_disable_sap_mandatory_chan_list(bool val);
+void cds_add_sap_mandatory_chan(uint8_t chan);
+void cds_remove_sap_mandatory_chan(uint8_t chan);
+bool cds_is_sap_mandatory_chan_list_enabled(void);
+void cds_init_sap_mandatory_2g_chan(void);
+uint32_t cds_get_sap_mandatory_chan_list_len(void);
 #endif /* __CDS_CONCURRENCY_H */

@@ -86,6 +86,11 @@ void lim_stop_tx_and_switch_channel(tpAniSirGlobal pMac, uint8_t sessionId)
 		return;
 	}
 
+	if (psessionEntry->ftPEContext.pFTPreAuthReq) {
+		pe_err("Avoid Switch Channel req during pre auth");
+		return;
+	}
+
 	pe_debug("Channel switch Mode: %d",
 		       psessionEntry->gLimChannelSwitch.switchMode);
 
@@ -235,7 +240,7 @@ static void __lim_process_channel_switch_action_frame(tpAniSirGlobal mac_ctx,
 
 	/* Unpack channel switch frame */
 	status = dot11f_unpack_channel_switch(mac_ctx, body_ptr, frame_len,
-			chnl_switch_frame);
+			chnl_switch_frame, false);
 
 	if (DOT11F_FAILED(status)) {
 		pe_err("Failed to unpack and parse (0x%08x, %d bytes)",
@@ -369,7 +374,7 @@ lim_process_ext_channel_switch_action_frame(tpAniSirGlobal mac_ctx,
 
 	/* Unpack channel switch frame */
 	status = dot11f_unpack_ext_channel_switch_action_frame(mac_ctx,
-			body, frame_len, ext_channel_switch_frame);
+			body, frame_len, ext_channel_switch_frame, false);
 
 	if (DOT11F_FAILED(status)) {
 		pe_err("Failed to parse CHANSW action frame (0x%08x, len %d):",
@@ -476,7 +481,7 @@ static void __lim_process_operating_mode_action_frame(tpAniSirGlobal mac_ctx,
 	}
 	/* Unpack channel switch frame */
 	status = dot11f_unpack_operating_mode(mac_ctx, body_ptr, frame_len,
-			operating_mode_frm);
+			operating_mode_frm, false);
 	if (DOT11F_FAILED(status)) {
 		pe_err("Failed to unpack and parse (0x%08x, %d bytes)",
 			status, frame_len);
@@ -606,7 +611,7 @@ static void __lim_process_gid_management_action_frame(tpAniSirGlobal mac_ctx,
 
 	/* Unpack Gid Mangement Action frame */
 	status = dot11f_unpack_vht_gid_management_action_frame(mac_ctx,
-			body_ptr, frame_len, gid_mgmt_frame);
+			body_ptr, frame_len, gid_mgmt_frame, false);
 	if (DOT11F_FAILED(status)) {
 		pe_err("Fail to parse an Grp id frame (0x%08x, %d bytes):",
 			status, frame_len);
@@ -1089,7 +1094,8 @@ static void __lim_process_qos_map_configure_frame(tpAniSirGlobal mac_ctx,
 	lim_send_sme_mgmt_frame_ind(mac_ctx, mac_hdr->fc.subType,
 			(uint8_t *) mac_hdr,
 			frame_len + sizeof(tSirMacMgmtHdr), 0,
-			WMA_GET_RX_CH(rx_pkt_info), session, 0);
+			WMA_GET_RX_CH(rx_pkt_info), session,
+			WMA_GET_RX_RSSI_NORMALIZED(rx_pkt_info));
 }
 
 #ifdef ANI_SUPPORT_11H
@@ -1232,7 +1238,8 @@ __lim_process_sm_power_save_update(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 	}
 
 	/**Unpack the received frame */
-	nStatus = dot11f_unpack_sm_power_save(pMac, pBody, frameLen, &frmSMPower);
+	nStatus = dot11f_unpack_sm_power_save(pMac, pBody, frameLen,
+					      &frmSMPower, false);
 
 	if (DOT11F_FAILED(nStatus)) {
 		pe_err("Failed to unpack and parse a Update SM Power (0x%08x, %d bytes):",
@@ -1297,7 +1304,8 @@ __lim_process_radio_measure_request(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 
 	lim_send_sme_mgmt_frame_ind(pMac, pHdr->fc.subType, (uint8_t *)pHdr,
 		frameLen + sizeof(tSirMacMgmtHdr), 0,
-		WMA_GET_RX_CH(pRxPacketInfo), psessionEntry, 0);
+		WMA_GET_RX_CH(pRxPacketInfo), psessionEntry,
+		WMA_GET_RX_RSSI_NORMALIZED(pRxPacketInfo));
 
 	frm = qdf_mem_malloc(sizeof(*frm));
 	if (frm == NULL) {
@@ -1306,9 +1314,8 @@ __lim_process_radio_measure_request(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 	}
 
 	/**Unpack the received frame */
-	nStatus = dot11f_unpack_radio_measurement_request(pMac,
-								pBody,
-								frameLen, frm);
+	nStatus = dot11f_unpack_radio_measurement_request(pMac, pBody,
+							  frameLen, frm, false);
 
 	if (DOT11F_FAILED(nStatus)) {
 		pe_err("Failed to unpack and parse a Radio Measure request (0x%08x, %d bytes):",
@@ -1349,7 +1356,8 @@ __lim_process_link_measurement_req(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 
 	/**Unpack the received frame */
 	nStatus =
-		dot11f_unpack_link_measurement_request(pMac, pBody, frameLen, &frm);
+		dot11f_unpack_link_measurement_request(pMac, pBody, frameLen,
+						       &frm, false);
 
 	if (DOT11F_FAILED(nStatus)) {
 		pe_err("Failed to unpack and parse a Link Measure request (0x%08x, %d bytes):",
@@ -1396,7 +1404,8 @@ __lim_process_neighbor_report(tpAniSirGlobal pMac, uint8_t *pRxPacketInfo,
 
 	/**Unpack the received frame */
 	nStatus =
-		dot11f_unpack_neighbor_report_response(pMac, pBody, frameLen, pFrm);
+		dot11f_unpack_neighbor_report_response(pMac, pBody,
+						       frameLen, pFrm, false);
 
 	if (DOT11F_FAILED(nStatus)) {
 		pe_err("Failed to unpack and parse a Neighbor report response (0x%08x, %d bytes):",
@@ -1523,7 +1532,9 @@ static void __lim_process_sa_query_response_action_frame(tpAniSirGlobal pMac,
 		lim_send_sme_mgmt_frame_ind(pMac, pHdr->fc.subType, (uint8_t *) pHdr,
 					    frameLen + sizeof(tSirMacMgmtHdr), 0,
 					    WMA_GET_RX_CH(pRxPacketInfo),
-					    psessionEntry, 0);
+					    psessionEntry,
+					    WMA_GET_RX_RSSI_NORMALIZED(
+					    pRxPacketInfo));
 		return;
 	}
 
@@ -1615,6 +1626,49 @@ lim_drop_unprotected_action_frame(tpAniSirGlobal pMac, tpPESession psessionEntry
 }
 #endif
 
+/*
+ * lim_process_action_vendor_specific() - Process action frame received
+ * @mac_ctx: Pointer to Global MAC structure
+ * @pkt_info: A pointer to packet info structure
+ * @action_hdr: Pointer to vendor specific action frame hdr
+ * @session: PE session entry
+ *
+ * Return: none
+ */
+static void lim_process_action_vendor_specific(tpAniSirGlobal mac_ctx,
+			uint8_t *pkt_info,
+			tpSirMacVendorSpecificPublicActionFrameHdr action_hdr,
+			tpPESession session)
+{
+	tpSirMacMgmtHdr mac_hdr = NULL;
+	uint32_t frame_len = 0;
+	uint8_t session_id = 0;
+	uint8_t p2p_oui[] = { 0x50, 0x6F, 0x9A, 0x09 };
+
+	mac_hdr = WMA_GET_RX_MAC_HEADER(pkt_info);
+	frame_len = WMA_GET_RX_PAYLOAD_LEN(pkt_info);
+	if (session)
+		session_id = session->smeSessionId;
+	/* Check if it is a P2P public action frame. */
+	if (!qdf_mem_cmp(action_hdr->Oui, p2p_oui, 4)) {
+		/* Forward to the SME to HDD to wpa_supplicant */
+		/* type is ACTION */
+		lim_send_sme_mgmt_frame_ind(mac_ctx, mac_hdr->fc.subType,
+					    (uint8_t *) mac_hdr, frame_len +
+					    sizeof(tSirMacMgmtHdr), session_id,
+					    WMA_GET_RX_CH(pkt_info), session,
+					    WMA_GET_RX_RSSI_NORMALIZED(
+					    pkt_info));
+	} else {
+		pe_debug("Unhandled public action frame (Vendor specific) OUI: %x %x %x %x",
+				action_hdr->Oui[0],
+				action_hdr->Oui[1],
+				action_hdr->Oui[2],
+				action_hdr->Oui[3]);
+	}
+
+}
+
 /**
  * lim_process_action_frame() - to process action frames
  * @mac_ctx: Pointer to Global MAC structure
@@ -1640,7 +1694,6 @@ void lim_process_action_frame(tpAniSirGlobal mac_ctx,
 	tpSirMacVendorSpecificFrameHdr vendor_specific;
 	uint8_t oui[] = { 0x00, 0x00, 0xf0 };
 	tpSirMacVendorSpecificPublicActionFrameHdr pub_action;
-	uint8_t p2p_oui[] = { 0x50, 0x6F, 0x9A, 0x09 };
 
 #ifdef WLAN_FEATURE_11W
 	if (lim_is_robust_mgmt_action_frame(action_hdr->category) &&
@@ -1869,7 +1922,9 @@ void lim_process_action_frame(tpAniSirGlobal mac_ctx,
 					sizeof(tSirMacMgmtHdr),
 					session->smeSessionId,
 					WMA_GET_RX_CH(rx_pkt_info),
-					session, 0);
+					session,
+					WMA_GET_RX_RSSI_NORMALIZED(
+					rx_pkt_info));
 		} else {
 			pe_debug("Dropping the vendor specific action frame beacause of (WES Mode not enabled (WESMODE: %d) or OUI mismatch (%02x %02x %02x) or not received with SelfSta address) system role: %d",
 				IS_WES_MODE_ENABLED(mac_ctx),
@@ -1885,30 +1940,9 @@ void lim_process_action_frame(tpAniSirGlobal mac_ctx,
 			pub_action =
 				(tpSirMacVendorSpecificPublicActionFrameHdr)
 				action_hdr;
-			mac_hdr = NULL;
-			frame_len = 0;
 
-			mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
-			frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_pkt_info);
-			/* Check if it is a P2P public action frame. */
-			if (!qdf_mem_cmp(pub_action->Oui, p2p_oui, 4)) {
-				/*
-				 * Forward to the SME to HDD to wpa_supplicant
-				 * type is ACTION
-				 */
-				lim_send_sme_mgmt_frame_ind(mac_ctx,
-						mac_hdr->fc.subType,
-						(uint8_t *) mac_hdr,
-						frame_len +
-						sizeof(tSirMacMgmtHdr),
-						session->smeSessionId,
-						WMA_GET_RX_CH(rx_pkt_info),
-				session, WMA_GET_RX_RSSI_RAW(rx_pkt_info));
-			} else {
-				pe_debug("Unhandled public action frame (Vendor specific) OUI: %x %x %x %x",
-					pub_action->Oui[0], pub_action->Oui[1],
-					pub_action->Oui[2], pub_action->Oui[3]);
-			}
+			lim_process_action_vendor_specific(mac_ctx, rx_pkt_info,
+							   pub_action, session);
 		break;
 		/* Handle vendor specific action */
 		case SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY:
@@ -1937,13 +1971,14 @@ void lim_process_action_frame(tpAniSirGlobal mac_ctx,
 					(uint8_t *) mac_hdr,
 					frame_len + sizeof(tSirMacMgmtHdr),
 					session->smeSessionId,
-					WMA_GET_RX_CH(rx_pkt_info), session, 0);
+					WMA_GET_RX_CH(rx_pkt_info), session,
+					WMA_GET_RX_RSSI_NORMALIZED(
+					rx_pkt_info));
 		break;
 #ifdef FEATURE_WLAN_TDLS
 		case SIR_MAC_TDLS_DIS_RSP:
 			mac_hdr = NULL;
 			frame_len = 0;
-			rssi = 0;
 
 			mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
 			frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_pkt_info);
@@ -1953,7 +1988,8 @@ void lim_process_action_frame(tpAniSirGlobal mac_ctx,
 				mac_hdr->fc.subType, (uint8_t *) mac_hdr,
 				frame_len + sizeof(tSirMacMgmtHdr),
 				session->smeSessionId,
-				WMA_GET_RX_CH(rx_pkt_info), session, rssi);
+				WMA_GET_RX_CH(rx_pkt_info), session,
+				WMA_GET_RX_RSSI_NORMALIZED(rx_pkt_info));
 		break;
 #endif
 		case SIR_MAC_ACTION_EXT_CHANNEL_SWITCH_ID:
@@ -2023,7 +2059,9 @@ void lim_process_action_frame(tpAniSirGlobal mac_ctx,
 					    frame_len + sizeof(tSirMacMgmtHdr),
 					    session->smeSessionId,
 					    WMA_GET_RX_CH(rx_pkt_info),
-					    session, 0);
+					    session,
+					    WMA_GET_RX_RSSI_NORMALIZED(
+					    rx_pkt_info));
 		break;
 	}
 	case SIR_MAC_ACTION_PROT_DUAL_PUB:
@@ -2088,33 +2126,8 @@ void lim_process_action_frame_no_session(tpAniSirGlobal pMac, uint8_t *pBd)
 		switch (pActionHdr->actionID) {
 		case SIR_MAC_ACTION_VENDOR_SPECIFIC:
 		{
-			tpSirMacMgmtHdr pHdr;
-			uint32_t frameLen;
-			uint8_t P2POui[] = { 0x50, 0x6F, 0x9A, 0x09 };
-
-			pHdr = WMA_GET_RX_MAC_HEADER(pBd);
-			frameLen = WMA_GET_RX_PAYLOAD_LEN(pBd);
-
-			/* Check if it is a P2P public action frame. */
-			if (!qdf_mem_cmp(pActionHdr->Oui, P2POui, 4)) {
-				/* Forward to the SME to HDD to wpa_supplicant */
-				/* type is ACTION */
-				lim_send_sme_mgmt_frame_ind(pMac,
-							    pHdr->fc.subType,
-							    (uint8_t *) pHdr,
-							    frameLen +
-							    sizeof
-							    (tSirMacMgmtHdr),
-							    0,
-							    WMA_GET_RX_CH
-								    (pBd), NULL, 0);
-			} else {
-				pe_debug("Unhandled public action frame (Vendor specific) OUI: %x %x %x %x",
-					pActionHdr->Oui[0],
-					pActionHdr->Oui[1],
-					pActionHdr->Oui[2],
-					pActionHdr->Oui[3]);
-			}
+			lim_process_action_vendor_specific(pMac, pBd,
+							   pActionHdr, NULL);
 		}
 		break;
 		default:

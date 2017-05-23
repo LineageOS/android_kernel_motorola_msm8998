@@ -196,7 +196,7 @@ static enum qdf_bus_type to_bus_type(enum pld_bus_type bus_type)
 	}
 }
 
-int hdd_hif_open(struct device *dev, void *bdev, const hif_bus_id *bid,
+int hdd_hif_open(struct device *dev, void *bdev, const struct hif_bus_id *bid,
 			enum qdf_bus_type bus_type, bool reinit)
 {
 	QDF_STATUS status;
@@ -232,6 +232,9 @@ int hdd_hif_open(struct device *dev, void *bdev, const hif_bus_id *bid,
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		hdd_err("hif_enable failed status: %d, reinit: %d",
 			status, reinit);
+		if (!cds_is_fw_down())
+			QDF_BUG(0);
+
 		ret = qdf_status_to_os_return(status);
 		goto err_hif_close;
 	} else {
@@ -310,7 +313,7 @@ static void hdd_init_qdf_ctx(struct device *dev, void *bdev,
  *
  * Return: 0 on successfull probe
  */
-static int wlan_hdd_probe(struct device *dev, void *bdev, const hif_bus_id *bid,
+static int wlan_hdd_probe(struct device *dev, void *bdev, const struct hif_bus_id *bid,
 	enum qdf_bus_type bus_type, bool reinit)
 {
 	int ret = 0;
@@ -354,6 +357,8 @@ static int wlan_hdd_probe(struct device *dev, void *bdev, const hif_bus_id *bid,
 	hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_INIT);
 	hdd_remove_pm_qos(dev);
 
+	cds_clear_fw_state(CDS_FW_STATE_DOWN);
+
 	return 0;
 
 
@@ -364,6 +369,9 @@ err_hdd_deinit:
 		cds_set_load_in_progress(false);
 	hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_DRIVER_INIT);
 	hdd_remove_pm_qos(dev);
+
+	cds_clear_fw_state(CDS_FW_STATE_DOWN);
+
 	return ret;
 }
 
@@ -500,18 +508,6 @@ static void wlan_hdd_notify_handler(int state)
 		if (ret < 0)
 			hdd_err("Fail to send notify");
 	}
-}
-
-/**
- * wlan_hdd_update_status() - update driver status
- * @status: driver status
- *
- * Return: void
- */
-static void wlan_hdd_update_status(uint32_t status)
-{
-	if (status == PLD_RECOVERY)
-		cds_set_recovery_in_progress(true);
 }
 
 /**
@@ -1177,15 +1173,19 @@ static void wlan_hdd_pld_notify_handler(struct device *dev,
 }
 
 /**
- * wlan_hdd_pld_update_status() - update driver status
+ * wlan_hdd_pld_uevent() - update driver status
  * @dev: device
- * @status: driver status
+ * @uevent: uevent status
  *
  * Return: void
  */
-static void wlan_hdd_pld_update_status(struct device *dev, uint32_t status)
+static void wlan_hdd_pld_uevent(struct device *dev,
+				struct pld_uevent_data *uevent)
 {
-	wlan_hdd_update_status(status);
+	if (uevent->uevent == PLD_RECOVERY)
+		cds_set_recovery_in_progress(true);
+	else if (uevent->uevent == PLD_FW_DOWN)
+		cds_set_fw_state(CDS_FW_STATE_DOWN);
 }
 
 #ifdef FEATURE_RUNTIME_PM
@@ -1228,7 +1228,7 @@ struct pld_driver_ops wlan_drv_ops = {
 	.resume_noirq  = wlan_hdd_pld_resume_noirq,
 	.reset_resume = wlan_hdd_pld_reset_resume,
 	.modem_status = wlan_hdd_pld_notify_handler,
-	.update_status = wlan_hdd_pld_update_status,
+	.uevent = wlan_hdd_pld_uevent,
 #ifdef FEATURE_RUNTIME_PM
 	.runtime_suspend = wlan_hdd_pld_runtime_suspend,
 	.runtime_resume = wlan_hdd_pld_runtime_resume,

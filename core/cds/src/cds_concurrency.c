@@ -3591,7 +3591,11 @@ void cds_set_concurrency_mode(enum tQDF_ADAPTER_MODE mode)
 		hdd_ctx->concurrency_mode, mode,
 		hdd_ctx->no_of_open_sessions[mode]);
 
-	hdd_green_ap_start_bss(hdd_ctx);
+	/*
+	 * Only toggle the green_ap update when SAP adapter exist.
+	 */
+	if (hdd_get_adapter(hdd_ctx, QDF_SAP_MODE))
+		hdd_green_ap_start_bss(hdd_ctx);
 }
 
 /**
@@ -3630,7 +3634,12 @@ void cds_clear_concurrency_mode(enum tQDF_ADAPTER_MODE mode)
 		hdd_ctx->concurrency_mode, mode,
 		hdd_ctx->no_of_open_sessions[mode]);
 
-	hdd_green_ap_start_bss(hdd_ctx);
+	/*
+	 * Only toggle the green_ap update when SAP adapter exist or
+	 * SAP interface removal.
+	 */
+	if (hdd_get_adapter(hdd_ctx, QDF_SAP_MODE) || (mode == QDF_SAP_MODE))
+		hdd_green_ap_start_bss(hdd_ctx);
 }
 
 /**
@@ -9071,6 +9080,169 @@ QDF_STATUS cds_reset_sap_mandatory_channels(void)
 }
 
 /**
+ * cds_enable_disable_sap_mandatory_chan_list() - enable/disable SAP mandatory
+ * channel list
+ * @val: Enable or Disable sap mandatory chan list
+ *
+ * enable/disable the SAP mandatory channel list
+ *
+ * Return: None
+ */
+void cds_enable_disable_sap_mandatory_chan_list(bool val)
+{
+	cds_context_type *cds_ctx;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return;
+	}
+
+	cds_debug("enable_sap_mandatory_chan_list %d", val);
+	cds_ctx->enable_sap_mandatory_chan_list = val;
+}
+
+/**
+ * cds_add_sap_mandatory_chan() - Add chan to SAP mandatory chan
+ * list
+ * @chan: Channel to be added
+ *
+ * Add chan to SAP mandatory channel list
+ *
+ * Return: None
+ */
+void cds_add_sap_mandatory_chan(uint8_t chan)
+{
+	cds_context_type *cds_ctx;
+	int i;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return;
+	}
+	for (i = 0; i < cds_ctx->sap_mandatory_channels_len; i++) {
+		if (chan == cds_ctx->sap_mandatory_channels[i])
+			return;
+	}
+
+	cds_debug("chan %hu", chan);
+	cds_ctx->sap_mandatory_channels[cds_ctx->sap_mandatory_channels_len++]
+		= chan;
+}
+
+/**
+ * cds_is_sap_mandatory_chan_list_enabled() - Return the SAP mandatory chan
+ * list enabled status
+ *
+ * Get the SAP mandatory chan list enabled status
+ *
+ * Return: Enable or Disable
+ */
+bool cds_is_sap_mandatory_chan_list_enabled(void)
+{
+	cds_context_type *cds_ctx;
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return false;
+	}
+
+	return cds_ctx->enable_sap_mandatory_chan_list;
+}
+
+/**
+ * cds_get_sap_mandatory_chan_list_len() - Return the SAP mandatory chan list
+ * len
+ *
+ * Get the SAP mandatory chan list len
+ *
+ * Return: Channel list length
+ */
+uint32_t cds_get_sap_mandatory_chan_list_len(void)
+{
+	cds_context_type *cds_ctx;
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return false;
+	}
+
+	return cds_ctx->sap_mandatory_channels_len;
+}
+
+/**
+ * cds_init_sap_mandatory_2g_chan() - Init 2.4G SAP mandatory chan list
+ *
+ * Initialize the 2.4G SAP mandatory channels
+ *
+ * Return: Success or Failure
+ */
+void cds_init_sap_mandatory_2g_chan(void)
+{
+	cds_context_type *cds_ctx;
+	uint8_t chan_list[QDF_MAX_NUM_CHAN] = {0};
+	uint32_t len = 0;
+	int i;
+	QDF_STATUS status;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return;
+	}
+
+	status = cds_get_valid_chans(chan_list, &len);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		cds_err("Error in getting valid channels");
+		return;
+	}
+	for (i = 0; i < len; i++) {
+		if (CDS_IS_CHANNEL_24GHZ(chan_list[i])) {
+			cds_err("Add chan %hu to mandatory list", chan_list[i]);
+			cds_ctx->sap_mandatory_channels[
+			cds_ctx->sap_mandatory_channels_len++] = chan_list[i];
+		}
+	}
+	return;
+}
+
+/**
+ * cds_remove_sap_mandatory_chan() - Remove chan from SAP mandatory chan list
+ *
+ * Remove chan from SAP mandatory chan list
+ *
+ * Return: Success or Failure
+ */
+void cds_remove_sap_mandatory_chan(uint8_t chan)
+{
+	cds_context_type *cds_ctx;
+	uint8_t chan_list[QDF_MAX_NUM_CHAN] = {0};
+	uint32_t num_chan = 0;
+	int i;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return;
+	}
+
+	for (i = 0; i < cds_ctx->sap_mandatory_channels_len; i++) {
+		if (chan == cds_ctx->sap_mandatory_channels[i])
+			continue;
+		chan_list[num_chan++] = cds_ctx->sap_mandatory_channels[i];
+	}
+
+	qdf_mem_zero(cds_ctx->sap_mandatory_channels,
+			cds_ctx->sap_mandatory_channels_len);
+	qdf_mem_copy(cds_ctx->sap_mandatory_channels, chan_list, num_chan);
+	cds_ctx->sap_mandatory_channels_len = num_chan;
+
+	return;
+}
+/**
  * cds_is_sap_mandatory_channel_set() - Checks if SAP mandatory channel is set
  *
  * Checks if any mandatory channel is set for SAP operation
@@ -9452,6 +9624,39 @@ send_status:
 }
 
 /**
+ * cds_get_chan_by_session_id() - Get channel for a given session ID
+ * @session_id: Session ID
+ * @chan: Pointer to the channel
+ *
+ * Gets the channel for a given session ID
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS cds_get_chan_by_session_id(uint8_t session_id, uint8_t *chan)
+{
+	cds_context_type *cds_ctx;
+	uint32_t i;
+
+	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
+	if (!cds_ctx) {
+		cds_err("Invalid CDS Context");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
+	for (i = 0; i < MAX_NUMBER_OF_CONC_CONNECTIONS; i++) {
+		if ((conc_connection_list[i].vdev_id == session_id) &&
+		    (conc_connection_list[i].in_use)) {
+			*chan = conc_connection_list[i].chan;
+			qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
+			return QDF_STATUS_SUCCESS;
+		}
+	}
+	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
+	return QDF_STATUS_E_FAILURE;
+}
+
+/**
  * cds_get_mac_id_by_session_id() - Get MAC ID for a given session ID
  * @session_id: Session ID
  * @mac_id: Pointer to the MAC ID
@@ -9499,11 +9704,18 @@ QDF_STATUS cds_get_mcc_session_id_on_mac(uint8_t mac_id, uint8_t session_id,
 {
 	cds_context_type *cds_ctx;
 	uint32_t i;
-	uint8_t chan = conc_connection_list[session_id].chan;
+	QDF_STATUS status;
+	uint8_t chan;
 
 	cds_ctx = cds_get_context(QDF_MODULE_ID_QDF);
 	if (!cds_ctx) {
 		cds_err("Invalid CDS Context");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	status = cds_get_chan_by_session_id(session_id, &chan);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to get channel for session id:%d", session_id);
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -9560,9 +9772,12 @@ uint8_t cds_get_mcc_operating_channel(uint8_t session_id)
 		return INVALID_CHANNEL_ID;
 	}
 
-	qdf_mutex_acquire(&cds_ctx->qdf_conc_list_lock);
-	chan = conc_connection_list[mcc_session_id].chan;
-	qdf_mutex_release(&cds_ctx->qdf_conc_list_lock);
+	status = cds_get_chan_by_session_id(mcc_session_id, &chan);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to get channel for MCC session ID:%d",
+			 mcc_session_id);
+		return INVALID_CHANNEL_ID;
+	}
 
 	return chan;
 }

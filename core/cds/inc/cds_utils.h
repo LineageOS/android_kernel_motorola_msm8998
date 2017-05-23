@@ -123,6 +123,15 @@ QDF_STATUS cds_rand_get_bytes(uint32_t handle, uint8_t *pbBuf,
 uint32_t cds_chan_to_freq(uint8_t chan);
 uint8_t cds_freq_to_chan(uint32_t freq);
 enum cds_band_type cds_chan_to_band(uint32_t chan);
+
+/**
+ * cds_upper_to_lower: API to convert upper case string into lower case
+ * @txt: input text
+ * @length: length of input string
+ *
+ * Return: None
+ */
+void cds_upper_to_lower(uint8_t *txt, uint32_t length);
 #ifdef WLAN_FEATURE_11W
 bool cds_is_mmie_valid(uint8_t *key, uint8_t *ipn,
 		       uint8_t *frm, uint8_t *efrm);
@@ -140,4 +149,28 @@ static inline void cds_host_diag_log_work(qdf_wake_lock_t *lock, uint32_t msec,
 				    msec, WIFI_POWER_EVENT_WAKELOCK_TAKEN);
 	}
 }
+
+/**
+ * cds_copy_hlp_info() - Copy HLP info
+ * @input_dst_mac: input HLP destination MAC address
+ * @input_src_mac: input HLP source MAC address
+ * @input_hlp_data_len: input HLP data length
+ * @input_hlp_data: Pointer to input HLP data
+ * @output_dst_mac: output HLP destination MAC address
+ * @output_src_mac: output HLP source MAC address
+ * @output_hlp_data_len: Pointer to output HLP data length
+ * @output_hlp_data: output Pointer to HLP data
+ *
+ * Util API to copy HLP info from input to output
+ *
+ * Return: None
+ */
+void cds_copy_hlp_info(struct qdf_mac_addr *input_dst_mac,
+		       struct qdf_mac_addr *input_src_mac,
+		       uint16_t input_hlp_data_len,
+		       uint8_t *input_hlp_data,
+		       struct qdf_mac_addr *output_dst_mac,
+		       struct qdf_mac_addr *output_src_mac,
+		       uint16_t *output_hlp_data_len,
+		       uint8_t *output_hlp_data);
 #endif /* #if !defined __CDS_UTILS_H */

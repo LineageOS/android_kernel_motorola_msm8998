@@ -261,7 +261,6 @@ static void lim_process_set_default_scan_ie_request(tpAniSirGlobal mac_ctx,
 	uint16_t local_ie_len;
 	tSirMsgQ msg_q;
 	tSirRetStatus ret_code;
-	QDF_STATUS qdf_status;
 
 	if (!msg_buf) {
 		pe_err("msg_buf is NULL");
@@ -282,13 +281,6 @@ static void lim_process_set_default_scan_ie_request(tpAniSirGlobal mac_ctx,
 			local_ie_buf, &local_ie_len)) {
 		pe_err("Update ext cap IEs fails");
 		goto scan_ie_send_fail;
-	}
-
-	if (mac_ctx->roam.configParam.qcn_ie_support) {
-		qdf_status = lim_add_qcn_ie(mac_ctx, local_ie_buf,
-							&local_ie_len);
-		if (QDF_IS_STATUS_ERROR(qdf_status))
-			goto scan_ie_send_fail;
 	}
 
 	wma_ie_params = qdf_mem_malloc(sizeof(*wma_ie_params) + local_ie_len);
@@ -378,6 +370,9 @@ static void lim_process_hw_mode_trans_ind(tpAniSirGlobal mac, void *body)
 
 uint8_t static def_msg_decision(tpAniSirGlobal pMac, tpSirMsgQ limMsg)
 {
+	uint8_t type, subtype;
+	QDF_STATUS status;
+	bool mgmt_pkt_defer = true;
 
 /* this function should not changed */
 	if (pMac->lim.gLimSmeState == eLIM_SME_OFFLINE_STATE) {
@@ -394,6 +389,21 @@ uint8_t static def_msg_decision(tpAniSirGlobal pMac, tpSirMsgQ limMsg)
 	if ((!lim_is_system_in_scan_state(pMac))
 	    && (true != GET_LIM_PROCESS_DEFD_MESGS(pMac))
 	    && !pMac->lim.gLimSystemInScanLearnMode) {
+
+		if (limMsg->type == SIR_BB_XPORT_MGMT_MSG) {
+			/*
+			 * Dont defer beacon and probe response
+			 * because it will fill the differ queue quickly
+			 */
+			status = lim_util_get_type_subtype(limMsg->bodyptr,
+				&type, &subtype);
+			if (QDF_IS_STATUS_SUCCESS(status) &&
+				(type == SIR_MAC_MGMT_FRAME) &&
+				((subtype == SIR_MAC_MGMT_BEACON) ||
+				 (subtype == SIR_MAC_MGMT_PROBE_RSP)))
+				mgmt_pkt_defer = false;
+		}
+
 		if ((limMsg->type != WMA_ADD_BSS_RSP)
 		    && (limMsg->type != WMA_DELETE_BSS_RSP)
 		    && (limMsg->type != WMA_DELETE_BSS_HO_FAIL_RSP)
@@ -427,7 +437,8 @@ uint8_t static def_msg_decision(tpAniSirGlobal pMac, tpSirMsgQ limMsg)
 		     * after ADD TS request is sent over the air and
 		     * ADD TS response received over the air */
 		    !(limMsg->type == SIR_BB_XPORT_MGMT_MSG &&
-			pMac->lim.gLimAddtsSent)) {
+			pMac->lim.gLimAddtsSent) &&
+			(mgmt_pkt_defer)) {
 			pe_debug("Defer the current message %s , gLimProcessDefdMsgs is false and system is not in scan/learn mode",
 				       lim_msg_str(limMsg->type));
 			/* Defer processsing this message */
@@ -702,7 +713,7 @@ uint32_t lim_defer_msg(tpAniSirGlobal pMac, tSirMsgQ *pMsg)
 			       LIM_TRACE_MAKE_RXMSG(pMsg->type, LIM_MSG_DEFERRED));
 		       )
 	} else {
-		pe_err("Dropped lim message (0x%X)", pMsg->type);
+		pe_err("Dropped lim message (0x%X) Message %s", pMsg->type, lim_msg_str(pMsg->type));
 		MTRACE(mac_trace_msg_rx
 			       (pMac, NO_SESSION,
 			       LIM_TRACE_MAKE_RXMSG(pMsg->type, LIM_MSG_DROPPED));
@@ -840,7 +851,8 @@ lim_check_mgmt_registered_frames(tpAniSirGlobal mac_ctx, uint8_t *buff_desc,
 			(uint8_t *) hdr,
 			WMA_GET_RX_PAYLOAD_LEN(buff_desc) +
 			sizeof(tSirMacMgmtHdr), mgmt_frame->sessionId,
-			WMA_GET_RX_CH(buff_desc), session_entry, 0);
+			WMA_GET_RX_CH(buff_desc), session_entry,
+			WMA_GET_RX_RSSI_NORMALIZED(buff_desc));
 
 		if ((type == SIR_MAC_MGMT_FRAME)
 		    && (fc.type == SIR_MAC_MGMT_FRAME)
@@ -1434,6 +1446,7 @@ static void lim_process_messages(tpAniSirGlobal mac_ctx, tpSirMsgQ msg)
 		break;
 	case eWNI_SME_PDEV_SET_HT_VHT_IE:
 	case eWNI_SME_SET_VDEV_IES_PER_BAND:
+	case eWNI_SME_ROAM_INVOKE:
 	case eWNI_SME_SYS_READY_IND:
 	case eWNI_SME_JOIN_REQ:
 	case eWNI_SME_REASSOC_REQ:
@@ -1700,6 +1713,9 @@ static void lim_process_messages(tpAniSirGlobal mac_ctx, tpSirMsgQ msg)
 #endif
 	case WMA_ADD_BSS_RSP:
 		lim_process_mlm_add_bss_rsp(mac_ctx, msg);
+		break;
+	case WMA_HIDDEN_SSID_RESTART_RSP:
+		lim_process_mlm_update_hidden_ssid_rsp(mac_ctx, msg);
 		break;
 	case WMA_ADD_STA_RSP:
 		lim_process_add_sta_rsp(mac_ctx, msg);
