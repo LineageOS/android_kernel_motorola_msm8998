@@ -40,11 +40,7 @@
 #include "qdf_atomic.h"
 
 #define WMI_UNIFIED_MAX_EVENT 0x100
-#ifdef CONFIG_MCL
-#define WMI_MAX_CMDS  256
-#else
 #define WMI_MAX_CMDS 1024
-#endif
 
 typedef qdf_nbuf_t wmi_buf_t;
 
@@ -110,12 +106,14 @@ struct wmi_command_header {
  * @ buf_tail_idx - Tail index of buffer
  * @ p_buf_tail_idx - refernce to buffer tail index. It is added to accommodate
  * unified design since MCL uses global variable for buffer tail index
+ * @ size - the size of the buffer in number of entries
  */
 struct wmi_log_buf_t {
 	void *buf;
 	uint32_t length;
 	uint32_t buf_tail_idx;
 	uint32_t *p_buf_tail_idx;
+	uint32_t size;
 };
 
 /**
@@ -182,8 +180,8 @@ QDF_STATUS (*send_vdev_delete_cmd)(wmi_unified_t wmi_handle,
 QDF_STATUS (*send_vdev_stop_cmd)(wmi_unified_t wmi,
 					uint8_t vdev_id);
 
-QDF_STATUS (*send_enable_broadcast_filter_cmd)(wmi_unified_t wmi_handle,
-			   uint8_t vdev_id, bool enable);
+QDF_STATUS (*send_conf_hw_filter_mode_cmd)(wmi_unified_t wmi, uint8_t vdev_id,
+					   uint8_t mode_bitmap);
 
 QDF_STATUS (*send_vdev_down_cmd)(wmi_unified_t wmi,
 			uint8_t vdev_id);
@@ -468,6 +466,9 @@ QDF_STATUS (*send_process_ll_stats_get_cmd)
 QDF_STATUS (*send_get_stats_cmd)(wmi_unified_t wmi_handle,
 		       struct pe_stats_req  *get_stats_param,
 			   uint8_t addr[IEEE80211_ADDR_LEN]);
+
+QDF_STATUS (*send_congestion_cmd)(wmi_unified_t wmi_handle,
+			A_UINT8 vdev_id);
 
 QDF_STATUS (*send_snr_request_cmd)(wmi_unified_t wmi_handle);
 
@@ -1154,6 +1155,9 @@ QDF_STATUS (*send_power_dbg_cmd)(wmi_unified_t wmi_handle,
 QDF_STATUS (*send_adapt_dwelltime_params_cmd)(wmi_unified_t wmi_handle,
 			struct wmi_adaptive_dwelltime_params *dwelltime_params);
 
+QDF_STATUS (*send_dbs_scan_sel_params_cmd)(wmi_unified_t wmi_handle,
+			struct wmi_dbs_scan_sel_params *dbs_scan_params);
+
 QDF_STATUS (*send_fw_test_cmd)(wmi_unified_t wmi_handle,
 			       struct set_fwtest_params *wmi_fwtest);
 
@@ -1207,7 +1211,8 @@ struct wmi_unified {
 	void *htc_handle;
 	qdf_spinlock_t eventq_lock;
 	qdf_nbuf_queue_t event_queue;
-	struct work_struct rx_event_work;
+	qdf_work_t rx_event_work;
+	qdf_workqueue_t *wmi_rx_work_queue;
 	int wmi_stop_in_progress;
 #ifndef WMI_NON_TLV_SUPPORT
 	struct _wmi_abi_version fw_abi_version;
