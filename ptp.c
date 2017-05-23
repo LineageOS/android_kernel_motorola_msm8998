@@ -649,6 +649,7 @@ init_and_register(struct gb_connection *connection, struct gb_ptp *ptp)
 	struct power_supply_config cfg = {};
 
 	cfg.drv_data = ptp;
+	cfg.free_drv_data = true;
 
 	/* Create a power supply */
 	ptp->desc.name		= "gb_ptp";
@@ -700,14 +701,13 @@ static void gb_ptp_connection_exit(struct gb_connection *connection)
 {
 	struct gb_ptp *ptp = connection->private;
 
-#ifdef DRIVER_OWNS_PSY_STRUCT
 	mutex_lock(&ptp->conn_lock);
 	ptp->connection = NULL;
 	mutex_unlock(&ptp->conn_lock);
+#ifdef DRIVER_OWNS_PSY_STRUCT
 	power_supply_unregister(&ptp->psy);
 #else
 	power_supply_unregister(ptp->psy);
-	kfree(ptp);
 #endif
 }
 
