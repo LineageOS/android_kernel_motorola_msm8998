@@ -271,6 +271,8 @@ typedef enum {
     WMI_SCAN_PROB_REQ_OUI_CMDID,
     /** config adaptive dwell scan */
     WMI_SCAN_ADAPTIVE_DWELL_CONFIG_CMDID,
+    /** Only applicable to DBS capable product */
+    WMI_SET_SCAN_DBS_DUTY_CYCLE_CMDID,
 
     /* PDEV(physical device) specific commands */
     /** set regulatorty ctl id used by FW to determine the exact ctl power limits */
@@ -364,6 +366,8 @@ typedef enum {
     WMI_PDEV_CHECK_CAL_VERSION_CMDID,
     /** Set Diversity Gain */
     WMI_PDEV_SET_DIVERSITY_GAIN_CMDID,
+    /** Get chain RSSI and antena index command */
+    WMI_PDEV_DIV_GET_RSSI_ANTID_CMDID,
 
     /* VDEV (virtual device) specific commands */
     /** vdev create */
@@ -841,6 +845,8 @@ typedef enum {
     WMI_SET_MULTIPLE_MCAST_FILTER_CMDID,
     /** upload a requested section of data from firmware flash to host */
     WMI_READ_DATA_FROM_FLASH_CMDID,
+    /* Thermal Throttling SET CONF commands */
+    WMI_THERM_THROT_SET_CONF_CMDID,
 
     /* GPIO Configuration */
     WMI_GPIO_CONFIG_CMDID = WMI_CMD_GRP_START_ID(WMI_GRP_GPIO),
@@ -925,6 +931,7 @@ typedef enum {
     WMI_OEM_REQUEST_CMDID, /* UNUSED */
     /* OEM related cmd used for Low Power ranging */
     WMI_LPI_OEM_REQ_CMDID,
+    WMI_OEM_DMA_RING_CFG_REQ_CMDID,
 
     /** Nan Request */
     WMI_NAN_CMDID = WMI_CMD_GRP_START_ID(WMI_GRP_NAN),
@@ -1025,6 +1032,7 @@ typedef enum {
     WMI_SET_CURRENT_COUNTRY_CMDID = WMI_CMD_GRP_START_ID(WMI_GRP_REGULATORY),
     WMI_11D_SCAN_START_CMDID,
     WMI_11D_SCAN_STOP_CMDID,
+    WMI_SET_INIT_COUNTRY_CMDID,
 
     /**
      * Nan Data commands
@@ -1117,6 +1125,9 @@ typedef enum {
 
     /** Report the caldata version to host */
     WMI_PDEV_CHECK_CAL_VERSION_EVENTID,
+
+    /** Report chain RSSI and antenna index to host */
+    WMI_PDEV_DIV_RSSI_ANTID_EVENTID,
 
     /* VDEV specific events */
     /** VDEV started event in response to VDEV_START request */
@@ -1417,6 +1428,9 @@ typedef enum {
     /** event to upload a PKGID to host to identify chip for various products */
     WMI_PKGID_EVENTID,
 
+    /* Thermal Throttling stats event id for every pdev and zones, etc */
+    WMI_THERM_THROT_STATS_EVENTID,
+
     /* GPIO Event */
     WMI_GPIO_INPUT_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_GPIO),
     /** upload H_CV info WMI event
@@ -1448,6 +1462,8 @@ typedef enum {
     WMI_OEM_MEASUREMENT_REPORT_EVENTID, /* DEPRECATED */
     WMI_OEM_ERROR_REPORT_EVENTID, /* DEPRECATED */
     WMI_OEM_RESPONSE_EVENTID,
+    WMI_OEM_DMA_RING_CFG_RSP_EVENTID,
+    WMI_OEM_DMA_BUF_RELEASE_EVENTID,
 
     /* NAN Event */
     WMI_NAN_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_NAN),
@@ -1736,6 +1752,12 @@ typedef enum {
 #define WMI_HE_CAP_TWT_REQUESTER_SUPPORT  0x00000004
 #define WMI_HE_FRAG_SUPPORT_MASK          0x00000018
 #define WMI_HE_FRAG_SUPPORT_SHIFT         3
+
+/* Interested readers refer to Rx/Tx MCS Map definition as defined in 802.11ax
+ */
+#define WMI_HE_MAX_MCS_4_SS_MASK(r,ss)      ((7 & (r)) << ((((ss) - 1) << 1)+((ss) - 1)))
+#define WMI_HE_MAX_SUPP_RATE_MASK           0x1f000000
+#define WMI_HE_MAX_SUPP_RATE_MASK_SHIFT     24
 
 /* fragmentation support field value */
 enum {
@@ -2064,6 +2086,7 @@ typedef enum {
     WMI_FW_AP_RTT_RESPR =      0x00000080,
     WMI_FW_NAN_RTT_INITR =     0x00000100,
     WMI_FW_NAN_RTT_RESPR =     0x00000200,
+    WMI_FW_SCAN_DBS_POLICY =   0x00000400,
     /*
      * New fw sub feature capabilites before
      * WMI_FW_MAX_SUB_FEAT_CAP
@@ -2498,6 +2521,9 @@ typedef struct {
      * which is using MAC ID. 1 means PDEV ID, 0 means MAC ID.
      */
     A_UINT32 use_pdev_id;
+
+    /** Maximum number of scan clients whose DBS scan duty cycle can be configured */
+    A_UINT32 max_num_dbs_scan_duty_cycle;
 } wmi_resource_config;
 
 #define WMI_RSRC_CFG_FLAG_SET(word32, flag, value) \
@@ -2726,6 +2752,8 @@ typedef struct {
     A_UINT32 ie_bitmap[WMI_IE_BITMAP_SIZE];
     /** Number of vendor OUIs. In the TLV vendor_oui[] **/
     A_UINT32 num_vendor_oui;
+    /** Scan control flags extended **/
+    A_UINT32 scan_ctrl_flags_ext;
 
 /**
  * TLV (tag length value) parameters follow the scan_cmd
@@ -2820,6 +2848,17 @@ typedef enum {
 #define WMI_SCAN_STOP_ONE       0x00000000
 #define WMI_SCN_STOP_VAP_ALL    0x01000000
 #define WMI_SCAN_STOP_ALL       0x04000000
+
+/** extended Scan ctrl flags **/
+#define WMI_SCAN_FLAG_EXT_DBS_SCAN_POLICY_MASK 0x00000003 /* Bit 0-1 reserved for DBS scan selection policy.*/
+
+#define WMI_SCAN_DBS_POLICY_DEFAULT             0x0 /** Select duty cycle if configured, else fall back to whatever
+                                                        policy scan manager computes */
+#define WMI_SCAN_DBS_POLICY_FORCE_NONDBS        0x1 /** Force to select Non-DBS scan */
+#define WMI_SCAN_DBS_POLICY_IGNORE_DUTY         0x2 /** Ignore duty cycle even if configured and fall back to whatever
+                                                        policy scan manager computes*/
+#define WMI_SCAN_DBS_POLICY_RESERVED            0x3
+#define WMI_SCAN_DBS_POLICY_MAX                 0x3
 
 typedef struct {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_stop_scan_cmd_fixed_param */
@@ -4245,6 +4284,14 @@ typedef enum {
      *  refer to WMI_PDEV_PKT_PWR_SAVE_LEVEL
      */
     WMI_PDEV_PARAM_PACKET_POWER_SAVE_LEVEL,
+    /** Define IOT pattern to be enabled/disabled
+      * bit values: 0 - disable, 1 - enable
+      * BIT[0..31]: each bit represents an IOT pattern
+      * -----
+      * Bit 0 - avoid SMPS with certain APs
+      * Bits 31:1 - reserved
+      */
+    WMI_PDEV_PARAM_SET_IOT_PATTERN,
 } WMI_PDEV_PARAM;
 
 typedef struct {
@@ -4278,6 +4325,18 @@ typedef struct {
     /** parameter   */
     A_UINT32 param;
 } wmi_pdev_get_tpc_config_cmd_fixed_param;
+
+typedef struct {
+    A_UINT32 tlv_header; /* WMITLV_TAG_STRUC_wmi_pdev_div_get_rssi_antid_fixed_param */
+    /** pdev_id for identifying the MAC */
+    A_UINT32 pdev_id;
+    /** RSSI (rssi_chain_x_pri20) on each chain (units: dB above noise floor) */
+    A_UINT32 chain_rssi[WMI_MAX_CHAINS];
+    /** index of the last-used antenna for each chain */
+    A_UINT32 ant_id[WMI_MAX_CHAINS];
+    /** mac address of diversity peer */
+    wmi_mac_addr macaddr;
+} wmi_pdev_div_get_rssi_antid_fixed_param;
 
 #define WMI_FAST_DIVERSITY_BIT_OFFSET 0
 #define WMI_SLOW_DIVERSITY_BIT_OFFSET 1
@@ -4448,6 +4507,19 @@ typedef struct {
  *      A_UINT8 ratesArray[];
  */
 } wmi_pdev_tpc_config_event_fixed_param;
+
+typedef struct {
+    /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_pdev_div_rssi_antid_event_fixed_param */
+    A_UINT32 tlv_header;
+    /** how many elements in the MAX_CHAINS arrays below contain valid info */
+    A_UINT32 num_chains_valid;
+    /** RSSI (rssi_chain_x_pri20) on each chain (units: dB above noise floor) */
+    A_UINT32 chain_rssi[WMI_MAX_CHAINS];
+    /** index of the last-used antenna for each chain */
+    A_UINT32 ant_id[WMI_MAX_CHAINS];
+    /** mac address of diversity peer */
+    wmi_mac_addr macaddr;
+} wmi_pdev_div_rssi_antid_event_fixed_param;
 
 typedef struct {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_pdev_l1ss_track_event_fixed_param  */
@@ -4723,6 +4795,7 @@ typedef enum {
     WMI_REQUEST_INST_STAT      = 0x40,
     WMI_REQUEST_MIB_STAT       = 0x80,
     WMI_REQUEST_RSSI_PER_CHAIN_STAT = 0x100,
+    WMI_REQUEST_CONGESTION_STAT = 0x200,
 } wmi_stats_id;
 
 /*
@@ -5490,6 +5563,12 @@ typedef struct
     A_INT32 per_chain_snr[WMI_MAX_CHAINS];
     /** per chain background noise, units are dBm */
     A_INT32 per_chain_nf[WMI_MAX_CHAINS];
+    /** per antenna rx MPDUs */
+    A_UINT32 per_antenna_rx_mpdus[WMI_MAX_CHAINS];
+    /** per antenna tx MPDUs */
+    A_UINT32 per_antenna_tx_mpdus[WMI_MAX_CHAINS];
+    /** num of valid chains for per antenna rx/tx MPDU cnts*/
+    A_UINT32 num_chains_valid;
 } wmi_peer_signal_stats;
 
 /** Thresholds of signal stats, stand for percentage of stats variation.
@@ -6010,6 +6089,17 @@ typedef struct {
 } wmi_rssi_stats;
 
 typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_congestion_stats */
+    A_UINT32 vdev_id;
+   /* congestion -
+    * This field holds the congestion percentage = (busy_time/total_time)*100
+    * for the interval from when the vdev was started to the current time
+    * (or the time at which the vdev was stopped).
+    */
+    A_UINT32 congestion;
+} wmi_congestion_stats;
+
+typedef struct {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_per_chain_rssi_stats */
     A_UINT32 num_per_chain_rssi_stats;
 /* This TLV is followed by another TLV of array of structs:
@@ -6275,8 +6365,15 @@ typedef struct {
  *     indicates STA supports of transmission of UL MU-MIMO transmission on an
  *     RU in an HE MU PPDU where the RU does not span the entire PPDU bandwidth.
  */
-#define WMI_HECAP_PHY_ULOFDMA_GET(he_cap_phy) WMI_GET_BITS(he_cap_phy[0], 23, 1)
-#define WMI_HECAP_PHY_ULOFDMA_SET(he_cap_phy, value) WMI_SET_BITS(he_cap_phy[0], 23, 1, value)
+#define WMI_HECAP_PHY_ULMUMIMOOFDMA_GET(he_cap_phy) WMI_GET_BITS(he_cap_phy[0], 23, 1)
+#define WMI_HECAP_PHY_ULMUMIMOOFDMA_SET(he_cap_phy, value) WMI_SET_BITS(he_cap_phy[0], 23, 1, value)
+/* START TEMPORARY WORKAROUND -
+ * Leave legacy names as aliases for new names, until all references to the
+ * legacy names have been removed.
+ */
+#define WMI_HECAP_PHY_ULOFDMA_GET WMI_HECAP_PHY_ULMUMIMOOFDMA_GET
+#define WMI_HECAP_PHY_ULOFDMA_SET WMI_HECAP_PHY_ULMUMIMOOFDMA_SET
+/* END TEMPORARY WORKAROUND */
 
 /* Tx DCM
  * B0:B1
@@ -6582,7 +6679,7 @@ typedef struct {
 
 /*DEPRECATED - USE WMI_HECAP_PHY_BFMENLTSGT80MHZ*/
 #define WMI_HECAP_PHY_SUBFMESTS_GET(he_cap_phy) WMI_HECAP_PHY_BFMESTSLT80MHZ_GET(he_cap_phy)
-#define WMI_HECAP_PHY_SUBFMESTS_SET(he_cap_phy, value) WMI_HECAP_PHY_BFMESTSLT80MHZ_GET(he_cap_phy, value)
+#define WMI_HECAP_PHY_SUBFMESTS_SET(he_cap_phy, value) WMI_HECAP_PHY_BFMESTSLT80MHZ_SET(he_cap_phy, value)
 
 /*DEPRECATED - use WMI_HECAP_PHY_PETHRESPRESENT**/
 #define WMI_HECAP_PHY_PADDING_GET(he_cap_phy) WMI_HECAP_PHY_PETHRESPRESENT_GET(he_cap_phy)
@@ -6590,7 +6687,7 @@ typedef struct {
 
 
 /**DO NOT USE - DEPRECATED*/
-#define WMI_HECAP_PHY_DLOFMAMUMIMO_GET(he_cap_phy) {0}
+#define WMI_HECAP_PHY_DLOFMAMUMIMO_GET(he_cap_phy) (0)
 #define WMI_HECAP_PHY_DLOFDMAMUMIO_SET(he_cap_phy, value) {;}
 
 /*DO NOT USE - DEPRECATED**/
@@ -6675,6 +6772,12 @@ typedef struct {
     A_UINT32 vdev_assoc_id;
     /** bssid of the BSS the VDEV is joining  */
     wmi_mac_addr vdev_bssid;
+    /** bssid of transmitted AP (mbssid case) */
+    wmi_mac_addr trans_bssid;
+    /** the profile index of the connected non-trans ap (mbssid case). 0 means invalid */
+    A_UINT32 profile_idx;
+    /** the total profile numbers of non-trans aps (mbssid case). 0 means legacy AP */
+    A_UINT32 profile_num;
 } wmi_vdev_up_cmd_fixed_param;
 
 typedef struct {
@@ -7178,6 +7281,22 @@ typedef enum {
     /* param to specify probe request Tx delay during Fast Initial Link Setup */
     WMI_VDEV_PARAM_FILS_MAX_CHANNEL_GUARD_TIME, /* units = milliseconds */
 
+    /* enable or disable NOA for P2P GO */
+    WMI_VDEV_PARAM_DISABLE_NOA_P2P_GO,
+
+    /** Per band user management frame fix rate setting
+     *  BIT 31: enable (1) or disable (0) mgmt fix rate for 5G
+     *  BIT 30: enable (1) or disable (0) mgmt fix rate for 2G
+     *
+     *  BIT 23: 11ax (1) or legacy (0) rate code
+     *  BITS [22..12]: rate code for 5G
+     *
+     *  BIT 11: 11ax (1) or legacy (0) rate code
+     *  BITS [10..0]: rate code for 2G
+     */
+    WMI_VDEV_PARAM_PER_BAND_MGMT_TX_RATE,
+    /* This should be called before WMI_VDEV_PARAM_TXBF */
+    WMI_VDEV_PARAM_11AX_TXBF,
 
     /*=== ADD NEW VDEV PARAM TYPES ABOVE THIS LINE ===
      * The below vdev param types are used for prototyping, and are
@@ -7259,6 +7378,51 @@ typedef enum {
 #define WMI_TXBF_CONF_BF_SND_DIM (WMI_TXBF_CONF_BF_SND_DIM_M << WMI_TXBF_CONF_BF_SND_DIM_S)
 #define WMI_TXBF_CONF_BF_SND_DIM_GET(x) WMI_F_MS(x,WMI_TXBF_CONF_BF_SND_DIM)
 #define WMI_TXBF_CONF_BF_SND_DIM_SET(x,z) WMI_F_RMW(x,z,WMI_TXBF_CONF_BF_SND_DIM)
+
+/* commands for 11ax TXBF capabilities */
+
+#define WMI_TXBF_CONF_11AX_SU_TX_BFER_GET(x) WMI_GET_BITS((x,0,1)
+#define WMI_TXBF_CONF_11AX_SU_TX_BFER_SET(x,z)  WMI_SET_BITS(x,0,1,z)
+
+#define WMI_TXBF_CONF_11AX_SU_TX_BFEE_GET(x) WMI_GET_BITS((x,1,1)
+#define WMI_TXBF_CONF_11AX_SU_TX_BFEE_SET(x,z) WMI_SET_BITS(x,1,1,z)
+
+#define WMI_TXBF_CONF_11AX_MU_TX_BFER_GET(x) WMI_GET_BITS((x,2,1)
+#define WMI_TXBF_CONF_11AX_MU_TX_BFER_SET(x,z)  WMI_SET_BITS(x,2,1,z)
+
+#define WMI_TXBF_CONF_11AX_BFEE_NDP_STS_LT_EQ_80_GET(x) WMI_GET_BITS((x,3,3)
+#define WMI_TXBF_CONF_11AX_BFEE_NDP_STS_LT_EQ_80_SET(x,z) WMI_SET_BITS(x,3,3,z)
+
+#define WMI_TXBF_CONF_11AX_NSTS_LT_EQ_80_GET(x) WMI_GET_BITS((x,6,3)
+#define WMI_TXBF_CONF_11AX_NSTS_LT_EQ_80_SET(x,z) WMI_SET_BITS(x,6,3,z)
+
+#define WMI_TXBF_CONF_11AX_TX_BFEE_NDP_STS_GT_80_GET(x) WMI_GET_BITS((x,9,3)
+#define WMI_TXBF_CONF_11AX_TX_BFEE_NDP_STS_GT_80_SET(x,z) WMI_SET_BITS(x,9,3,z)
+
+#define WMI_TXBF_CONF_11AX_NSTS_GT_80_GET(x) WMI_GET_BITS((x,12,3)
+#define WMI_TXBF_CONF_11AX_NSTS_GT_80_SET(x,z) WMI_SET_BITS(x,12,3,z)
+
+#define WMI_TXBF_CONF_AX_BFER_SND_DIM_LT_EQ_80_SND_DIM_GET(x) WMI_GET_BITS((x,15,3)
+#define WMI_TXBF_CONF_AX_BFER_SND_DIM_LT_EQ_80_SND_DIM_SET(x,z) WMI_SET_BITS(x,15,3,z)
+
+#define WMI_TXBF_CONF_AX_BFER_SND_DIM_GT_80_SND_DIM_GET(x) WMI_GET_BITS((x,18,3)
+#define WMI_TXBF_CONF_AX_BFER_SND_DIM_GT_80_SND_DIM_SET(x,z) WMI_SET_BITS(x,18,3,z)
+
+#define WMI_TXBF_CONF_AX_SU_BFEE_NG16_FDBK_GET(x) WMI_GET_BITS((x,21,1)
+#define WMI_TXBF_CONF_AX_SU_BFEE_NG16_FDBK_SET(x,z) WMI_SET_BITS(x,21,1,z)
+
+#define WMI_TXBF_CONF_AX_MU_BFEE_NG16_FDBK_GET(x) WMI_GET_BITS((x,22,1)
+#define WMI_TXBF_CONF_AX_MU_BFEE_NG16_FDBK_SET(x,z) WMI_SET_BITS(x,22,1,z)
+
+#define WMI_TXBF_CONF_AX_SU_BFEE_CDBK_4_2_GET(x) WMI_GET_BITS((x,23,1)
+#define WMI_TXBF_CONF_AX_SU_BFEE_CDBK_4_2_SET(x,z) WMI_SET_BITS(x,23,1,z)
+
+#define WMI_TXBF_CONF_AX_MU_BFEE_CDBK_7_5_GET(x) WMI_GET_BITS((x,24,1)
+#define WMI_TXBF_CONF_AX_MU_BFEE_CDBK_7_5_SET(x,z) WMI_SET_BITS(x,24,1,z)
+
+#define WMI_TXBF_CONF_AX_FDBK_TRIG_GET(x) WMI_GET_BITS((x,25,1)
+#define WMI_TXBF_CONF_AX_FDBK_TRIG_SET(x,z) WMI_SET_BITS(x,25,1,z)
+
 
 /* TXBF capabilities */
 typedef struct {
@@ -8500,6 +8664,51 @@ typedef struct {
     A_UINT32 tx_max_mcs_nss;  /* b0-b3: max mcs idx; b4-b7: max nss */
 } wmi_vht_rate_set;
 
+
+/* NOTE: It would bea good idea to represent the Tx MCS
+ * info in one word and Rx in another word. This is split
+ * into multiple words for convenience
+ * currently this is being defined in IEEE802.11ax so this is same as wmi_vht_rate_set and is  sub change in future and may include BW as well
+ */
+typedef struct {
+    A_UINT32 tlv_header; /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_he_rate_set */
+    /* HE Supported MCS Set field Rx
+     * - 3 bits are used for each NSS chain.Max of 8 NSS can be encoded with
+     *    bit 2-0 indicating max HE MCS of NSS1
+     *    bit 5-3 indicating max HE MCS of NSS2 and so on
+     * - The max HE-MCS for n SS subfield (where n = 1,...,8) is encoded as follows
+     * - 0 indicates support for VHT-MCS 0-7 for n spatial streams
+     * - 1 indicates support for VHT-MCS 0-8 for n spatial streams
+     * - 2 indicates support for VHT-MCS 0-9 for n spatial streams
+     * - 3 indicates support for VHT-MCS 0-10 for n spatial streams
+     * - 4 indicates support for VHT-MCS 0-11 for n spatial streams
+     * - 5-6 reserved
+     * - 7 indicates that n spatial streams is not supported
+     * - WMI_HE_MAX_MCS_4_SS_MASK macro can be used for encoding this info
+     */
+    A_UINT32 rx_mcs_set; /* Negotiated RX VHT rates (i.e. rate this node can RX from peer)*/
+    /* HE Supported MCS Set field Tx
+     * - 3 bits are used for each NSS chain.Max of 8 NSS can be encoded with
+     *    bit 2-0 indicating max HE MCS of NSS1
+     *    bit 5-3 indicating max HE MCS of NSS2 and so on
+     * - The max HE-MCS for n SS subfield (where n = 1,...,8) is encoded as follows
+     * - 0 indicates support for VHT-MCS 0-7 for n spatial streams
+     * - 1 indicates support for VHT-MCS 0-8 for n spatial streams
+     * - 2 indicates support for VHT-MCS 0-9 for n spatial streams
+     * - 3 indicates support for VHT-MCS 0-10 for n spatial streams
+     * - 4 indicates support for VHT-MCS 0-11 for n spatial streams
+     * - 5-6 reserved
+     * - 7 indicates that n spatial streams is not supported
+     * - WMI_HE_MAX_MCS_4_SS_MASK macro can be used for encoding this info
+     */
+    A_UINT32 tx_mcs_set; /* Negotiated TX VHT rates(i.e. rate this node can TX to peer) */
+} wmi_he_rate_set;
+
+
+
+
+
+
 /*
  * IMPORTANT: Make sure the bit definitions here are consistent
  * with the ni_flags definitions in wlan_peer.h
@@ -8610,12 +8819,13 @@ typedef struct {
     A_UINT32 peer_he_cap_info; /* protocol-defined HE / 11ax capability flags */
     A_UINT32 peer_he_ops; /* HE operation contains BSS color */
     A_UINT32 peer_he_cap_phy[WMI_MAX_HECAP_PHY_SIZE];
-    A_UINT32 peer_he_mcs; /* HE MCS/NSS set */
+    A_UINT32 peer_he_mcs; /* Indicates number of HE MCS TLV present */
 
 /* Following this struct are the TLV's:
  *     A_UINT8 peer_legacy_rates[];
  *     A_UINT8 peer_ht_rates[];
  *     wmi_vht_rate_set peer_vht_rates; <-- VHT capabilties of the peer
+ *     WMI_he_rate_set_peer_he_rates; <-- HE capabilities of the peer
  */
 } wmi_peer_assoc_complete_cmd_fixed_param;
 
@@ -8700,6 +8910,8 @@ typedef struct {
     A_UINT32 tx_frame_cnt;
     /** mac clock */
     A_UINT32 mac_clk_mhz;
+    /** unique id identifying the VDEV */
+    A_UINT32 vdev_id;
 } wmi_chan_info_event_fixed_param;
 
 /**
@@ -13096,6 +13308,109 @@ typedef struct{
 } wmi_tpc_chainmask_config_cmd_fixed_param;
 
 typedef struct {
+    A_UINT32 tlv_header;        /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_oem_dma_ring_cfg_req_fixed_param */
+    A_UINT32 pdev_id;
+    /**
+     * Bits 31:0:   base address of ring [31:0]
+     */
+    A_UINT32 base_addr_lo;
+    /**
+     * Bits 3:0:    base address of ring [35:32]
+     * Bits 31:4:   reserved
+     */
+    A_UINT32 base_addr_hi;
+    /**
+     * Bits 31:0:   address of head index [31:0]
+     */
+    A_UINT32 head_idx_addr_lo;
+    /**
+     * Bits 3:0:    address of head index [35:32]
+     * Bits 31:4:   reserved
+     */
+    A_UINT32 head_idx_addr_hi;
+    /**
+     * Bits 31:0:   address of tail index [31:0]
+     */
+    A_UINT32 tail_idx_addr_lo;
+    /**
+     * Bits 3:0:    address of tail index [35:32]
+     * Bits 31:4:   reserved
+     */
+    A_UINT32 tail_idx_addr_hi;
+    A_UINT32 num_ptr;           /** Number of pointers in the ring */
+} wmi_oem_dma_ring_cfg_req_fixed_param;
+
+#define WMI_OEM_DMA_RING_ADDR_LO_S 0
+#define WMI_OEM_DMA_RING_ADDR_LO 0xffffffff
+
+#define WMI_OEM_DMA_RING_ADDR_LO_GET(dword) WMI_F_MS(dword, WMI_OEM_DMA_RING_ADDR_LO)
+#define WMI_OEM_DMA_RING_ADDR_LO_SET(dword, val) WMI_F_RMW(dword, val, WMI_OEM_DMA_RING_ADDR_LO)
+
+#define WMI_OEM_DMA_RING_ADDR_HI_S 0
+#define WMI_OEM_DMA_RING_ADDR_HI 0xf
+
+#define WMI_OEM_DMA_RING_ADDR_HI_GET(dword) WMI_F_MS(dword, WMI_OEM_DMA_RING_ADDR_HI)
+#define WMI_OEM_DMA_RING_ADDR_HI_SET(dword, val) WMI_F_RMW(dword, val, WMI_OEM_DMA_RING_ADDR_HI)
+
+typedef struct {
+    A_UINT32 tlv_header;    /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_oem_dma_ring_cfg_rsp_fixed_param */
+    A_UINT32 pdev_id;
+    A_UINT32 cfg_status;    /** Configuration status; see A_STATUS */
+} wmi_oem_dma_ring_cfg_rsp_fixed_param;
+
+typedef struct {
+    A_UINT32 tlv_header;    /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_oem_indirect_data */
+    A_UINT32 pdev_id;       /** ID of pdev whose OEM DMA ring produced the data */
+    /**
+     * Bits 31:0:   address of data [31:0]
+     */
+    A_UINT32 addr_lo;
+    /**
+     * Bits 3:0:    address of data [35:32]
+     * Bits 11:4:   reserved
+     * Bits 31:12:  opaque host context data [19:0]
+     */
+    A_UINT32 addr_hi;
+    A_UINT32 len;           /** Length of data in bytes */
+} wmi_oem_indirect_data;
+
+#define WMI_OEM_DMA_DATA_ADDR_LO_S 0
+#define WMI_OEM_DMA_DATA_ADDR_LO 0xffffffff
+
+#define WMI_OEM_DMA_DATA_ADDR_LO_GET(dword) WMI_F_MS(dword, WMI_OEM_DMA_DATA_ADDR_LO)
+#define WMI_OEM_DMA_DATA_ADDR_LO_SET(dword, val) WMI_F_RMW(dword, val, WMI_OEM_DMA_DATA_ADDR_LO)
+
+#define WMI_OEM_DMA_DATA_ADDR_HI_S 0
+#define WMI_OEM_DMA_DATA_ADDR_HI 0xf
+
+#define WMI_OEM_DMA_DATA_ADDR_HI_GET(dword) WMI_F_MS(dword, WMI_OEM_DMA_DATA_ADDR_HI)
+#define WMI_OEM_DMA_DATA_ADDR_HI_SET(dword, val) WMI_F_RMW(dword, val, WMI_OEM_DMA_DATA_ADDR_HI)
+
+#define WMI_OEM_DMA_DATA_ADDR_HI_HOST_DATA_S 12
+#define WMI_OEM_DMA_DATA_ADDR_HI_HOST_DATA 0xfffff
+
+#define WMI_OEM_DMA_DATA_ADDR_HI_HOST_DATA_GET(dword) WMI_F_MS(dword, WMI_OEM_DMA_DATA_ADDR_HI_HOST_DATA)
+#define WMI_OEM_DMA_DATA_ADDR_HI_HOST_DATA_SET(dword, val) WMI_F_RMW(dword, val, WMI_OEM_DMA_DATA_ADDR_HI_HOST_DATA)
+
+typedef struct {
+    A_UINT32 tlv_header;    /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_oem_dma_buf_release_hdr */
+    A_UINT32 pdev_id;       /** ID of pdev whose OEM DMA ring produced the data */
+} wmi_oem_dma_buf_release_fixed_param;
+
+typedef struct {
+    /**
+     * Bits 31:0:   address of data [31:0]
+     */
+    A_UINT32 addr_lo;
+    /**
+     * Bits 3:0:    address of data [35:32]
+     * Bits 11:4:   reserved
+     * Bits 31:12:  host context data [19:0]
+     */
+    A_UINT32 addr_hi;
+} wmi_oem_dma_buf_release_entry;
+
+typedef struct {
     A_UINT32 tlv_header; /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_nan_cmd_param */
     A_UINT32 data_len; /** length in byte of data[]. */
 /* This structure is used to send REQ binary blobs
@@ -13526,6 +13841,8 @@ typedef struct {
     A_UINT32 nan_csid;
     /** Actual number of bytes in TLV nan_scid */
     A_UINT32 nan_scid_len;
+    /** Self NDI mac address */
+    wmi_mac_addr self_ndi_mac_addr;
     /**
      * TLV (tag length value) parameters follow the ndp_indication
      * structure. The TLV's are:
@@ -17388,26 +17705,37 @@ typedef struct {
     };
     A_UINT32 rate_flags;
     /**
-    * FLAG_ONE_CHAIN     0x001  - one chain mask
-    * FLAG_TWO_CHAIN     0x005  - two chain mask
-    * FLAG_THREE_CHAIN   0x007  - three chain mask
-    * FLAG_FOUR_CHAIN    0x00F  - four chain mask
-    * FLAG_STBC          0x010  - STBC is set
-    * FLAG_40MHZ         0x020
-    * FLAG_80MHZ         0x040
-    * FLAG_160MHZ        0x080
-    * FLAG_TXBF          0x0100 - Tx Bf enabled
-    * FLAG_RTSENA        0x0200 - RTS enabled
-    * FLAG_CTSENA        0x0400 - CTS enabled
-    * FLAG_LDPC          0x0800 - LDPC set
-    * FLAG_SERIES1       0x1000 -
-    * FLAG_SGI           0x2000 - Short gaurd interval
-    * FLAG_MU2           0x4000 - MU2 data
-    * FLAG_MU3           0x8000 - MU3 data
+    * FLAG_ONE_CHAIN     0x00000001  - one chain mask
+    * FLAG_TWO_CHAIN     0x00000003  - two chain mask
+    * FLAG_THREE_CHAIN   0x00000007  - three chain mask
+    * FLAG_FOUR_CHAIN    0x0000000F  - four chain mask
+    * FLAG_FIVE_CHAIN    0x0000001F  - five chain mask
+    * FLAG_SIX_CHAIN     0x0000003F  - six chain mask
+    * FLAG_SEVEN_CHAIN   0x0000007F  - seven chain mask
+    * FLAG_EIGHT_CHAIN   0x000000FF  - eight chain mask
+    * FLAG_STBC          0x00000100  - STBC is set
+    * FLAG_40MHZ         0x00000200
+    * FLAG_80MHZ         0x00000300
+    * FLAG_160MHZ        0x00000400
+    * FLAG_TXBF          0x00000800 - Tx Bf enabled
+    * FLAG_RTSENA        0x00001000 - RTS enabled
+    * FLAG_CTSENA        0x00002000 - CTS enabled
+    * FLAG_LDPC          0x00004000 - LDPC set
+    * FLAG_SGI           0x00008000 - Short gaurd interval
+    *                   (0x00010000-0x00080000 unused)
+    *------------------
+    * 0x00100000-0x00700000 used for SU/MU/OFDMA tx mode
+    * FLAG_SU            0x00100000 - SU Data
+    * FLAG_DL_MU_MIMO_AC 0x00200000 - DL AC MU data
+    * FLAG_DL_MU_MIMO_AX 0x00300000 - DL AX MU data
+    * FLAG_DL_OFDMA      0x00400000 - DL OFDMA data
+    * FLAG_UL_OFDMA      0x00500000 - UL OFDMA data
+    * FLAG_UL_MU_MIMO    0x00600000 - UL MU data
+    *------------------
     * */
     A_UINT32 nss;
     /**
-    * NSS 0x0 - 0x3
+    * NSS 0x0 - 0x7
     * */
     A_UINT32 preamble;
     /**
@@ -17415,6 +17743,7 @@ typedef struct {
     * PREAM_CCK  - 0x1
     * PREAM_HT   - 0x2
     * PREAM_VHT  - 0x3
+    * PREAM_HE   - 0x4
     * */
     A_UINT32 hw_rate;
     /**
@@ -17438,7 +17767,7 @@ typedef struct {
      * CCK_2_SHORT_MBPS   - 0x6
      *
      * *** HW_HT / VHT_RATE ***
-     * MCS 0x0 - 0x9
+     * MCS 0x0 - 0xb
      * */
 } wmi_pdev_get_tpc_cmd_fixed_param;
 
@@ -17556,6 +17885,30 @@ typedef struct {
     A_UINT32 ofdm_level;
 } wmi_ani_ofdm_event_fixed_param;
 
+/* When a bit is set it specifies the particular WLAN traffic type is high priority.
+ * BT low priority traffic has higher priority than WLAN low priority traffic and has
+ * lower priority when compared to WLAN high priority traffic.
+ * BT high priority traffic has higher priority than WLAN low/high priority traffic.
+ */
+#define WMI_PDEV_BE_PRIORITY_BIT     (1<<0)
+#define WMI_PDEV_BK_PRIORITY_BIT     (1<<1)
+#define WMI_PDEV_VI_PRIORITY_BIT     (1<<2)
+#define WMI_PDEV_VO_PRIORITY_BIT     (1<<3)
+#define WMI_PDEV_BEACON_PRIORITY_BIT (1<<4)
+#define WMI_PDEV_MGMT_PRIORITY_BIT   (1<<5)
+#define WMI_PDEV_IS_BE_PRIORITY_SET(val) ((val) & WMI_PDEV_BE_PRIORITY_BIT)
+#define WMI_PDEV_IS_BK_PRIORITY_SET(val) ((val) & WMI_PDEV_BK_PRIORITY_BIT)
+#define WMI_PDEV_IS_VI_PRIORITY_SET(val) ((val) & WMI_PDEV_VI_PRIORITY_BIT)
+#define WMI_PDEV_IS_VO_PRIORITY_SET(val) ((val) & WMI_PDEV_VO_PRIORITY_BIT)
+#define WMI_PDEV_IS_BEACON_PRIORITY_SET(val) ((val) & WMI_PDEV_BEACON_PRIORITY_BIT)
+#define WMI_PDEV_IS_MGMT_PRIORITY_SET(val) ((val) & WMI_PDEV_MGMT_PRIORITY_BIT)
+
+typedef enum wmi_coex_algo_type  {
+    WMI_COEX_ALGO_UNCONS_FREERUN  = 0,
+    WMI_COEX_ALGO_FREERUN         = 1,
+    WMI_COEX_ALGO_OCS             = 2,
+} WMI_COEX_ALGO_TYPE;
+
 typedef enum wmi_coex_config_type {
     WMI_COEX_CONFIG_PAGE_P2P_TDM        =  1, /* config interval (arg1 BT, arg2 WLAN) for P2P + PAGE */
     WMI_COEX_CONFIG_PAGE_STA_TDM        =  2, /* config interval (arg1 BT, arg2 WLAN) for STA + PAGE */
@@ -17570,6 +17923,18 @@ typedef enum wmi_coex_config_type {
     WMI_COEX_CONFIG_INQUIRY_P2P_STA_TDM = 11, /* config interval (ms units) (arg1 BT, arg2 WLAN) for P2P + STA + INQUIRY */
     WMI_COEX_CONFIG_TX_POWER            = 12, /* config wlan total tx power when bt coex (arg1 is wlan_tx_power_limit, in 0.5dbm units) */
     WMI_COEX_CONFIG_PTA_CONFIG          = 13, /* config  whether enable PTA and GPIO number (arg1 is pta_enable, arg2 is GPIO number used as /BT_ACTIVE/BT_PRIORITY/WLAN_DENY,8 bit for each) */
+    WMI_COEX_CONFIG_AP_TDM              = 14, /* config interval (arg1 duty cycle in ms, arg2 WLAN duration in ms) for AP */
+    WMI_COEX_CONFIG_WLAN_SCAN_PRIORITY  = 15, /* config to set WLAN priority during Off Channel Scan */
+    WMI_COEX_CONFIG_WLAN_PKT_PRIORITY   = 16, /* config to set WLAN priority for BE/BK/VO/VI/Beacon/Management frame */
+    WMI_COEX_CONFIG_PTA_INTERFACE       = 17, /* config PTA interface,
+                                                 arg1 PTA num,
+                                                 arg2 mode (2-wire/3-wire/PTA),
+                                                 arg3 first slot time in microsec,
+                                                 arg4 BT priority time in microsec,
+                                                 arg5 PTA algorithm (WMI_COEX_ALGO_TYPE),
+                                                 arg6 PTA priority */
+    WMI_COEX_CONFIG_BTC_DUTYCYCLE       = 18, /* config interval (ms units) (arg1 WLAN pause duration, arg2 WLAN unpause duration) for WLAN UL + BT Rx */
+    WMI_COEX_CONFIG_HANDOVER_RSSI       = 19, /* config to set WLAN RSSI (dBm units) at which device switches from Hybrid to TDD coex mode */
 } WMI_COEX_CONFIG_TYPE;
 
 typedef struct {
@@ -17578,6 +17943,10 @@ typedef struct {
     A_UINT32 config_type; /* wmi_coex_config_type enum */
     A_UINT32 config_arg1;
     A_UINT32 config_arg2;
+    A_UINT32 config_arg3;
+    A_UINT32 config_arg4;
+    A_UINT32 config_arg5;
+    A_UINT32 config_arg6;
 } WMI_COEX_CONFIG_CMD_fixed_param;
 
 /**
@@ -17871,7 +18240,20 @@ typedef struct {
     A_UINT32 vht_supp_mcs_2G;
     /*HE capability info field of 802.11ax, WMI_HE_CAP defines */
     A_UINT32 he_cap_info_2G;
-    /* HE Supported MCS Set field Rx/Tx same */
+    /* HE Supported MCS Set field Rx/Tx same
+     * - 3 bits are used for each NSS chain.Max of 8 NSS can be encoded with
+     *    bit 2-0 indicating max HE MCS of NSS1
+     *    bit 5-3 indicating max HE MCS of NSS2 and so on
+     * - The max HE-MCS for n SS subfield (where n = 1,...,8) is encoded as follows
+     * - 0 indicates support for VHT-MCS 0-7 for n spatial streams
+     * - 1 indicates support for VHT-MCS 0-8 for n spatial streams
+     * - 2 indicates support for VHT-MCS 0-9 for n spatial streams
+     * - 3 indicates support for VHT-MCS 0-10 for n spatial streams
+     * - 4 indicates support for VHT-MCS 0-11 for n spatial streams
+     * - 5-6 reserved
+     * - 7 indicates that n spatial streams is not supported
+     * - WMI_HE_MAX_MCS_4_SS_MASK macro can be used for encoding this info
+     */
     A_UINT32 he_supp_mcs_2G;
     /* Valid Transmit chain mask */
     A_UINT32 tx_chain_mask_2G;
@@ -17892,7 +18274,20 @@ typedef struct {
     A_UINT32 vht_supp_mcs_5G;
     /*HE capability info field of 802.11ax, WMI_HE_CAP defines */
     A_UINT32 he_cap_info_5G;
-    /* HE Supported MCS Set field Rx/Tx same */
+    /* HE Supported MCS Set field Rx/Tx same
+     * - 3 bits are used for each NSS chain.Max of 8 NSS can be encoded with
+     *    bit 2-0 indicating max HE MCS of NSS1
+     *    bit 5-3 indicating max HE MCS of NSS2 and so on
+     * - The max HE-MCS for n SS subfield (where n = 1,...,8) is encoded as follows
+     * - 0 indicates support for VHT-MCS 0-7 for n spatial streams
+     * - 1 indicates support for VHT-MCS 0-8 for n spatial streams
+     * - 2 indicates support for VHT-MCS 0-9 for n spatial streams
+     * - 3 indicates support for VHT-MCS 0-10 for n spatial streams
+     * - 4 indicates support for VHT-MCS 0-11 for n spatial streams
+     * - 5-6 reserved
+     * - 7 indicates that n spatial streams is not supported
+     * - WMI_HE_MAX_MCS_4_SS_MASK macro can be used for encoding this info
+     */
     A_UINT32 he_supp_mcs_5G;
     /* Valid Transmit chain mask */
     A_UINT32 tx_chain_mask_5G;
@@ -18047,6 +18442,17 @@ typedef struct {
 } WMI_SOC_HAL_REG_CAPABILITIES;
 
 typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_WMI_OEM_DMA_RING_CAPABILITIES */
+    A_UINT32 pdev_id;
+    A_UINT32 min_num_ptr;
+    /* Minimum number of pointers in the OEM DMA ring for this pdev */
+    A_UINT32 min_buf_size;
+    /* Minimum size in bytes of each buffer in the OEM DMA ring */
+    A_UINT32 min_buf_align;
+    /* Minimum alignment in bytes of each buffer in the OEM DMA ring */
+} WMI_OEM_DMA_RING_CAPABILITIES;
+
+typedef struct {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_scan_adaptive_dwell_parameters_tlv */
     /** global default adaptive dwell mode, used when WMI_SCAN_DWELL_MODE_DEFAULT */
     A_UINT32 default_adaptive_dwell_mode;
@@ -18073,6 +18479,99 @@ typedef struct {
  * wmi_scan_adaptive_dwell_parameters_tlv param[]; (0 or 1 elements)
  */
 } wmi_scan_adaptive_dwell_config_fixed_param;
+
+typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_scan_dbs_duty_cycle_param_tlv */
+    /**  module_id **/
+    A_UINT32 module_id;
+   /** number of dbs scans */
+    A_UINT32 num_dbs_scans;
+   /** number of non-dbs scans */
+    A_UINT32 num_non_dbs_scans;
+} wmi_scan_dbs_duty_cycle_tlv_param;
+
+typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_scan_dbs_duty_cycle_fixed_param */
+    /* number of scan client dutycycle param elements */
+    A_UINT32 num_clients;
+    /** pdev_id for identifying the MAC
+     * See macros starting with WMI_PDEV_ID_ for values.
+     * In non-DBDC case host should set it to 0
+     */
+    A_UINT32 pdev_id;
+/**
+ * followed by TLV (tag length value) parameters array
+ * The TLV's are:
+ * wmi_scan_selection_duty_cycle_tlv_param[num_clients];
+ */
+} wmi_scan_dbs_duty_cycle_fixed_param;
+
+typedef struct {
+    /** TLV tag and len; tag equals
+     *  WMITLV_TAG_STRUC_wmi_therm_throt_level_config_info */
+    A_UINT32 tlv_header;
+    /**
+      * temperature sensor value in celsius when to exit to lower zone,
+      * this value can be lower than HWM of lower zone as zone overlapping
+      * is permitted by design to provide hysteresis
+      */
+    A_UINT32 temp_lwm;
+    /**
+      * temperature sensor value in celsius when to exit to higher zone,
+      * this value can be higher than LWM of higher zone as zone overlapping
+      * is permitted by design to provide hysteresis
+      */
+    A_UINT32 temp_hwm;
+    A_UINT32 dc_off_percent; /* duty cycle off percent 0-100. 0 means no off, 100 means no on (shutdown the phy) */
+    /** Disable only the transmit queues in firmware that have lower priority than value defined by prio
+       *    Prioritization:
+       *    0 = disable all data tx queues, No Prioritization defined
+       *    1 = disable BK tx queue
+       *    2 = disable BK+BE tx queues
+       *    3 = disable BK+BE+VI tx queues
+       */
+    A_UINT32 prio;
+} wmi_therm_throt_level_config_info;
+
+typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_therm_throt_config_request_fixed_param */
+    A_UINT32 pdev_id;          /* config for each pdev */
+    A_UINT32 enable;           /* 0:disable, 1:enable */
+    A_UINT32 dc;               /* duty cycle in ms */
+    A_UINT32 dc_per_event;     /* how often (after how many duty cycles) the FW sends stats to host */
+    A_UINT32 therm_throt_levels; /* Indicates the number of thermal zone configuration */
+    /*
+     * Following this structure is the TLV:
+     * struct wmi_therm_throt_level_config_info therm_throt_level_config_info[therm_throt_levels];
+     */
+} wmi_therm_throt_config_request_fixed_param;
+
+/** FW response with the stats event id for every pdev and zones */
+typedef struct {
+    /*  TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_therm_throt_stats_event_fixed_param */
+    A_UINT32 tlv_header;
+    A_UINT32 pdev_id;            /* stats for corresponding pdev*/
+    A_UINT32 temp;               /* Temperature reading in celsius */
+    A_UINT32 level;              /* current thermal throttling level */
+    A_UINT32 therm_throt_levels; /* number of levels in therm_throt_level_stats_info */
+    /* This TLV is followed by another TLV of array of structs
+     * wmi_therm_throt_level_stats_info therm_throt_level_stats_info[therm_throt_levels];
+     */
+} wmi_therm_throt_stats_event_fixed_param;
+
+
+
+typedef struct {
+    /** TLV tag and len; tag equals
+     *  WMITLV_TAG_STRUC_wmi_therm_throt_level_stats_info */
+    A_UINT32 tlv_header;
+    A_UINT32 level_count; /* count of each time thermal throttling entered this state */
+    A_UINT32 dc_count;    /* total number of duty cycles spent in this state. */
+                          /* this number increments by one each time we are in this state and we finish one full duty cycle. */
+} wmi_therm_throt_level_stats_info;
+
+
+
 
 typedef enum {
     WMI_REG_EXT_FCC_MIDBAND = 0,
@@ -18682,6 +19181,10 @@ static INLINE A_UINT8 *wmi_id_to_name(A_UINT32 wmi_command)
         WMI_RETURN_STRING(WMI_VDEV_GET_ARP_STAT_CMDID);
         WMI_RETURN_STRING(WMI_VDEV_GET_TX_POWER_CMDID);
         WMI_RETURN_STRING(WMI_OFFCHAN_DATA_TX_SEND_CMDID);
+        WMI_RETURN_STRING(WMI_SET_INIT_COUNTRY_CMDID);
+        WMI_RETURN_STRING(WMI_SET_SCAN_DBS_DUTY_CYCLE_CMDID);
+        WMI_RETURN_STRING(WMI_THERM_THROT_SET_CONF_CMDID);
+        WMI_RETURN_STRING(WMI_OEM_DMA_RING_CFG_REQ_CMDID);
     }
 
     return "Invalid WMI cmd";
@@ -18693,8 +19196,31 @@ static INLINE A_UINT8 *wmi_id_to_name(A_UINT32 wmi_command)
 /** Host indicating current country code to FW */
 typedef struct {
     A_UINT32  tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_set_current_country_cmd_fixed_param */
+    A_UINT32  pdev_id;
     A_UINT32  new_alpha2; /** alpha2 characters representing the country code */
 } wmi_set_current_country_cmd_fixed_param;
+
+typedef enum {
+    WMI_COUNTRYCODE_ALPHA2,
+    WMI_COUNTRYCODE_COUNTRY_ID,
+    WMI_COUNTRYCODE_DOMAIN_CODE,
+} WMI_COUNTRYCODE_TYPE;
+
+typedef struct {
+    A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_set_init_country_cmd_fixed_param */
+    A_UINT32 pdev_id;
+    A_UINT32 countrycode_type; /* WMI_COUNTRYCODE_TYPE */
+    union {
+        struct {
+            /* Three character for alpha2. The first two is ISO name for country the last one
+            present if it is indoor and out door.  First char in bits 7:0 and second char in bits 15:8 ... */
+            A_UINT32  alpha2:24,
+                      unused:8;
+        };
+        A_UINT32 country_id;   /* Country ID */
+        A_UINT32 domain_code;  /* Domain code */
+    } country_code;
+} wmi_set_init_country_cmd_fixed_param;
 
 /* Freq units in MHz */
 #define WMI_REG_RULE_START_FREQ_GET(freq_info)                     WMI_GET_BITS(freq_info, 0, 16)
@@ -18703,11 +19229,14 @@ typedef struct {
 #define WMI_REG_RULE_END_FREQ_SET(freq_info, value)                WMI_SET_BITS(freq_info, 16, 16, value)
 
 /* BW in MHz */
-#define WMI_REG_RULE_MAX_BW_GET(bw_info)                           WMI_GET_BITS(bw_info, 0, 16)
-#define WMI_REG_RULE_MAX_BW_SET(bw_info, value)                    WMI_SET_BITS(bw_info, 0, 16, value)
+#define WMI_REG_RULE_MAX_BW_GET(bw_pwr_info)                       WMI_GET_BITS(bw_pwr_info, 0, 16)
+#define WMI_REG_RULE_MAX_BW_SET(bw_pwr_info, value)                WMI_SET_BITS(bw_pwr_info, 0, 16, value)
 /* regpower in dBm */
-#define WMI_REG_RULE_REG_POWER_GET(bw_info)                        WMI_GET_BITS(bw_info, 16, 8)
-#define WMI_REG_RULE_REG_POWER_SET(bw_info, value)                 WMI_SET_BITS(bw_info, 16, 8, value)
+#define WMI_REG_RULE_REG_POWER_GET(bw_pwr_info)                    WMI_GET_BITS(bw_pwr_info, 16, 8)
+#define WMI_REG_RULE_REG_POWER_SET(bw_pwr_info, value)             WMI_SET_BITS(bw_pwr_info, 16, 8, value)
+/* antenna gain */
+#define WMI_REG_RULE_ANTENNA_GAIN_GET(bw_pwr_info)                 WMI_GET_BITS(bw_pwr_info, 24, 8)
+#define WMI_REG_RULE_ANTENNA_GAIN_SET(bw_pwr_info, value)          WMI_SET_BITS(bw_pwr_info, 24, 8, value)
 
 typedef enum {
     WMI_REG_FLAG_CHAN_NO_IR           = 0x0001, /* passive channel */
@@ -18721,9 +19250,14 @@ typedef enum {
 
 typedef struct {
     A_UINT32  tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_regulatory_rule_struct */
-    A_UINT32  freq_info;       /* u16 start_freq, u16 end_freq */
-    A_UINT32  bw_info;         /* u16 max_bw, u8 reg_power, u8 reserved */
-    A_UINT32  power_flag_info; /* u16 flags, u16 reserved */
+    A_UINT32  freq_info;       /* bits 15:0  = u16 start_freq,
+                                * bits 31:16 = u16 end_freq
+                                * (both in MHz units) */
+    A_UINT32  bw_pwr_info;     /* bits 15:0  = u16 max_bw (MHz units),
+                                  bits 23:16 = u8 reg_power (dBm units),
+                                  bits 31:24 = u8 ant_gain (dB units) */
+    A_UINT32  flag_info;       /* bits 15:0  = u16 flags,
+                                  bits 31:16 reserved */
 } wmi_regulatory_rule_struct;
 
 typedef enum {
@@ -18747,9 +19281,23 @@ typedef enum {
     WMI_REGULATORY_PHYMODE_NO11AX   = 0x0020,  /* NO 11AX */
 } WMI_REGULATORY_PHYBITMAP;
 
+typedef enum {
+    WMI_REG_SET_CC_STATUS_PASS = 0,
+    WMI_REG_CURRENT_ALPHA2_NOT_FOUND = 1,
+    WMI_REG_INIT_ALPHA2_NOT_FOUND = 2,
+    WMI_REG_SET_CC_CHANGE_NOT_ALLOWED = 3,
+    WMI_REG_SET_CC_STATUS_NO_MEMORY = 4,
+    WMI_REG_SET_CC_STATUS_FAIL = 5,
+} WMI_REG_SET_CC_STATUS_CODE;
+
 typedef struct {
     A_UINT32 tlv_header; /* TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_reg_chan_list_cc_event_fixed_param */
+    A_UINT32 status_code; /* WMI_REG_SET_CC_STATUS_CODE */
+    A_UINT32 phy_id;
     A_UINT32 alpha2;
+    A_UINT32 num_phy;
+    A_UINT32 country_id;
+    A_UINT32 domain_code;
     A_UINT32 dfs_region;  /* WMI_REG_DFS_REGION */
     A_UINT32 phybitmap;   /* WMI_REGULATORY_PHYBITMAP */
     A_UINT32 min_bw_2g;   /* BW in MHz */
