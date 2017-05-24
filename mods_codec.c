@@ -137,6 +137,7 @@ static void mods_codec_work(struct work_struct *work)
 	if (!gb_codec) {
 		priv->rx_active = false;
 		priv->tx_active = false;
+		priv->is_params_set = false;
 		return;
 	}
 
@@ -153,6 +154,7 @@ static void mods_codec_work(struct work_struct *work)
 		 */
 		priv->rx_active = false;
 		priv->tx_active = false;
+		priv->is_params_set = false;
 		mutex_unlock(&gb_codec->lock);
 		return;
 	}
@@ -192,8 +194,8 @@ static void mods_codec_work(struct work_struct *work)
 		if (err)
 			pr_err("%s() failed to deactivate I2S port %d\n",
 				__func__, port_type);
-		else
-			*port_active = false;
+
+		*port_active = false;
 	}
 
 	mutex_lock(&gb_codec->lock);
@@ -507,6 +509,10 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 						bytes_per_chan, is_le);
 	if (!err)
 		priv->is_params_set = true;
+	else
+		pr_err("%s: failed to set hw params\n",
+			__func__);
+
 
 	mutex_lock(&gb_codec->lock);
 	gb_mods_i2s_put(gb_codec);
