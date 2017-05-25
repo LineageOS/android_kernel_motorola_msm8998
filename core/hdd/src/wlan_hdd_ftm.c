@@ -359,10 +359,13 @@ QDF_STATUS wlan_hdd_ftm_testmode_cmd(void *data, int len)
 {
 	struct ar6k_testmode_cmd_data *cmd_data;
 
+#ifdef WLAN_WHITE_LIST
         //Check if the tcmd data for the FTM access is whitelisted
         if (vos_is_tcmd_data_white_listed(data, len) != QDF_STATUS_SUCCESS) {
+		    hdd_err("No permission to execute FTM command");
             return QDF_STATUS_E_PERM;
         }
+#endif
 
 	cmd_data = (struct ar6k_testmode_cmd_data *)
 		   qdf_mem_malloc(sizeof(*cmd_data));
