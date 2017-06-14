@@ -357,12 +357,6 @@ void ol_txrx_pdev_unpause(struct ol_txrx_pdev_t *pdev, uint32_t reason)
  */
 void ol_txrx_tx_sync(ol_txrx_pdev_handle data_pdev, uint8_t sync_cnt);
 
-typedef void (*ol_txrx_vdev_delete_cb)(void *context);
-
-
-typedef void
-(*ol_txrx_data_tx_cb)(void *ctxt, qdf_nbuf_t tx_frm, int had_error);
-
 /**
  * @brief Store a delivery notification callback for specific data frames.
  * @details
@@ -504,6 +498,7 @@ QDF_STATUS ol_txrx_get_vdevid(struct ol_txrx_peer_t *peer, uint8_t *vdev_id);
 void *ol_txrx_get_vdev_by_sta_id(uint8_t sta_id);
 
 #define OL_TXRX_INVALID_LOCAL_PEER_ID 0xffff
+#define OL_TXRX_INVALID_TDLS_PEER_ID 0xff
 
 #define OL_TXRX_RSSI_INVALID 0xffff
 /**

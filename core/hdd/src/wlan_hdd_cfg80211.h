@@ -2031,6 +2031,21 @@ enum qca_vendor_attr_wisa_cmd {
  * @QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PTK_KCK: KCK of the PTK
  * @QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PTK_KEK: KEK of the PTK
  * @QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_SUBNET_STATUS: subnet change status
+ * @QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_STATUS: Indicates the status of
+ *  re-association requested by user space for the bssid specified by Type u16.
+ *  Represents the status code from AP. Use %WLAN_STATUS_UNSPECIFIED_FAILURE
+ *  if the device cannot give you the real status code for failures.
+ * @QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_RETAIN_CONNECTION: This attribute intends
+ *  either to  retain / disconnect the current association when a
+ *  re-association is requested by user space. Used along with
+ *  WLAN_VENDOR_ATTR_ROAM_AUTH_STATUS to know the current re-association
+ *  status. Type flag.
+ *  The following is the interpretation of this attribute.
+ *  Re-association Failure
+ *      Set to retain the current connection.
+ *      Reset to disconnect the current connection.
+ *  Re-association Success
+ *      Not Applicable.
  */
 enum qca_wlan_vendor_attr_roam_auth {
 	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_INVALID = 0,
@@ -2042,6 +2057,8 @@ enum qca_wlan_vendor_attr_roam_auth {
 	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PTK_KCK,
 	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PTK_KEK,
 	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_SUBNET_STATUS,
+	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_STATUS,
+	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_RETAIN_CONNECTION,
 	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_MAX =
 		QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_AFTER_LAST - 1
@@ -2661,6 +2678,8 @@ enum qca_ignore_assoc_disallowed {
  *                  delay for 2G/5G band (units in us)
  * @QCA_WLAN_VENDOR_ATTR_CONFIG_LAST: last config
  * @QCA_WLAN_VENDOR_ATTR_CONFIG_MAX: max config
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_LISTEN_INTERVAL:
+ *		    override static/ini based listen interval
  */
 enum qca_wlan_vendor_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_INVALID = 0,
@@ -2768,6 +2787,9 @@ enum qca_wlan_vendor_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_DATA_SNR_WEIGHT = 46,
 	/* 32-bit unsigned value to set ack snr weight*/
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_ACK_SNR_WEIGHT = 47,
+	/* 32-bit unsigned value to configure the listen interval.
+	 *  This is in units of beacon interval */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_LISTEN_INTERVAL = 48,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_LAST,
@@ -3873,10 +3895,10 @@ int wlan_hdd_cfg80211_send_tdls_discover_req(struct wiphy *wiphy,
 					     struct net_device *dev, u8 *peer);
 #endif
 #ifdef WLAN_FEATURE_GTK_OFFLOAD
-extern void wlan_hdd_cfg80211_update_replay_counter_callback(void
-							     *callbackContext,
-							     tpSirGtkOffloadGetInfoRspParams
-							     pGtkOffloadGetInfoRsp);
+extern void wlan_hdd_cfg80211_update_replay_counter_cb(
+						void *callbackContext,
+						tpSirGtkOffloadGetInfoRspParams
+						pGtkOffloadGetInfoRsp);
 #endif
 void *wlan_hdd_change_country_code_cb(void *pAdapter);
 void hdd_select_cbmode(hdd_adapter_t *pAdapter, uint8_t operationChannel,

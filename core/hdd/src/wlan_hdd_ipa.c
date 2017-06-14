@@ -158,11 +158,21 @@ struct hdd_ipa_tx_hdr {
  * @reserved2: Reserved not used
  *
  */
+#ifdef QCA_WIFI_3_0
 struct frag_header {
 	uint16_t length;
 	uint32_t reserved1;
 	uint32_t reserved2;
 } __packed;
+#else
+struct frag_header {
+	uint32_t
+		length:16,
+		reserved16:16;
+	uint32_t reserved32;
+} __packed;
+
+#endif
 
 /**
  * struct ipa_header - ipa header type registered to IPA hardware
@@ -598,6 +608,7 @@ static struct hdd_ipa_adapter_2_client {
 };
 
 /* For Tx pipes, use Ethernet-II Header format */
+#ifdef QCA_WIFI_3_0
 struct hdd_ipa_uc_tx_hdr ipa_uc_tx_hdr = {
 	{
 		0x0000,
@@ -613,6 +624,22 @@ struct hdd_ipa_uc_tx_hdr ipa_uc_tx_hdr = {
 		0x0008
 	}
 };
+#else
+struct hdd_ipa_uc_tx_hdr ipa_uc_tx_hdr = {
+	{
+		0x00000000,
+		0x00000000
+	},
+	{
+		0x00000000
+	},
+	{
+		{0x00, 0x03, 0x7f, 0xaa, 0xbb, 0xcc},
+		{0x00, 0x03, 0x7f, 0xdd, 0xee, 0xff},
+		0x0008
+	}
+};
+#endif
 
 /* For Tx pipes, use 802.3 Header format */
 static struct hdd_ipa_tx_hdr ipa_tx_hdr = {
@@ -5042,6 +5069,13 @@ static void hdd_ipa_cleanup_iface(struct hdd_ipa_iface_context *iface_context)
 {
 	if (iface_context == NULL)
 		return;
+	if (iface_context->adapter->magic != WLAN_HDD_ADAPTER_MAGIC) {
+		HDD_IPA_LOG(QDF_TRACE_LEVEL_DEBUG,
+			    "%s: bad adapter(%p).magic(%d)!",
+			    __func__, iface_context->adapter,
+			    iface_context->adapter->magic);
+		return;
+	}
 
 	hdd_ipa_clean_hdr(iface_context->adapter);
 

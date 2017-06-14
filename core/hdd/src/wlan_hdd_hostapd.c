@@ -265,7 +265,7 @@ static int __hdd_hostapd_open(struct net_device *dev)
 
 	set_bit(DEVICE_IFACE_OPENED, &pAdapter->event_flags);
 	/* Enable all Tx queues */
-	hdd_notice("Enabling queues");
+	hdd_debug("Enabling queues");
 	wlan_hdd_netif_queue_control(pAdapter,
 				   WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
 				   WLAN_CONTROL_PATH);
@@ -319,7 +319,7 @@ static int __hdd_hostapd_stop(struct net_device *dev)
 
 	clear_bit(DEVICE_IFACE_OPENED, &adapter->event_flags);
 	/* Stop all tx queues */
-	hdd_notice("Disabling queues");
+	hdd_debug("Disabling queues");
 	wlan_hdd_netif_queue_control(adapter,
 				     WLAN_STOP_ALL_NETIF_QUEUE_N_CARRIER,
 				     WLAN_CONTROL_PATH);
@@ -1785,9 +1785,9 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 
 		if (pSapEvent->sapevt.sapStationDisassocCompleteEvent.reason ==
 		    eSAP_USR_INITATED_DISASSOC)
-			hdd_notice(" User initiated disassociation");
+			hdd_debug(" User initiated disassociation");
 		else
-			hdd_notice(" MAC initiated disassociation");
+			hdd_debug(" MAC initiated disassociation");
 		we_event = IWEVEXPIRED;
 		qdf_status =
 			hdd_softap_get_sta_id(pHostapdAdapter,
@@ -2172,7 +2172,7 @@ stopbss:
 		/* Stop the pkts from n/w stack as we are going to free all of
 		 * the TX WMM queues for all STAID's
 		 */
-		hdd_notice("Disabling queues");
+		hdd_debug("Disabling queues");
 		wlan_hdd_netif_queue_control(pHostapdAdapter,
 					WLAN_STOP_ALL_NETIF_QUEUE_N_CARRIER,
 					WLAN_CONTROL_PATH);
@@ -3301,14 +3301,14 @@ static __iw_softap_setparam(struct net_device *dev,
 		ret = hdd_set_rx_stbc(pHostapdAdapter, set_value);
 		break;
 	case QCSAP_SET_DEFAULT_AMPDU:
-		hdd_notice("QCSAP_SET_DEFAULT_AMPDU val %d", set_value);
+		hdd_debug("QCSAP_SET_DEFAULT_AMPDU val %d", set_value);
 		ret = wma_cli_set_command((int)pHostapdAdapter->sessionId,
 					(int)WMI_PDEV_PARAM_MAX_MPDUS_IN_AMPDU,
 					set_value, PDEV_CMD);
 		break;
 
 	case QCSAP_ENABLE_RTS_BURSTING:
-		hdd_notice("QCSAP_ENABLE_RTS_BURSTING val %d", set_value);
+		hdd_debug("QCSAP_ENABLE_RTS_BURSTING val %d", set_value);
 		ret = wma_cli_set_command((int)pHostapdAdapter->sessionId,
 					(int)WMI_PDEV_PARAM_ENABLE_RTS_SIFS_BURSTING,
 					set_value, PDEV_CMD);
@@ -7368,6 +7368,7 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 	bool MFPRequired = false;
 	uint16_t prev_rsn_length = 0;
 	enum dfs_mode mode;
+	bool disable_fw_tdls_state = false;
 
 	ENTER();
 
@@ -7378,19 +7379,24 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 		return -EINVAL;
 	}
 
-	wlan_hdd_tdls_disable_offchan_and_teardown_links(pHddCtx);
+	disable_fw_tdls_state = true;
+	wlan_hdd_check_conc_and_update_tdls_state(pHddCtx,
+						  disable_fw_tdls_state);
+
 	if (cds_is_hw_mode_change_in_progress()) {
 		status = qdf_wait_for_connection_update();
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
 			hdd_err("qdf wait for event failed!!");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto ret_status;
 		}
 	}
 
 	sme_config = qdf_mem_malloc(sizeof(tSmeConfigParams));
 	if (!sme_config) {
 		hdd_err("failed to allocate memory");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto ret_status;
 	}
 
 	iniConfig = pHddCtx->config;
@@ -7849,7 +7855,7 @@ int wlan_hdd_cfg80211_start_bss(hdd_adapter_t *pHostapdAdapter,
 #ifdef WLAN_FEATURE_11W
 	pConfig->mfpCapable = MFPCapable;
 	pConfig->mfpRequired = MFPRequired;
-	hdd_notice("Soft AP MFP capable %d, MFP required %d",
+	hdd_debug("Soft AP MFP capable %d, MFP required %d",
 	       pConfig->mfpCapable, pConfig->mfpRequired);
 #endif
 
@@ -7971,6 +7977,10 @@ error:
 			acs_cfg.ch_list);
 		pHostapdAdapter->sessionCtx.ap.sapConfig.acs_cfg.ch_list = NULL;
 	}
+
+ret_status:
+	if (disable_fw_tdls_state)
+		wlan_hdd_check_conc_and_update_tdls_state(pHddCtx, false);
 	return ret;
 }
 
@@ -8098,7 +8108,7 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 		cds_remove_sap_mandatory_chan(pConfig->channel);
 
 	/* Stop all tx queues */
-	hdd_notice("Disabling queues");
+	hdd_debug("Disabling queues");
 	wlan_hdd_netif_queue_control(pAdapter,
 				     WLAN_STOP_ALL_NETIF_QUEUE_N_CARRIER,
 				     WLAN_CONTROL_PATH);
@@ -8176,6 +8186,7 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	}
 #endif
 	pAdapter->sessionId = HDD_SESSION_ID_INVALID;
+	wlan_hdd_check_conc_and_update_tdls_state(pHddCtx, false);
 	EXIT();
 	return ret;
 }
