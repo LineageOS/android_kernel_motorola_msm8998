@@ -570,6 +570,16 @@ static int mod_v4l2_open(struct file *file)
 
 	rc = gb_camera_ext_power_on(cam_dev->connection,
 				    g_v4l2_data->open_mode);
+
+	/* Open could fail if the mod is out of sync, retry once */
+	if (rc < 0) {
+		gb_camera_ext_power_off(cam_dev->connection);
+		pr_err("%s - Camera power On failed, close and open\n",
+								 __func__);
+		rc = gb_camera_ext_power_on(cam_dev->connection,
+					    g_v4l2_data->open_mode);
+	}
+
 	if (rc < 0)
 		goto err_power_on;
 
