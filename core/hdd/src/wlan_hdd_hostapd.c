@@ -4075,7 +4075,8 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
 	hdd_context_t *hdd_ctx;
 	tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pHostapdAdapter);
-	int *value = (int *)extra;
+	//int *value = (int *)extra;
+	int *value = (int *)(wrqu->data.pointer);
 	int set_value;
 	int ret;
 	struct qdf_mac_addr bssid = QDF_MAC_ADDR_BROADCAST_INITIALIZER;
