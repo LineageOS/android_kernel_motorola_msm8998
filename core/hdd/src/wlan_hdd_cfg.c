@@ -2890,6 +2890,13 @@ struct reg_table_entry g_registry_table[] = {
 		     CFG_REG_CHANGE_DEF_COUNTRY_MIN,
 		     CFG_REG_CHANGE_DEF_COUNTRY_MAX),
 
+	REG_VARIABLE(CFG_AUTO_CHANNEL_SELECT_WEIGHT, WLAN_PARAM_HexInteger,
+		     struct hdd_config, auto_channel_select_weight,
+		     VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		     CFG_AUTO_CHANNEL_SELECT_WEIGHT_DEFAULT,
+		     CFG_AUTO_CHANNEL_SELECT_WEIGHT_MIN,
+		     CFG_AUTO_CHANNEL_SELECT_WEIGHT_MAX),
+
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 	REG_VARIABLE(CFG_LL_TX_FLOW_LWM, WLAN_PARAM_Integer,
 		     struct hdd_config, TxFlowLowWaterMark,
@@ -3010,6 +3017,13 @@ struct reg_table_entry g_registry_table[] = {
 		     CFG_ENABLE_MEMORY_DEEP_SLEEP_DEFAULT,
 		     CFG_ENABLE_MEMORY_DEEP_SLEEP_MIN,
 		     CFG_ENABLE_MEMORY_DEEP_SLEEP_MAX),
+
+	REG_VARIABLE(CFG_ENABLE_CCK_TX_FIR_OVERRIDE_NAME, WLAN_PARAM_Integer,
+		     struct hdd_config, enable_cck_tx_fir_override,
+		     VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		     CFG_ENABLE_CCK_TX_FIR_OVERRIDE_DEFAULT,
+		     CFG_ENABLE_CCK_TX_FIR_OVERRIDE_MIN,
+		     CFG_ENABLE_CCK_TX_FIR_OVERRIDE_MAX),
 
 	REG_VARIABLE(CFG_DEFAULT_RATE_INDEX_24GH, WLAN_PARAM_Integer,
 		     struct hdd_config, defaultRateIndex24Ghz,
@@ -4133,6 +4147,13 @@ struct reg_table_entry g_registry_table[] = {
 		CFG_RX_MODE_MIN,
 		CFG_RX_MODE_MAX),
 
+	REG_VARIABLE(CFG_CE_SERVICE_MAX_YIELD_TIME_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, ce_service_max_yield_time,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_CE_SERVICE_MAX_YIELD_TIME_DEFAULT,
+		CFG_CE_SERVICE_MAX_YIELD_TIME_MIN,
+		CFG_CE_SERVICE_MAX_YIELD_TIME_MAX),
+
 	REG_VARIABLE_STRING(CFG_RPS_RX_QUEUE_CPU_MAP_LIST_NAME,
 				 WLAN_PARAM_String,
 				 struct hdd_config, cpu_map_list,
@@ -4321,6 +4342,13 @@ struct reg_table_entry g_registry_table[] = {
 		CFG_PER_ROAM_MONTIOR_TIME_DEFAULT,
 		CFG_PER_ROAM_MONITOR_TIME_MIN,
 		CFG_PER_ROAM_MONITOR_TIME_MAX),
+
+	REG_VARIABLE(CFG_PER_ROAM_MIN_CANDIDATE_RSSI, WLAN_PARAM_Integer,
+		struct hdd_config, min_candidate_rssi,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_PER_ROAM_MIN_CANDIDATE_RSSI_DEFAULT,
+		CFG_PER_ROAM_MIN_CANDIDATE_RSSI_MIN,
+		CFG_PER_ROAM_MIN_CANDIDATE_RSSI_MAX),
 
 	REG_VARIABLE(CFG_MAX_SCHED_SCAN_PLAN_INT_NAME, WLAN_PARAM_Integer,
 		struct hdd_config, max_sched_scan_plan_interval,
@@ -4637,6 +4665,57 @@ struct reg_table_entry g_registry_table[] = {
 		CFG_SCAN_BACKOFF_MULTIPLIER_DEFAULT,
 		CFG_SCAN_BACKOFF_MULTIPLIER_MIN,
 		CFG_SCAN_BACKOFF_MULTIPLIER_MAX),
+
+	REG_VARIABLE(CFG_11B_NUM_TX_CHAIN_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, num_11b_tx_chains,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_11B_NUM_TX_CHAIN_DEFAULT,
+		CFG_11B_NUM_TX_CHAIN_MIN,
+		CFG_11B_NUM_TX_CHAIN_MAX),
+
+	REG_VARIABLE(CFG_11AG_NUM_TX_CHAIN_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, num_11ag_tx_chains,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_11AG_NUM_TX_CHAIN_DEFAULT,
+		CFG_11AG_NUM_TX_CHAIN_MIN,
+		CFG_11AG_NUM_TX_CHAIN_MAX),
+
+	REG_VARIABLE(CFG_ROAM_DISALLOW_DURATION_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, disallow_duration,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_ROAM_DISALLOW_DURATION_DEFAULT,
+		CFG_ROAM_DISALLOW_DURATION_MIN,
+		CFG_ROAM_DISALLOW_DURATION_MAX),
+
+	REG_VARIABLE(CFG_ROAM_RSSI_CHANNEL_PENALIZATION_NAME,
+		WLAN_PARAM_Integer, struct hdd_config,
+		rssi_channel_penalization,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_ROAM_RSSI_CHANNEL_PENALIZATION_DEFAULT,
+		CFG_ROAM_RSSI_CHANNEL_PENALIZATION_MIN,
+		CFG_ROAM_RSSI_CHANNEL_PENALIZATION_MAX),
+
+	REG_VARIABLE(CFG_ROAM_NUM_DISALLOWED_APS_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, num_disallowed_aps,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_ROAM_NUM_DISALLOWED_APS_DEFAULT,
+		CFG_ROAM_NUM_DISALLOWED_APS_MIN,
+		CFG_ROAM_NUM_DISALLOWED_APS_MAX),
+
+	REG_VARIABLE(CFG_TX_ORPHAN_ENABLE_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, tx_orphan_enable,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_TX_ORPHAN_ENABLE_DEFAULT,
+		CFG_TX_ORPHAN_ENABLE_MIN,
+		CFG_TX_ORPHAN_ENABLE_MAX),
+
+	REG_VARIABLE(CFG_ITO_REPEAT_COUNT_NAME, WLAN_PARAM_Integer,
+		struct hdd_config, ito_repeat_count,
+		VAR_FLAGS_OPTIONAL | VAR_FLAGS_RANGE_CHECK_ASSUME_DEFAULT,
+		CFG_ITO_REPEAT_COUNT_DEFAULT,
+		CFG_ITO_REPEAT_COUNT_MIN,
+		CFG_ITO_REPEAT_COUNT_MAX),
+
 };
 
 /**
@@ -5448,7 +5527,49 @@ static void hdd_per_roam_print_ini_config(hdd_context_t *hdd_ctx)
 	hdd_debug("Name = [%s] Value = [%u]",
 		CFG_PER_ROAM_MONITOR_TIME,
 		hdd_ctx->config->per_roam_mon_time);
+	hdd_debug("Name = [%s] Value = [%u]",
+		CFG_PER_ROAM_MIN_CANDIDATE_RSSI,
+		hdd_ctx->config->min_candidate_rssi);
+}
 
+/**
+ * hdd_cfg_print_ie_whitelist_attrs() - print the ie whitelist attrs
+ * @hdd_ctx: pointer to hdd context
+ *
+ * Return: None
+ */
+static void hdd_cfg_print_ie_whitelist_attrs(hdd_context_t *hdd_ctx)
+{
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_WHITELIST_NAME,
+		  hdd_ctx->config->probe_req_ie_whitelist);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP0_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_0);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP1_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_1);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP2_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_2);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP3_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_3);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP4_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_4);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP5_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_5);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP6_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_6);
+	hdd_debug("Name = [%s] Value = [%x] ",
+		  CFG_PRB_REQ_IE_BIT_MAP7_NAME,
+		  hdd_ctx->config->probe_req_ie_bitmap_7);
+	hdd_debug("Name = [%s] Value =[%s]",
+		  CFG_PROBE_REQ_OUI_NAME,
+		  hdd_ctx->config->probe_req_ouis);
 }
 
 /**
@@ -5796,6 +5917,9 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 		  pHddCtx->config->apMaxOffloadPeers);
 	hdd_debug("Name = [gMaxOffloadReorderBuffs] value = [%u] ",
 		  pHddCtx->config->apMaxOffloadReorderBuffs);
+	hdd_debug("Name = [%s] Value = [%d]",
+		  CFG_ENABLE_CCK_TX_FIR_OVERRIDE_NAME,
+		  pHddCtx->config->enable_cck_tx_fir_override);
 	hdd_debug("Name = [gAllowDFSChannelRoam] Value = [%u] ",
 		  pHddCtx->config->allowDFSChannelRoam);
 	hdd_debug("Name = [gMaxConcurrentActiveSessions] Value = [%u] ",
@@ -5932,6 +6056,9 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 		  pHddCtx->config->max_scan_count);
 	hdd_debug("Name = [%s] value = [%d]",
 		  CFG_RX_MODE_NAME, pHddCtx->config->rx_mode);
+	hdd_debug("Name = [%s] value = [%d]",
+		  CFG_CE_SERVICE_MAX_YIELD_TIME_NAME,
+		  pHddCtx->config->ce_service_max_yield_time);
 	hdd_debug("Name = [%s] Value = [%u]",
 		  CFG_CE_CLASSIFY_ENABLE_NAME,
 		  pHddCtx->config->ce_classify_enabled);
@@ -6152,41 +6279,12 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 	hdd_debug("Name = [%s] Value = [%d]",
 		CFG_ARP_AC_CATEGORY,
 		pHddCtx->config->arp_ac_category);
-
 	hdd_debug("Name = [%s] value = [%u]",
 		 CFG_FORCE_1X1_NAME,
 		 pHddCtx->config->is_force_1x1);
 
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_WHITELIST_NAME,
-		 pHddCtx->config->probe_req_ie_whitelist);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP0_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_0);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP1_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_1);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP2_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_2);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP3_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_3);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP4_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_4);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP5_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_5);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP6_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_6);
-	hdd_debug("Name = [%s] Value = [%x] ",
-		 CFG_PRB_REQ_IE_BIT_MAP7_NAME,
-		 pHddCtx->config->probe_req_ie_bitmap_7);
-	hdd_debug("Name = [%s] Value =[%s]",
-		 CFG_PROBE_REQ_OUI_NAME,
-		 pHddCtx->config->probe_req_ouis);
+	hdd_cfg_print_ie_whitelist_attrs(pHddCtx);
+
 	hdd_debug("Name = [%s] value = [%u]",
 		 CFG_DROPPED_PKT_DISCONNECT_TH_NAME,
 		 pHddCtx->config->pkt_err_disconn_th);
@@ -6198,6 +6296,24 @@ void hdd_cfg_print(hdd_context_t *pHddCtx)
 		pHddCtx->config->scan_backoff_multiplier);
 	hdd_info("Name = [gEnableConnectedScan] Value = %u",
 		pHddCtx->config->enable_connected_scan);
+	hdd_debug("Name = [%s] value = [%u]",
+		 CFG_11B_NUM_TX_CHAIN_NAME,
+		 pHddCtx->config->num_11b_tx_chains);
+	hdd_debug("Name = [%s] value = [%u]",
+		 CFG_11AG_NUM_TX_CHAIN_NAME,
+		 pHddCtx->config->num_11ag_tx_chains);
+	hdd_debug("Name = [%s] Value = [%u]",
+		CFG_ROAM_DISALLOW_DURATION_NAME,
+		pHddCtx->config->disallow_duration);
+	hdd_debug("Name = [%s] Value = [%u]",
+		CFG_ROAM_RSSI_CHANNEL_PENALIZATION_NAME,
+		pHddCtx->config->rssi_channel_penalization);
+	hdd_debug("Name = [%s] Value = [%u]",
+		CFG_ROAM_NUM_DISALLOWED_APS_NAME,
+		pHddCtx->config->num_disallowed_aps);
+	hdd_debug("Name = [%s] value = [%u]",
+		CFG_ITO_REPEAT_COUNT_NAME,
+		pHddCtx->config->ito_repeat_count);
 }
 
 /**
@@ -6216,6 +6332,7 @@ QDF_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 	char *line, *buffer = NULL;
 	char *temp = NULL;
 	char *name, *value;
+	int max_mac_addr = QDF_MAX_CONCURRENCY_PERSONA;
 	tCfgIniEntry macTable[QDF_MAX_CONCURRENCY_PERSONA];
 	tSirMacAddr customMacAddr;
 
@@ -6291,6 +6408,9 @@ QDF_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 	}
 
 	update_mac_from_string(pHddCtx, &macTable[0], i);
+	hdd_debug("Populating remaining %d Mac addreses",
+		   max_mac_addr - i);
+	hdd_populate_random_mac_addr(pHddCtx, max_mac_addr - i);
 
 	qdf_mem_copy(&customMacAddr,
 		     &pHddCtx->config->intfMacAddr[0].bytes[0],
@@ -6853,13 +6973,17 @@ static bool hdd_update_vht_cap_in_cfg(hdd_context_t *hdd_ctx)
 		hdd_err("Couldn't pass on WNI_CFG_VHT_TXSTBC to CFG");
 	}
 
+	/* first get HW RX LDPC capability */
 	if (sme_cfg_get_int(hdd_ctx->hHal, WNI_CFG_VHT_LDPC_CODING_CAP, &val) ==
 							QDF_STATUS_E_FAILURE) {
-		status &= false;
+		status = false;
 		hdd_err("Could not get WNI_CFG_VHT_LDPC_CODING_CAP");
 	}
+
+	/* enable RX LDPC only when both INI and HW are enabled */
 	if (sme_cfg_set_int(hdd_ctx->hHal, WNI_CFG_VHT_LDPC_CODING_CAP,
-			config->enable_rx_ldpc & val) == QDF_STATUS_E_FAILURE) {
+				config->enable_rx_ldpc && val) ==
+			QDF_STATUS_E_FAILURE) {
 		status = false;
 		hdd_err("Couldn't pass on WNI_CFG_VHT_LDPC_CODING_CAP to CFG");
 	}
@@ -7415,6 +7539,31 @@ static void hdd_update_per_config_to_sme(hdd_context_t *hdd_ctx,
 			hdd_ctx->config->per_roam_mon_time;
 	sme_config->csrConfig.per_roam_config.rx_per_mon_time =
 			hdd_ctx->config->per_roam_mon_time;
+
+	/* Assigning minimum roamable AP RSSI for candidate selection */
+	sme_config->csrConfig.per_roam_config.min_candidate_rssi =
+			hdd_ctx->config->min_candidate_rssi;
+}
+
+/**
+ * hdd_to_csr_wmm_mode() - Utility function to convert HDD to CSR WMM mode
+ *
+ * @enum hdd_wmm_user_mode - hdd WMM user mode
+ *
+ * Return: CSR WMM mode
+ */
+static eCsrRoamWmmUserModeType
+hdd_to_csr_wmm_mode(enum hdd_wmm_user_mode mode)
+{
+	switch (mode) {
+	case HDD_WMM_USER_MODE_QBSS_ONLY:
+		return eCsrRoamWmmQbssOnly;
+	case HDD_WMM_USER_MODE_NO_QOS:
+		return eCsrRoamWmmNoQos;
+	case HDD_WMM_USER_MODE_AUTO:
+	default:
+		return eCsrRoamWmmAuto;
+	}
 }
 
 /**
@@ -7501,7 +7650,8 @@ QDF_STATUS hdd_set_sme_config(hdd_context_t *pHddCtx)
 
 #endif
 	smeConfig->csrConfig.Is11eSupportEnabled = pConfig->b80211eIsEnabled;
-	smeConfig->csrConfig.WMMSupportMode = pConfig->WmmMode;
+	smeConfig->csrConfig.WMMSupportMode =
+		hdd_to_csr_wmm_mode(pConfig->WmmMode);
 
 	smeConfig->rrmConfig.rrm_enabled = pConfig->fRrmEnable;
 	smeConfig->rrmConfig.max_randn_interval = pConfig->nRrmRandnIntvl;
@@ -7775,6 +7925,8 @@ QDF_STATUS hdd_set_sme_config(hdd_context_t *pHddCtx)
 		CSR_STA_ROAM_POLICY_DFS_ENABLED;
 	smeConfig->csrConfig.sta_roam_policy_params.skip_unsafe_channels = 0;
 
+	smeConfig->snr_monitor_enabled = pHddCtx->config->fEnableSNRMonitoring;
+
 	smeConfig->csrConfig.tx_aggregation_size =
 			pHddCtx->config->tx_aggregation_size;
 	smeConfig->csrConfig.rx_aggregation_size =
@@ -7789,9 +7941,20 @@ QDF_STATUS hdd_set_sme_config(hdd_context_t *pHddCtx)
 			pHddCtx->config->pkt_err_disconn_th;
 	smeConfig->csrConfig.is_bssid_hint_priority =
 			pHddCtx->config->is_bssid_hint_priority;
+	smeConfig->csrConfig.disallow_duration =
+			pHddCtx->config->disallow_duration;
+	smeConfig->csrConfig.rssi_channel_penalization =
+			pHddCtx->config->rssi_channel_penalization;
+	smeConfig->csrConfig.num_disallowed_aps =
+			pHddCtx->config->num_disallowed_aps;
 
 	smeConfig->csrConfig.is_force_1x1 =
 			pHddCtx->config->is_force_1x1;
+	smeConfig->csrConfig.num_11b_tx_chains =
+			pHddCtx->config->num_11b_tx_chains;
+	smeConfig->csrConfig.num_11ag_tx_chains =
+			pHddCtx->config->num_11ag_tx_chains;
+
 	status = sme_update_config(pHddCtx->hHal, smeConfig);
 	if (!QDF_IS_STATUS_SUCCESS(status))
 		hdd_err("sme_update_config() failure: %d", status);
@@ -8033,132 +8196,48 @@ bool hdd_validate_prb_req_ie_bitmap(hdd_context_t *hdd_ctx)
 	return true;
 }
 
-/**
- * probe_req_voui_convert_to_hex - converts str of 8 chars into two hex values
- * @temp: string to be converted
- * @voui: contains the type and subtype values
- *
- * This function converts the string length of 8 characters into two
- * hexa-decimal values, oui_type and oui_subtype, where oui_type is the
- * hexa decimal value converted from first 6 characters and oui_subtype is
- * hexa decimal value converted from last 2 characters.
- * strings which doesn't match with the specified pattern are ignored.
- *
- * Return: status of conversion
- *         true - if conversion is successful
- *         false - if conversion is failed
- */
-static bool hdd_probe_req_voui_convert_to_hex(uint8_t *temp,
-					      struct vendor_oui *voui)
-{
-	uint32_t hex_value[4] = {0};
-	uint32_t i = 0;
-	uint32_t indx = 0;
-
-	memset(voui, 0x00, sizeof(*voui));
-
-	/* convert string to hex */
-	for (i = 0; i < 8; i++) {
-		if (temp[i] >= '0' && temp[i] <= '9') {
-			hex_value[indx] = (temp[i] - '0') << 4;
-		} else if (temp[i] >= 'A' && temp[i] <= 'F') {
-			hex_value[indx] = (temp[i] - 'A') + 0xA;
-			hex_value[indx] = hex_value[indx] << 4;
-		} else {
-			/* invalid character in oui */
-			return false;
-		}
-
-		if (temp[i + 1] >= '0' && temp[i + 1] <= '9') {
-			hex_value[indx] |= (temp[i + 1] - '0');
-			i = i + 1;
-			indx = indx + 1;
-		} else if (temp[i + 1] >= 'A' && temp[i + 1] <= 'F') {
-			hex_value[indx] |= ((temp[i + 1] - 'A') + 0xA);
-			i = i + 1;
-			indx = indx + 1;
-		} else {
-			/* invalid character in oui */
-			return false;
-		}
-	}
-
-	voui->oui_type = (hex_value[0] | (hex_value[1] << 8) |
-			 (hex_value[2] << 16));
-	voui->oui_subtype = hex_value[3];
-
-	hdd_info("OUI_type = %x and OUI_subtype = %x",
-		 voui->oui_type, voui->oui_subtype);
-
-	return true;
-}
-
 int hdd_parse_probe_req_ouis(hdd_context_t *hdd_ctx)
 {
-	struct vendor_oui voui[MAX_PROBE_REQ_OUIS];
-	uint8_t *str;
-	uint8_t temp[9];
-	uint32_t start = 0, end = 0;
+	uint32_t voui[MAX_PROBE_REQ_OUIS];
+	char *str;
+	uint8_t *token;
 	uint32_t oui_indx = 0;
-	uint32_t i = 0;
+	int ret;
+	uint32_t hex_value;
 
-	hdd_ctx->config->probe_req_ouis[MAX_PRB_REQ_VENDOR_OUI_INI_LEN - 1] =
-									'\0';
-	if (!strlen(hdd_ctx->config->probe_req_ouis)) {
+	str = (char *)(hdd_ctx->config->probe_req_ouis);
+	str[MAX_PRB_REQ_VENDOR_OUI_INI_LEN - 1] = '\0';
+
+	if (!strlen(str)) {
 		hdd_ctx->no_of_probe_req_ouis = 0;
 		hdd_ctx->probe_req_voui = NULL;
 		hdd_info("NO OUIS to parse");
 		return 0;
 	}
 
-	str = (uint8_t *)(hdd_ctx->config->probe_req_ouis);
+	token = strsep(&str, " ");
+	while (token) {
+		if (strlen(token) != 8)
+			goto next_token;
 
-	while (str[i] != '\0') {
-		if (str[i] == ' ') {
-			if ((end - start) != 8) {
-				end = start = 0;
-				i++;
-				continue;
-			} else {
-				memcpy(temp, &str[i - 8], 8);
-				i++;
-				temp[8] = '\0';
-				if (!hdd_probe_req_voui_convert_to_hex(temp,
-				    &voui[oui_indx])) {
-					end = start = 0;
-					continue;
-				}
-				oui_indx++;
-				if (oui_indx >= MAX_PROBE_REQ_OUIS) {
-					/*
-					 * Max number of OUIs supported is 16,
-					 * ignoring the rest
-					 */
-					hdd_info("Max OUIs-supported: 16");
-					break;
-				}
-			}
-			start = end = 0;
-		} else {
-			i++;
-			end++;
-		}
-	}
+		ret = kstrtouint(token, 16, &hex_value);
+		if (ret)
+			goto next_token;
 
-	if (((end - start) == 8) && oui_indx < MAX_PROBE_REQ_OUIS) {
-		memcpy(temp, &str[i - 8], 8);
-		temp[8] = '\0';
-		if (hdd_probe_req_voui_convert_to_hex(temp,
-		    &voui[oui_indx]))
-			oui_indx++;
+		voui[oui_indx++] = cpu_to_be32(hex_value);
+		if (oui_indx >= MAX_PROBE_REQ_OUIS)
+			break;
+
+		next_token:
+		token = strsep(&str, " ");
 	}
 
 	if (!oui_indx)
-		return 0;
+		return -EINVAL;
 
 	hdd_ctx->probe_req_voui = qdf_mem_malloc(oui_indx *
 					sizeof(*hdd_ctx->probe_req_voui));
-	if (hdd_ctx->probe_req_voui == NULL) {
+	if (!hdd_ctx->probe_req_voui) {
 		hdd_err("Not Enough memory for OUI");
 		hdd_ctx->no_of_probe_req_ouis = 0;
 		return -ENOMEM;
@@ -8172,7 +8251,7 @@ int hdd_parse_probe_req_ouis(hdd_context_t *hdd_ctx)
 
 void hdd_free_probe_req_ouis(hdd_context_t *hdd_ctx)
 {
-	struct vendor_oui *probe_req_voui = hdd_ctx->probe_req_voui;
+	uint32_t *probe_req_voui = hdd_ctx->probe_req_voui;
 
 	if (probe_req_voui) {
 		hdd_ctx->probe_req_voui = NULL;

@@ -755,7 +755,7 @@ lim_fill_assoc_ind_params(tpAniSirGlobal mac_ctx,
 
 	/* Copy the new TITAN capabilities */
 	sme_assoc_ind->spectrumMgtIndicator = assoc_ind->spectrumMgtIndicator;
-	if (assoc_ind->spectrumMgtIndicator == eSIR_TRUE) {
+	if (assoc_ind->spectrumMgtIndicator == true) {
 		sme_assoc_ind->powerCap.minTxPower =
 			assoc_ind->powerCap.minTxPower;
 		sme_assoc_ind->powerCap.maxTxPower =
@@ -3265,7 +3265,7 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 	case SIR_SCAN_EVENT_START_FAILED:
 		if (ROC_SCAN_REQUESTOR_ID == pScanEvent->requestor) {
 			lim_send_sme_roc_rsp(pMac, eWNI_SME_REMAIN_ON_CHN_RSP,
-					 QDF_STATUS_SUCCESS,
+					 eSIR_SME_SUCCESS,
 					 pScanEvent->sessionId,
 					 pScanEvent->scanId);
 			qdf_mem_free(pMac->lim.gpLimRemainOnChanReq);
@@ -3293,7 +3293,7 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 			if (pMac->lim.gpLimRemainOnChanReq) {
 				lim_send_sme_roc_rsp(pMac,
 						 eWNI_SME_REMAIN_ON_CHN_RDY_IND,
-						 QDF_STATUS_SUCCESS,
+						 eSIR_SME_SUCCESS,
 						 pScanEvent->sessionId,
 						 pScanEvent->scanId);
 			} else {
@@ -3314,4 +3314,27 @@ void lim_process_rx_scan_event(tpAniSirGlobal pMac, void *buf)
 			  pScanEvent->event);
 	}
 	qdf_mem_free(buf);
+}
+
+void lim_process_rx_channel_status_event(tpAniSirGlobal mac_ctx, void *buf)
+{
+	struct lim_channel_status *chan_status = buf;
+
+	if (NULL == chan_status) {
+		QDF_TRACE(QDF_MODULE_ID_PE,
+			  QDF_TRACE_LEVEL_ERROR,
+			  "%s: ACS evt report buf NULL", __func__);
+		return;
+	}
+
+	if (ACS_FW_REPORT_PARAM_CONFIGURED)
+		lim_add_channel_status_info(mac_ctx, chan_status,
+					    chan_status->channel_id);
+	else
+		QDF_TRACE(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
+			  "%s: Error evt report", __func__);
+
+	qdf_mem_free(buf);
+
+	return;
 }

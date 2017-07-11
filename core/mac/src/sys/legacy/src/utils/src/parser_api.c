@@ -2133,10 +2133,8 @@ sir_convert_probe_req_frame2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking a Probe Request (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking a Probe Request (0x%08x, %d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fProbeRequestto' a 'tSirProbeReq'... */
 	if (!pr.SSID.present) {
@@ -2400,10 +2398,8 @@ tSirRetStatus sir_convert_probe_frame2_struct(tpAniSirGlobal pMac,
 		qdf_mem_free(pr);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking a Probe Response (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking a Probe Response (0x%08x, %d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fProbeResponse' to a 'tSirProbeRespBeacon'... */
 
@@ -2621,14 +2617,14 @@ tSirRetStatus sir_convert_probe_frame2_struct(tpAniSirGlobal pMac,
 	}
 	if (pr->MBO_IE.present) {
 		pProbeResp->MBO_IE_present = true;
-		pProbeResp->MBO_capability = pr->MBO_IE.mbo_cap[2];
+		if (pr->MBO_IE.cellular_data_cap.present)
+			pProbeResp->MBO_capability =
+				pr->MBO_IE.cellular_data_cap.cellular_connectivity;
 
-		if (pr->MBO_IE.num_assoc_disallowed &&
-			(pr->MBO_IE.assoc_disallowed[0] ==
-				 MBO_IE_ASSOC_DISALLOWED_SUBATTR_ID)) {
+		if (pr->MBO_IE.assoc_disallowed.present) {
 			pProbeResp->assoc_disallowed = true;
 			pProbeResp->assoc_disallowed_reason =
-				pr->MBO_IE.assoc_disallowed[2];
+				pr->MBO_IE.assoc_disallowed.reason_code;
 		}
 	}
 
@@ -2675,10 +2671,8 @@ sir_convert_assoc_req_frame2_struct(tpAniSirGlobal pMac,
 		qdf_mem_free(ar);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking an Assoication Request (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking an Assoication Request (0x%08x, %d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fAssocRequest' to a 'tSirAssocReq'... */
 
@@ -2871,10 +2865,8 @@ static tSirRetStatus dot11f_parse_assoc_response(tpAniSirGlobal mac_ctx,
 				   p_buf, n_buf);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking an Association Response (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking an Association Response (0x%08x, %d bytes):",
 				status, n_buf);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_ERROR,
-				   p_buf, n_buf);
 	}
 
 	return eSIR_SUCCESS;
@@ -3192,10 +3184,8 @@ sir_convert_reassoc_req_frame2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking a Re-association Request (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking a Re-association Request (0x%08x, %d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fReAssocRequest' to a 'tSirAssocReq'... */
 
@@ -3374,10 +3364,8 @@ sir_beacon_ie_ese_bcn_report(tpAniSirGlobal pMac,
 		qdf_mem_free(pBies);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
 			status, nPayload);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pPayload, nPayload);
 	}
 	/* & "transliterate" from a 'tDot11fBeaconIEs' to a 'eseBcnReportMandatoryIe'... */
 	if (!pBies->SSID.present) {
@@ -3680,10 +3668,8 @@ sir_parse_beacon_ie(tpAniSirGlobal pMac,
 		qdf_mem_free(pBies);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
 			status, nPayload);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pPayload, nPayload);
 	}
 	/* & "transliterate" from a 'tDot11fBeaconIEs' to a 'tSirProbeRespBeacon'... */
 	if (!pBies->SSID.present) {
@@ -3912,14 +3898,14 @@ sir_parse_beacon_ie(tpAniSirGlobal pMac,
 
 	if (pBies->MBO_IE.present) {
 		pBeaconStruct->MBO_IE_present = true;
-		pBeaconStruct->MBO_capability = pBies->MBO_IE.mbo_cap[2];
+		if (pBies->MBO_IE.cellular_data_cap.present)
+			pBeaconStruct->MBO_capability =
+				pBies->MBO_IE.cellular_data_cap.cellular_connectivity;
 
-		if (pBies->MBO_IE.num_assoc_disallowed &&
-			(pBies->MBO_IE.assoc_disallowed[0] ==
-				 MBO_IE_ASSOC_DISALLOWED_SUBATTR_ID)) {
+		if (pBies->MBO_IE.assoc_disallowed.present) {
 			pBeaconStruct->assoc_disallowed = true;
 			pBeaconStruct->assoc_disallowed_reason =
-				pBies->MBO_IE.assoc_disallowed[2];
+				pBies->MBO_IE.assoc_disallowed.reason_code;
 		}
 	}
 
@@ -4004,10 +3990,8 @@ sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 		qdf_mem_free(pBeacon);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking Beacon IEs (0x%08x, %d bytes):",
 			status, nPayload);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pPayload, nPayload);
 	}
 	/* & "transliterate" from a 'tDot11fBeacon' to a 'tSirProbeRespBeacon'... */
 	/* Timestamp */
@@ -4301,14 +4285,14 @@ sir_convert_beacon_frame2_struct(tpAniSirGlobal pMac,
 	}
 	if (pBeacon->MBO_IE.present) {
 		pBeaconStruct->MBO_IE_present = true;
-		pBeaconStruct->MBO_capability = pBeacon->MBO_IE.mbo_cap[2];
+		if (pBeacon->MBO_IE.cellular_data_cap.present)
+			pBeaconStruct->MBO_capability =
+				pBeacon->MBO_IE.cellular_data_cap.cellular_connectivity;
 
-		if (pBeacon->MBO_IE.num_assoc_disallowed &&
-			(pBeacon->MBO_IE.assoc_disallowed[0] ==
-				 MBO_IE_ASSOC_DISALLOWED_SUBATTR_ID)) {
+		if (pBeacon->MBO_IE.assoc_disallowed.present) {
 			pBeaconStruct->assoc_disallowed = true;
 			pBeaconStruct->assoc_disallowed_reason =
-				pBeacon->MBO_IE.assoc_disallowed[2];
+				pBeacon->MBO_IE.assoc_disallowed.reason_code;
 		}
 	}
 
@@ -4395,10 +4379,8 @@ sir_convert_auth_frame2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking an Authentication frame (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking an Authentication frame (0x%08x, %d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fAuthentication' to a 'tSirMacAuthFrameBody'... */
 	pAuth->authAlgoNumber = auth.AuthAlgo.algo;
@@ -4464,10 +4446,8 @@ sir_convert_addts_req2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking an Add TS Request frame (0x%08x,%d bytes):",
+		pe_debug("There were warnings while unpacking an Add TS Request frame (0x%08x,%d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fAddTSRequest' or a */
 	/* 'tDot11WMMAddTSRequest' to a 'tSirMacAddtsReqInfo'... */
@@ -4597,10 +4577,8 @@ sir_convert_addts_rsp2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking an Add TS Response frame (0x%08x,%d bytes):",
+		pe_debug("There were warnings while unpacking an Add TS Response frame (0x%08x,%d bytes):",
 			status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fAddTSResponse' or a */
 	/* 'tDot11WMMAddTSResponse' to a 'tSirMacAddtsRspInfo'... */
@@ -4765,10 +4743,8 @@ sir_convert_delts_req2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking an Del TS Request frame (0x%08x,%d bytes):",
+		pe_debug("There were warnings while unpacking an Del TS Request frame (0x%08x,%d bytes):",
 			   status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fDelTSResponse' or a */
 	/* 'tDot11WMMDelTSResponse' to a 'tSirMacDeltsReqInfo'... */
@@ -4823,10 +4799,8 @@ sir_convert_qos_map_configure_frame2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking Qos Map Configure frame (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking Qos Map Configure frame (0x%08x, %d bytes):",
 			   status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	pQosMapSet->present = mapConfigure.QosMapSet.present;
 	convert_qos_mapset_frame(pMac->hHdd, pQosMapSet, &mapConfigure.QosMapSet);
@@ -4853,10 +4827,8 @@ sir_convert_tpc_req_frame2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking a TPC Request frame (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking a TPC Request frame (0x%08x, %d bytes):",
 			   status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fTPCRequest' to a */
 	/* 'tSirMacTpcReqActionFrame'... */
@@ -4895,10 +4867,8 @@ sir_convert_meas_req_frame2_struct(tpAniSirGlobal pMac,
 				   pFrame, nFrame);
 		return eSIR_FAILURE;
 	} else if (DOT11F_WARNED(status)) {
-		pe_warn("There were warnings while unpacking a Measurement Request frame (0x%08x, %d bytes):",
+		pe_debug("There were warnings while unpacking a Measurement Request frame (0x%08x, %d bytes):",
 			   status, nFrame);
-		QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_WARN,
-				   pFrame, nFrame);
 	}
 	/* & "transliterate" from a 'tDot11fMeasurementRequest' to a */
 	/* 'tpSirMacMeasReqActionFrame'... */

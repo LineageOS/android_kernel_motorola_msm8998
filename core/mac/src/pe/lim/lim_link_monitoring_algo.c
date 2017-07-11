@@ -230,7 +230,7 @@ void lim_delete_sta_context(tpAniSirGlobal mac_ctx, tpSirMsgQ lim_msg)
 				pe_err("Do not process in limMlmState %s(%x) limSmeState %s(%x)",
 				  lim_mlm_state_str(session_entry->limMlmState),
 				  session_entry->limMlmState,
-				  lim_mlm_state_str(session_entry->limSmeState),
+				  lim_sme_state_str(session_entry->limSmeState),
 				  session_entry->limSmeState);
 				qdf_mem_free(msg);
 				return;
@@ -319,7 +319,7 @@ lim_trigger_sta_deletion(tpAniSirGlobal mac_ctx, tpDphHashNode sta_ds,
 	lim_post_sme_message(mac_ctx, LIM_MLM_DISASSOC_IND,
 			(uint32_t *) &mlm_disassoc_ind);
 	if (mac_ctx->roam.configParam.enable_fatal_event)
-		cds_flush_logs(WLAN_LOG_TYPE_NON_FATAL,
+		cds_flush_logs(WLAN_LOG_TYPE_FATAL,
 				WLAN_LOG_INDICATOR_HOST_DRIVER,
 				WLAN_LOG_REASON_HB_FAILURE,
 				false, false);
@@ -421,7 +421,7 @@ lim_tear_down_link_with_ap(tpAniSirGlobal pMac, uint8_t sessionId,
 			lim_post_sme_message(pMac, LIM_MLM_DEAUTH_IND,
 				     (uint32_t *) &mlmDeauthInd);
 		if (pMac->roam.configParam.enable_fatal_event)
-			cds_flush_logs(WLAN_LOG_TYPE_NON_FATAL,
+			cds_flush_logs(WLAN_LOG_TYPE_FATAL,
 					WLAN_LOG_INDICATOR_HOST_DRIVER,
 					WLAN_LOG_REASON_HB_FAILURE,
 					false, false);

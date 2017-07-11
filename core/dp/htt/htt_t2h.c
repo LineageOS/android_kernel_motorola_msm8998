@@ -599,8 +599,8 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 	enum htt_t2h_msg_type msg_type;
 
 	/* check for successful message reception */
-	if (pkt->Status != A_OK) {
-		if (pkt->Status != A_ECANCELED)
+	if (pkt->Status != QDF_STATUS_SUCCESS) {
+		if (pkt->Status != QDF_STATUS_E_CANCELED)
 			pdev->stats.htc_err_cnt++;
 		qdf_nbuf_free(htt_t2h_msg);
 		return;
@@ -719,7 +719,7 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 		}
 
 		ol_tx_completion_handler(pdev->txrx_pdev, num_msdus,
-					 status, msg_word + 1);
+					 status, msg_word);
 		HTT_TX_SCHED(pdev);
 		break;
 	}
@@ -922,7 +922,7 @@ void htt_t2h_msg_handler_fast(void *context, qdf_nbuf_t *cmpl_msdus,
 				}
 			}
 			ol_tx_completion_handler(pdev->txrx_pdev, num_msdus,
-						 status, msg_word + 1);
+						 status, msg_word);
 
 			break;
 		}

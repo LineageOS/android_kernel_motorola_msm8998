@@ -484,7 +484,7 @@ lim_mlm_add_bss(tpAniSirGlobal mac_ctx,
 	if (NULL == addbss_param) {
 		pe_err("Unable to allocate memory during ADD_BSS");
 		/* Respond to SME with LIM_MLM_START_CNF */
-		return eSIR_MEM_ALLOC_FAILED;
+		return eSIR_SME_RESOURCES_UNAVAILABLE;
 	}
 
 	/* Fill in tAddBssParams members */
@@ -1972,6 +1972,8 @@ lim_process_mlm_set_keys_req(tpAniSirGlobal mac_ctx, uint32_t *msg_buf)
 		 */
 		switch (mlm_set_keys_req->edType) {
 		case eSIR_ED_CCMP:
+		case eSIR_ED_GCMP:
+		case eSIR_ED_GCMP_256:
 #ifdef WLAN_FEATURE_11W
 		case eSIR_ED_AES_128_CMAC:
 #endif

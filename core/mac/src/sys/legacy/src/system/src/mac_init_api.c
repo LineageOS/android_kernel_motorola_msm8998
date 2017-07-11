@@ -67,7 +67,7 @@ tSirRetStatus mac_start(tHalHandle hHal, void *pHalMacStartParams)
 	pMac->gDriverType =
 		((tHalMacStartParameters *) pHalMacStartParams)->driverType;
 
-	if (ANI_DRIVER_TYPE(pMac) != eDRIVER_TYPE_MFG) {
+	if (ANI_DRIVER_TYPE(pMac) != QDF_DRIVER_TYPE_MFG) {
 		status = pe_start(pMac);
 	}
 
@@ -83,13 +83,13 @@ tSirRetStatus mac_start(tHalHandle hHal, void *pHalMacStartParams)
    \return tSirRetStatus
    -------------------------------------------------------------*/
 
-tSirRetStatus mac_stop(tHalHandle hHal, tHalStopType stopType)
+QDF_STATUS mac_stop(tHalHandle hHal, tHalStopType stopType)
 {
 	tpAniSirGlobal pMac = (tpAniSirGlobal) hHal;
 	pe_stop(pMac);
 	cfg_cleanup(pMac);
 
-	return eSIR_SUCCESS;
+	return QDF_STATUS_SUCCESS;
 }
 
 /** -------------------------------------------------------------
@@ -124,7 +124,7 @@ tSirRetStatus mac_open(tHalHandle *pHalHandle, tHddHandle hHdd,
 		 * For Non-FTM cases this value will be reset during mac_start
 		 */
 		if (cds_cfg->driver_type)
-			p_mac->gDriverType = eDRIVER_TYPE_MFG;
+			p_mac->gDriverType = QDF_DRIVER_TYPE_MFG;
 
 		/* Call routine to initialize CFG data structures */
 		if (eSIR_SUCCESS != cfg_init(p_mac))
@@ -154,13 +154,13 @@ tSirRetStatus mac_open(tHalHandle *pHalHandle, tHddHandle hHdd,
    \return none
    -------------------------------------------------------------*/
 
-tSirRetStatus mac_close(tHalHandle hHal)
+QDF_STATUS mac_close(tHalHandle hHal)
 {
 
 	tpAniSirGlobal pMac = (tpAniSirGlobal) hHal;
 
 	if (!pMac)
-		return eSIR_FAILURE;
+		return QDF_STATUS_E_FAILURE;
 
 	pe_close(pMac);
 
@@ -169,5 +169,5 @@ tSirRetStatus mac_close(tHalHandle hHal)
 
 	qdf_mem_zero(pMac, sizeof(*pMac));
 
-	return eSIR_SUCCESS;
+	return QDF_STATUS_SUCCESS;
 }
