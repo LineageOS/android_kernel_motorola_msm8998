@@ -266,12 +266,12 @@ static inline void qdf_mempool_free(qdf_device_t osdev, qdf_mempool_t pool,
 void qdf_mem_dma_sync_single_for_device(qdf_device_t osdev,
 					qdf_dma_addr_t bus_addr,
 					qdf_size_t size,
-					__dma_data_direction direction);
+					qdf_dma_dir_t direction);
 
 void qdf_mem_dma_sync_single_for_cpu(qdf_device_t osdev,
 					qdf_dma_addr_t bus_addr,
 					qdf_size_t size,
-					__dma_data_direction direction);
+					qdf_dma_dir_t direction);
 /**
  * qdf_str_len() - returns the length of a string
  * @str: input string
@@ -291,5 +291,20 @@ void qdf_mem_multi_pages_free(qdf_device_t osdev,
 			      struct qdf_mem_multi_page_t *pages,
 			      qdf_dma_context_t memctxt, bool cacheable);
 
+/**
+ * qdf_mem_skb_inc() - increment total skb allocation size
+ * @size: size to be added
+ *
+ * Return: none
+ */
+void qdf_mem_skb_inc(qdf_size_t size);
+
+/**
+ * qdf_mem_skb_dec() - decrement total skb allocation size
+ * @size: size to be decremented
+ *
+ * Return: none
+ */
+void qdf_mem_skb_dec(qdf_size_t size);
 
 #endif /* __QDF_MEMORY_H */

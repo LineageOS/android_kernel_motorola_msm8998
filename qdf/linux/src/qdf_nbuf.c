@@ -1427,6 +1427,18 @@ void qdf_net_buf_debug_init(void)
 }
 qdf_export_symbol(qdf_net_buf_debug_init);
 
+#ifdef CONFIG_HALT_KMEMLEAK
+static void qdf_net_buf_handle_skb_leak(uint32_t leaked_skb_count)
+{
+	if (leaked_skb_count) {
+		qdf_print("%d SKB leaked", leaked_skb_count);
+		QDF_BUG(0);
+	}
+}
+#else
+static void qdf_net_buf_handle_skb_leak(uint32_t leaked_skb_count) { }
+#endif
+
 /**
  * qdf_net_buf_debug_init() - exit network buffer debug functionality
  *
@@ -1439,6 +1451,7 @@ qdf_export_symbol(qdf_net_buf_debug_init);
 void qdf_net_buf_debug_exit(void)
 {
 	uint32_t i;
+	uint32_t count = 0;
 	unsigned long irq_flag;
 	QDF_NBUF_TRACK *p_node;
 	QDF_NBUF_TRACK *p_prev;
@@ -1449,6 +1462,7 @@ void qdf_net_buf_debug_exit(void)
 		while (p_node) {
 			p_prev = p_node;
 			p_node = p_node->p_next;
+			count++;
 			qdf_print("SKB buf memory Leak@ File %s, @Line %d, size %zu\n",
 				  p_prev->file_name, p_prev->line_num,
 				  p_prev->size);
@@ -1458,6 +1472,8 @@ void qdf_net_buf_debug_exit(void)
 	}
 
 	qdf_nbuf_track_memory_manager_destroy();
+
+	qdf_net_buf_handle_skb_leak(count);
 }
 qdf_export_symbol(qdf_net_buf_debug_exit);
 
@@ -1532,6 +1548,7 @@ void qdf_net_buf_debug_add_node(qdf_nbuf_t net_buf, size_t size,
 			p_node->file_name = file_name;
 			p_node->line_num = line_num;
 			p_node->size = size;
+			qdf_mem_skb_inc(size);
 			p_node->p_next = gp_qdf_net_buf_track_tbl[i];
 			gp_qdf_net_buf_track_tbl[i] = p_node;
 		} else
@@ -1594,6 +1611,7 @@ done:
 			  net_buf);
 		QDF_ASSERT(0);
 	} else {
+		qdf_mem_skb_dec(p_node->size);
 		qdf_nbuf_track_free(p_node);
 	}
 }
@@ -2670,7 +2688,7 @@ unsigned int qdf_nbuf_update_radiotap(struct mon_rx_status *rx_status,
 	}
 	rthdr->it_len = cpu_to_le16(rtap_len);
 
-	if ((headroom_sz  - rtap_len) < 0) {
+	if (headroom_sz < rtap_len) {
 		qdf_print("ERROR: not enough space to update radiotap\n");
 		return 0;
 	}
