@@ -80,7 +80,7 @@ obj-$(CONFIG_MODS_CODEC_BUS) += mods_codec_bus.o
 obj-$(CONFIG_FSUSB42_MUX) += fsusb42_mux.o
 obj-$(CONFIG_MODS_MODBUS_SWITCH) += modbus_switch.o
 
-# TODO: remove me b/62057517
+# TODO: remove me b/62058353
 subdir-ccflags-y += \
 	-Wno-ignored-attributes \
 	-Wno-header-guard
