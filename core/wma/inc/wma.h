@@ -1109,6 +1109,8 @@ struct wma_txrx_node {
 	struct sme_rcpi_req *rcpi_req;
 	struct action_frame_random_filter *action_frame_filter;
 	bool in_bmps;
+	struct beacon_filter_param beacon_filter;
+	bool beacon_filter_enabled;
 };
 
 #if defined(QCA_WIFI_FTM)
@@ -1628,7 +1630,6 @@ typedef struct {
 	uint32_t new_hw_mode_index;
 	struct extended_caps phy_caps;
 	qdf_atomic_t scan_id_counter;
-	qdf_atomic_t num_pending_scans;
 	wma_peer_authorized_fp peer_authorized_cb;
 	uint32_t wow_unspecified_wake_count;
 
@@ -1695,6 +1696,9 @@ typedef struct {
 	struct vdev_spectral_configure_params ss_configs;
 #endif
 	uint8_t  ito_repeat_count;
+#ifdef FEATURE_WLAN_D0WOW
+	atomic_t in_d0wow;
+#endif
 } t_wma_handle, *tp_wma_handle;
 
 /**
