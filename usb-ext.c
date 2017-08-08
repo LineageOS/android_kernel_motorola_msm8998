@@ -68,8 +68,21 @@ static int gb_usb_ext_handle_attach(struct gb_operation *operation)
 	request = operation->request->payload;
 
 	status.active = request->active;
-	status.proto = (request->protocol == GB_USB_EXT_PROTOCOL_2_0) ?
-			USB_EXT_PROTO_2_0 : USB_EXT_PROTO_3_1;
+	switch (request->protocol) {
+	case GB_USB_EXT_PROTOCOL_2_0:
+		status.proto = USB_EXT_PROTO_2_0;
+		break;
+	case GB_USB_EXT_PROTOCOL_3_1:
+		status.proto = USB_EXT_PROTO_3_1;
+		break;
+	case GB_USB_EXT_PROTOCOL_DUAL:
+		status.proto = USB_EXT_PROTO_DUAL;
+		break;
+	default:
+		status.proto = USB_EXT_PROTO_3_1;
+		break;
+	}
+
 	status.path = (request->path == GB_USB_EXT_PATH_ENTERPRISE) ?
 			USB_EXT_PATH_ENTERPRISE : USB_EXT_PATH_BRIDGE;
 	status.type = (request->remote_type == GB_USB_EXT_REMOTE_DEVICE) ?

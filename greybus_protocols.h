@@ -1864,13 +1864,14 @@ struct gb_display_set_display_state_request {
 /* USB-EXT */
 
 #define GB_USB_EXT_VERSION_MAJOR     0x00
-#define GB_USB_EXT_VERSION_MINOR     0x01
+#define GB_USB_EXT_VERSION_MINOR     0x02
 
 #define GB_USB_EXT_TYPE_READY        0x02
 #define GB_USB_EXT_TYPE_ATTACH_STATE 0x03
 
 #define GB_USB_EXT_PROTOCOL_2_0      0x00
 #define GB_USB_EXT_PROTOCOL_3_1      0x01
+#define GB_USB_EXT_PROTOCOL_DUAL     0x02
 
 #define GB_USB_EXT_PATH_ENTERPRISE   0x00
 #define GB_USB_EXT_PATH_BRIDGE       0x01
