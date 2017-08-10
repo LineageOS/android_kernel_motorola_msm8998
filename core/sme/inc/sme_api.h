@@ -710,6 +710,8 @@ uint16_t sme_get_neighbor_scan_max_chan_time(tHalHandle hHal,
 QDF_STATUS sme_set_neighbor_scan_period(tHalHandle hHal, uint8_t sessionId,
 		const uint16_t nNeighborScanPeriod);
 uint16_t sme_get_neighbor_scan_period(tHalHandle hHal, uint8_t sessionId);
+QDF_STATUS sme_set_neighbor_scan_min_period(tHalHandle h_hal,
+		uint8_t session_id, const uint16_t neighbor_scan_min_period);
 QDF_STATUS sme_set_roam_bmiss_first_bcnt(tHalHandle hHal,
 		uint8_t sessionId, const uint8_t nRoamBmissFirstBcnt);
 uint8_t sme_get_roam_bmiss_first_bcnt(tHalHandle hHal);
@@ -1725,6 +1727,17 @@ QDF_STATUS sme_ipa_uc_stat_request(tHalHandle hal,
 			uint32_t param_val, uint32_t req_cat);
 
 /**
+ * sme_set_smps_cfg() - set SMPS config params
+ * @vdev_id: virtual device for the command
+ * @param_id: parameter id
+ * @param_val: parameter value
+ *
+ * Return: QDF_STATUS_SUCCESS or non-zero on failure
+ */
+
+QDF_STATUS sme_set_smps_cfg(uint32_t vdev_id, uint32_t param_id,
+				uint32_t param_val);
+/**
  * sme_get_peer_info() - sme api to get peer info
  * @hal: hal handle for getting global mac struct
  * @req: peer info request struct send to wma
@@ -1794,4 +1807,16 @@ void sme_set_chan_info_callback(tHalHandle hal_handle,
 
 QDF_STATUS sme_send_limit_off_chan_cmd(tHalHandle hal,
 		struct sir_limit_off_chan *param);
+
+/**
+ * sme_set_bmiss_bcnt() - set bmiss config parameters
+ * @vdev_id: virtual device for the command
+ * @first_cnt: bmiss first value
+ * @final_cnt: bmiss final value
+ *
+ * Return: QDF_STATUS_SUCCESS or non-zero on failure
+ */
+QDF_STATUS sme_set_bmiss_bcnt(uint32_t vdev_id, uint32_t first_cnt,
+		uint32_t final_cnt);
+
 #endif /* #if !defined( __SME_API_H ) */

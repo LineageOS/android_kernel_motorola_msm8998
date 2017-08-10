@@ -3276,7 +3276,7 @@ QDF_STATUS sme_scan_request(tHalHandle hal, uint8_t session_id,
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hal);
 	struct ani_scan_req *scan_msg;
 	cds_msg_t msg;
-	uint32_t scan_req_id, scan_count;
+	uint32_t scan_count;
 
 	MTRACE(qdf_trace(QDF_MODULE_ID_SME,
 		 TRACE_CODE_SME_RX_HDD_MSG_SCAN_REQ, session_id,
@@ -3297,8 +3297,6 @@ QDF_STATUS sme_scan_request(tHalHandle hal, uint8_t session_id,
 		sme_err("Max scan reached");
 		return QDF_STATUS_E_FAILURE;
 	}
-	wma_get_scan_id(&scan_req_id);
-	scan_req->scan_id = scan_req_id;
 
 	status = sme_acquire_global_lock(&mac_ctx->sme);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
@@ -5458,7 +5456,7 @@ QDF_STATUS sme_change_country_code(tHalHandle hHal,
 		    && (!pMac->roam.configParam.
 			fSupplicantCountryCodeHasPriority)) {
 
-			sme_warn("Set Country Code Fail since the STA is associated and userspace does not have priority");
+			sme_warn("Set Country Code Fail since the userspace does not have priority");
 
 			sme_release_global_lock(&pMac->sme);
 			status = QDF_STATUS_E_FAILURE;
@@ -6981,7 +6979,7 @@ QDF_STATUS sme_configure_suspend_ind(tHalHandle hHal,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
 	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
-	cds_msg_t cds_message;
+	cds_msg_t cds_message = {0};
 
 	MTRACE(qdf_trace(QDF_MODULE_ID_SME,
 			 TRACE_CODE_SME_RX_HDD_CONFIG_SUSPENDIND, NO_SESSION,
@@ -7510,8 +7508,17 @@ void sme_set_cc_src(tHalHandle hHal, enum country_src cc_src)
 {
 	tpAniSirGlobal mac_ctx = PMAC_STRUCT(hHal);
 
+	/*
+	 * in reg callback from kernel, for 11d source also
+	 * the source is SOURCE_USERSPACE
+	 */
+	if ((cc_src == SOURCE_USERSPACE) &&
+	    (SOURCE_11D == mac_ctx->reg_hint_src))
+		return;
+
 	mac_ctx->reg_hint_src = cc_src;
 }
+
 /*
  * sme_handle_change_country_code() - Change Country code, Reg Domain and
  * channel list
@@ -7661,19 +7668,23 @@ sme_handle_generic_change_country_code(tpAniSirGlobal mac_ctx,
 	tAniGenericChangeCountryCodeReq *msg = pMsgBuf;
 
 	if (SOURCE_11D != mac_ctx->reg_hint_src) {
-		if (SOURCE_DRIVER != mac_ctx->reg_hint_src) {
+		if (SOURCE_CORE == mac_ctx->reg_hint_src) {
+			if (mac_ctx->roam.configParam.enable_11d_in_world_mode
+			    == true)
+				mac_ctx->roam.configParam.Is11dSupportEnabled
+					= true;
+		} else if (SOURCE_USERSPACE == mac_ctx->reg_hint_src) {
 			if (user_ctry_priority)
 				mac_ctx->roam.configParam.Is11dSupportEnabled =
 					false;
 			else {
+				mac_ctx->roam.configParam.Is11dSupportEnabled =
+					mac_ctx->roam.configParam.
+					Is11dSupportEnabledOriginal;
 				if (mac_ctx->roam.configParam.
-					Is11dSupportEnabled &&
-					mac_ctx->scan.countryCode11d[0] != 0) {
-
+				    Is11dSupportEnabled) {
 					sme_debug("restore 11d");
-
-					status =
-					csr_get_regulatory_domain_for_country(
+					status = csr_get_regulatory_domain_for_country(
 						mac_ctx,
 						mac_ctx->scan.countryCode11d,
 						&reg_domain_id,
@@ -7681,16 +7692,18 @@ sme_handle_generic_change_country_code(tpAniSirGlobal mac_ctx,
 					return QDF_STATUS_E_FAILURE;
 				}
 			}
+		} else if (SOURCE_DRIVER == mac_ctx->reg_hint_src) {
+			mac_ctx->roam.configParam.Is11dSupportEnabled =
+				mac_ctx->roam.configParam.
+				Is11dSupportEnabledOriginal;
 		}
 	} else {
-		/* if kernel gets invalid country code; it
-		 *  resets the country code to world
-		 */
-		if (('0' != msg->countryCode[0]) ||
-		    ('0' != msg->countryCode[1]))
-			qdf_mem_copy(mac_ctx->scan.countryCode11d,
-				     msg->countryCode,
-				     WNI_CFG_COUNTRY_CODE_LEN);
+		qdf_mem_copy(mac_ctx->scan.countryCode11d,
+			     msg->countryCode,
+			     WNI_CFG_COUNTRY_CODE_LEN);
+		mac_ctx->roam.configParam.Is11dSupportEnabled =
+			mac_ctx->roam.configParam.Is11dSupportEnabledOriginal;
+		mac_ctx->reg_hint_src = SOURCE_USERSPACE;
 	}
 
 	qdf_mem_copy(mac_ctx->scan.countryCodeCurrent,
@@ -8886,8 +8899,10 @@ QDF_STATUS sme_update_is_mawc_ini_feature_enabled(tHalHandle hHal,
 	if (QDF_IS_STATUS_SUCCESS(status)) {
 		QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 			  "%s: MAWCEnabled is changed from %d to %d", __func__,
-			  pMac->roam.configParam.MAWCEnabled, MAWCEnabled);
-		pMac->roam.configParam.MAWCEnabled = MAWCEnabled;
+			  pMac->roam.configParam.csr_mawc_config.mawc_enabled,
+			  MAWCEnabled);
+		pMac->roam.configParam.csr_mawc_config.mawc_enabled =
+			MAWCEnabled;
 		sme_release_global_lock(&pMac->sme);
 	}
 
@@ -9905,7 +9920,55 @@ uint16_t sme_get_neighbor_scan_period(tHalHandle hHal, uint8_t sessionId)
 	       neighborScanPeriod;
 }
 
+/**
+ * sme_set_neighbor_scan_min_period() - Update neighbor_scan_min_period
+ *          This function is called through dynamic setConfig callback function
+ *          to configure neighbor_scan_min_period
+ *
+ * @hal - HAL handle for device
+ * @session_id - Session Identifier
+ * @neighbor_scan_min_period - neighbor scan min period
+ *
+ * Return - QDF_STATUS
+ */
+QDF_STATUS sme_set_neighbor_scan_min_period(tHalHandle hal,
+					    uint8_t session_id,
+					    const uint16_t
+					    neighbor_scan_min_period)
+{
+	tpAniSirGlobal pmac = PMAC_STRUCT(hal);
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	tCsrNeighborRoamConfig *p_neighbor_roam_config = NULL;
+	tpCsrNeighborRoamControlInfo p_neighbor_roam_info = NULL;
 
+	if (session_id >= CSR_ROAM_SESSION_MAX) {
+		sme_err("Invalid sme session id: %d", session_id);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	status = sme_acquire_global_lock(&pmac->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		p_neighbor_roam_config =
+				&pmac->roam.configParam.neighborRoamConfig;
+		p_neighbor_roam_info = &pmac->
+				roam.neighborRoamInfo[session_id];
+		sme_debug("LFR:set neighbor scan min period, old:%d, "
+				"new: %d, state: %s",
+				pmac->roam.configParam.neighborRoamConfig.
+				neighbor_scan_min_timer_period,
+				neighbor_scan_min_period,
+				mac_trace_get_neighbour_roam_state(pmac->roam.
+				neighborRoamInfo[session_id].
+				neighborRoamState));
+		p_neighbor_roam_config->neighbor_scan_min_timer_period =
+				neighbor_scan_min_period;
+		p_neighbor_roam_info->cfgParams.neighbor_scan_min_period =
+				neighbor_scan_min_period;
+		sme_release_global_lock(&pmac->sme);
+	}
+
+	return status;
+}
 
 /**
  * sme_get_roam_rssi_diff() - get Roam rssi diff
@@ -18147,6 +18210,12 @@ QDF_STATUS sme_congestion_register_callback(tHalHandle hal,
 	return status;
 }
 
+QDF_STATUS sme_set_smps_cfg(uint32_t vdev_id, uint32_t param_id,
+						uint32_t param_val)
+{
+	return wma_configure_smps_params(vdev_id, param_id, param_val);
+}
+
 QDF_STATUS sme_ipa_uc_stat_request(tHalHandle hal, uint32_t vdev_id,
 			uint32_t param_id, uint32_t param_val, uint32_t req_cat)
 {
@@ -18216,4 +18285,18 @@ QDF_STATUS sme_send_limit_off_chan_cmd(tHalHandle hal,
 		return QDF_STATUS_E_NOMEM;
 	}
 	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * sme_set_bmiss_bcnt() - set bmiss config parameters
+ * @vdev_id: virtual device for the command
+ * @first_cnt: bmiss first value
+ * @final_cnt: bmiss final value
+ *
+ * Return: QDF_STATUS_SUCCESS or non-zero on failure
+ */
+QDF_STATUS sme_set_bmiss_bcnt(uint32_t vdev_id, uint32_t first_cnt,
+		uint32_t final_cnt)
+{
+	return wma_config_bmiss_bcnt_params(vdev_id, first_cnt, final_cnt);
 }

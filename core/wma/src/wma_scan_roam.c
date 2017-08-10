@@ -609,7 +609,9 @@ QDF_STATUS wma_start_scan(tp_wma_handle wma_handle,
 	WMA_LOGD("ActiveDwell %d, PassiveDwell %d, ScanFlags 0x%x NumChan %d",
 		 cmd.dwell_time_active, cmd.dwell_time_passive,
 		 cmd.scan_ctrl_flags, cmd.num_chan);
-	WMA_LOGD("ScanFlagsExt 0x%x", cmd.scan_ctrl_flags_ext);
+	WMA_LOGD("ScanFlagsExt 0x%x, dwellmode:%d",
+			cmd.scan_ctrl_flags_ext,
+			WMI_SCAN_GET_DWELL_MODE(cmd.scan_ctrl_flags));
 
 	/* Call the wmi api to request the scan */
 	qdf_status = wmi_unified_scan_start_cmd_send(wma_handle->wmi_handle,
@@ -790,6 +792,50 @@ QDF_STATUS wma_update_channel_list(WMA_HANDLE handle,
 }
 
 /**
+ * wma_roam_scan_mawc_params() - send roam scan mode request to fw
+ * @wma_handle: wma handle
+ * @roam_req: roam request param
+ *
+ * Fill the MAWC roaming parameters and send
+ * WMI_ROAM_CONFIGURE_MAWC_CMDID TLV to firmware.
+ *
+ * Return: QDF status
+ */
+QDF_STATUS wma_roam_scan_mawc_params(tp_wma_handle wma_handle,
+		tSirRoamOffloadScanReq *roam_req)
+{
+	struct wmi_mawc_roam_params *params;
+	QDF_STATUS status;
+
+	if (!roam_req) {
+		WMA_LOGE("No MAWC parameters to send");
+		return QDF_STATUS_E_INVAL;
+	}
+	params = qdf_mem_malloc(sizeof(*params));
+	if (!params) {
+		WMA_LOGE("No memory allocated for MAWC roam params");
+		return QDF_STATUS_E_NOMEM;
+	}
+	params->vdev_id = roam_req->sessionId;
+	params->enable = roam_req->mawc_roam_params.mawc_enabled &&
+		roam_req->mawc_roam_params.mawc_roam_enabled;
+	params->traffic_load_threshold =
+		roam_req->mawc_roam_params.mawc_roam_traffic_threshold;
+	params->best_ap_rssi_threshold =
+		roam_req->mawc_roam_params.mawc_roam_ap_rssi_threshold -
+		WMA_NOISE_FLOOR_DBM_DEFAULT;
+	params->rssi_stationary_high_adjust =
+		roam_req->mawc_roam_params.mawc_roam_rssi_high_adjust;
+	params->rssi_stationary_low_adjust =
+		roam_req->mawc_roam_params.mawc_roam_rssi_low_adjust;
+	status = wmi_unified_roam_mawc_params_cmd(
+			wma_handle->wmi_handle, params);
+	qdf_mem_free(params);
+
+	return status;
+}
+
+/**
  * wma_roam_scan_offload_mode() - send roam scan mode request to fw
  * @wma_handle: wma handle
  * @scan_cmd_fp: start scan command ptr
@@ -918,7 +964,9 @@ QDF_STATUS wma_roam_scan_offload_rssi_thresh(tp_wma_handle wma_handle,
 	params.traffic_threshold =
 			roam_params->traffic_threshold;
 	params.initial_dense_status = roam_params->initial_dense_status;
-
+	params.bg_scan_bad_rssi_thresh = roam_params->bg_scan_bad_rssi_thresh -
+		WMA_NOISE_FLOOR_DBM_DEFAULT;
+	params.bg_scan_client_bitmap = roam_params->bg_scan_client_bitmap;
 
 	/*
 	 * The current Noise floor in firmware is -96dBm. Penalty/Boost
@@ -973,8 +1021,10 @@ QDF_STATUS wma_roam_scan_offload_rssi_thresh(tp_wma_handle wma_handle,
 
 	status = wmi_unified_roam_scan_offload_rssi_thresh_cmd(
 			wma_handle->wmi_handle, &params);
-	if (QDF_IS_STATUS_ERROR(status))
+	if (QDF_IS_STATUS_ERROR(status)) {
+		WMA_LOGE("roam_scan_offload_rssi_thresh_cmd failed %d", status);
 		return status;
+	}
 
 	WMA_LOGD(FL("roam_scan_rssi_thresh=%d, roam_rssi_thresh_diff=%d"),
 		rssi_thresh, rssi_thresh_diff);
@@ -987,6 +1037,9 @@ QDF_STATUS wma_roam_scan_offload_rssi_thresh(tp_wma_handle wma_handle,
 			roam_params->dense_min_aps_cnt,
 			roam_params->traffic_threshold,
 			roam_params->initial_dense_status);
+	WMA_LOGD(FL("BG Scan Bad RSSI:%d, bitmap:0x%x"),
+			roam_params->bg_scan_bad_rssi_thresh,
+			roam_params->bg_scan_client_bitmap);
 	return status;
 }
 
@@ -1435,9 +1488,12 @@ void wma_roam_scan_fill_scan_params(tp_wma_handle wma_handle,
 			 __func__,
 			 roam_req->NeighborScanChannelMinTime,
 			 roam_req->NeighborScanChannelMaxTime);
-		WMA_LOGD("%s: NeighborScanTimerPeriod: %d HomeAwayTime: %d nProbes: %d",
+		WMA_LOGD("%s: NeighborScanTimerPeriod: %d "
+			 "neighbor_scan_min_timer_period %d "
+			 "HomeAwayTime: %d nProbes: %d",
 			 __func__,
 			 roam_req->NeighborScanTimerPeriod,
+			 roam_req->neighbor_scan_min_timer_period,
 			 roam_req->HomeAwayTime, roam_req->nProbes);
 
 		/*
@@ -1513,7 +1569,8 @@ void wma_roam_scan_fill_scan_params(tp_wma_handle wma_handle,
 				QDF_MAX(scan_params->burst_duration,
 					scan_params->dwell_time_passive);
 		}
-		scan_params->min_rest_time = roam_req->NeighborScanTimerPeriod;
+		scan_params->min_rest_time =
+			roam_req->neighbor_scan_min_timer_period;
 		scan_params->max_rest_time = roam_req->NeighborScanTimerPeriod;
 		scan_params->repeat_probe_time = (roam_req->nProbes > 0) ?
 				 QDF_MAX(scan_params->dwell_time_active /
@@ -1615,7 +1672,7 @@ static QDF_STATUS wma_roam_scan_filter(tp_wma_handle wma_handle,
 	int i;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	uint32_t num_bssid_black_list = 0, num_ssid_white_list = 0,
-	   num_bssid_preferred_list = 0;
+	   num_bssid_preferred_list = 0,  num_rssi_rejection_ap = 0;
 	uint32_t op_bitmap = 0;
 	struct roam_ext_params *roam_params;
 	struct roam_scan_filter_params *params;
@@ -1649,7 +1706,10 @@ static QDF_STATUS wma_roam_scan_filter(tp_wma_handle wma_handle,
 		case REASON_CTX_INIT:
 			if (roam_req->Command == ROAM_SCAN_OFFLOAD_START) {
 				params->lca_disallow_config_present = true;
-				op_bitmap |= ROAM_FILTER_OP_BITMAP_LCA_DISALLOW;
+				op_bitmap |= ROAM_FILTER_OP_BITMAP_LCA_DISALLOW |
+					ROAM_FILTER_OP_BITMAP_RSSI_REJECTION_OCE;
+				num_rssi_rejection_ap =
+					roam_params->num_rssi_rejection_ap;
 			} else {
 				WMA_LOGD("%s : Roam Filter need not be sent", __func__);
 				qdf_mem_free(params);
@@ -1677,6 +1737,7 @@ static QDF_STATUS wma_roam_scan_filter(tp_wma_handle wma_handle,
 	params->num_bssid_black_list = num_bssid_black_list;
 	params->num_ssid_white_list = num_ssid_white_list;
 	params->num_bssid_preferred_list = num_bssid_preferred_list;
+	params->num_rssi_rejection_ap = num_rssi_rejection_ap;
 	qdf_mem_copy(params->bssid_avoid_list, roam_params->bssid_avoid_list,
 			MAX_BSSID_AVOID_LIST * sizeof(struct qdf_mac_addr));
 
@@ -1696,7 +1757,10 @@ static QDF_STATUS wma_roam_scan_filter(tp_wma_handle wma_handle,
 			MAX_BSSID_FAVORED * sizeof(struct qdf_mac_addr));
 	qdf_mem_copy(params->bssid_favored_factor,
 			roam_params->bssid_favored_factor, MAX_BSSID_FAVORED);
-
+	qdf_mem_copy(params->rssi_rejection_ap,
+		roam_params->rssi_rejection_ap,
+		MAX_RSSI_AVOID_BSSID_LIST *
+		sizeof(struct rssi_disallow_bssid));
 	if (params->lca_disallow_config_present) {
 		params->disallow_duration
 				= lca_config_params->disallow_duration;
@@ -1802,8 +1866,8 @@ QDF_STATUS wma_process_roaming_config(tp_wma_handle wma_handle,
 		qdf_mem_free(roam_req);
 		return QDF_STATUS_E_PERM;
 	}
-	WMA_LOGD("%s: roaming in progress set to false for vdev %d",
-			__func__, roam_req->sessionId);
+	WMA_LOGD("%s: RSO Command:%d, reason:%d",
+			__func__, roam_req->Command, roam_req->reason);
 	wma_handle->interfaces[roam_req->sessionId].roaming_in_progress = false;
 	switch (roam_req->Command) {
 	case ROAM_SCAN_OFFLOAD_START:
@@ -1895,6 +1959,11 @@ QDF_STATUS wma_process_roaming_config(tp_wma_handle wma_handle,
 						   roam_req->sessionId);
 		if (qdf_status != QDF_STATUS_SUCCESS)
 			break;
+		qdf_status = wma_roam_scan_mawc_params(wma_handle, roam_req);
+		if (qdf_status != QDF_STATUS_SUCCESS) {
+			WMA_LOGE("Sending roaming MAWC params failed");
+			break;
+		}
 		qdf_status = wma_roam_scan_filter(wma_handle, roam_req);
 		if (qdf_status != QDF_STATUS_SUCCESS) {
 			WMA_LOGE("Sending start for roam scan filter failed");
@@ -2460,7 +2529,7 @@ int wma_roam_synch_event_handler(void *handle, uint8_t *event,
 				__func__);
 		goto cleanup_label;
 	}
-	WMA_LOGE("LFR3: Received WMA_ROAM_OFFLOAD_SYNCH_IND");
+	WMA_LOGI("LFR3: Received WMA_ROAM_OFFLOAD_SYNCH_IND");
 
 	cds_host_diag_log_work(&wma->roam_ho_wl,
 			       WMA_ROAM_HO_WAKE_LOCK_DURATION,
@@ -2913,7 +2982,7 @@ void wma_process_roam_synch_complete(WMA_HANDLE handle, uint8_t vdev_id)
 	wma_peer_debug_log(vdev_id, DEBUG_ROAM_SYNCH_CNF,
 			   DEBUG_INVALID_PEER_ID, NULL, NULL, 0, 0);
 
-	WMA_LOGE("LFR3: Posting WMA_ROAM_OFFLOAD_SYNCH_CNF");
+	WMA_LOGI("LFR3: Posting WMA_ROAM_OFFLOAD_SYNCH_CNF");
 }
 #endif /* WLAN_FEATURE_ROAM_OFFLOAD */
 
@@ -3226,6 +3295,7 @@ void wma_set_pno_channel_prediction(uint8_t *buf_ptr,
 QDF_STATUS wma_pno_start(tp_wma_handle wma, tpSirPNOScanReq pno)
 {
 	struct pno_scan_req_params *params;
+	struct nlo_mawc_params *mawc_params = NULL;
 	uint32_t i;
 	uint32_t num_channels;
 	uint32_t *channel_list = NULL;
@@ -3328,12 +3398,30 @@ QDF_STATUS wma_pno_start(tp_wma_handle wma, tpSirPNOScanReq pno)
 		WMA_LOGD("PNO start request sent successfully for vdev %d",
 			 pno->sessionId);
 	}
+	mawc_params = qdf_mem_malloc(sizeof(*mawc_params));
+	if (mawc_params == NULL) {
+		WMA_LOGE("%s : MAWC Memory allocation failed", __func__);
+		status = QDF_STATUS_E_NOMEM;
+		goto exit_pno_start;
+	}
+	mawc_params->vdev_id = pno->sessionId;
+	mawc_params->enable = pno->mawc_params.mawc_nlo_enabled;
+	mawc_params->exp_backoff_ratio = pno->mawc_params.exp_backoff_ratio;
+	mawc_params->init_scan_interval = pno->mawc_params.init_scan_interval;
+	mawc_params->max_scan_interval = pno->mawc_params.max_scan_interval;
+	status = wmi_unified_nlo_mawc_cmd(wma->wmi_handle, mawc_params);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		WMA_LOGD("Failed to send NLO MAWC cmd for vdev %d",
+			 pno->sessionId);
+	}
 
 exit_pno_start:
 	if (channel_list)
 		qdf_mem_free(channel_list);
 	if (params)
 		qdf_mem_free(params);
+	if (mawc_params)
+		qdf_mem_free(mawc_params);
 	return status;
 }
 
