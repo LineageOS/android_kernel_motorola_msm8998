@@ -17,11 +17,14 @@ LCL_ARCHARG := ARCH=$(TARGET_ARCH)
 LCL_FLAGARG := EXTRA_CFLAGS+=-fno-pic
 LCL_ARGS := $(LCL_KDIRARG) $(LCL_ARCHARG) $(LCL_FLAGARG)
 
+#Create vendor/lib/modules directory if it doesn't exist
+$(shell mkdir -p $(TARGET_OUT_VENDOR)/lib/modules)
+
 build-local: $(ACP) $(INSTALLED_KERNEL_TARGET)
 	$(MAKE) clean -C $(LCL_SRC_PATH)
 	$(MAKE) -j$(MAKE_JOBS) -C $(LCL_SRC_PATH) CROSS_COMPILE=$(LCL_KERNEL_TOOLS_PREFIX) $(LCL_ARGS)
 	ko=`find $(LCL_SRC_PATH) -type f -name "*.ko"`;\
 	for i in $$ko;\
 	do $(LCL_KERNEL_TOOLS_PREFIX)strip --strip-unneeded $$i;\
-	$(ACP) -fp $$i $(TARGET_OUT)/lib/modules/;\
+	$(ACP) -fp $$i $(TARGET_OUT_VENDOR)/lib/modules/;\
 	done
