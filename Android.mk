@@ -26,5 +26,5 @@ build-greybus: $(ACP) $(INSTALLED_KERNEL_TARGET)
 	ko=`find $(GB_SRC_PATH) -type f -name "*.ko"`;\
 	for i in $$ko;\
 	do $(GB_KERNEL_TOOLS_PREFIX)strip --strip-unneeded $$i;\
-	$(ACP) -fp $$i $(TARGET_OUT)/lib/modules/;\
+	$(ACP) -fp $$i $(TARGET_OUT_VENDOR)/lib/modules/;\
 	done
