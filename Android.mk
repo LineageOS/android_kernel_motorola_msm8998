@@ -20,6 +20,9 @@ GB_ARCHARG := ARCH=$(TARGET_ARCH)
 GB_FLAGARG := EXTRA_CFLAGS+=-fno-pic
 GB_ARGS := $(GB_KDIRARG) $(GB_ARCHARG) $(GB_FLAGARG)
 
+#Create vendor/lib/modules directory if it doesn't exist
+$(shell mkdir -p $(TARGET_OUT_VENDOR)/lib/modules)
+
 build-greybus: $(ACP) $(INSTALLED_KERNEL_TARGET)
 	$(MAKE) clean -C $(GB_SRC_PATH)
 	$(MAKE) -j$(MAKE_JOBS) -C $(GB_SRC_PATH) CROSS_COMPILE=$(GB_KERNEL_TOOLS_PREFIX) $(GB_ARGS)
