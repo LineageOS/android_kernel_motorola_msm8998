@@ -11316,10 +11316,6 @@ static inline int _nohz_kick_needed(struct rq *rq, int cpu, int *type)
 	    (!energy_aware() || cpu_overutilized(cpu)))
 	    	return true;
 
-	/* Do idle load balance if there have misfit task */
-	if (energy_aware() && rq->misfit_task)
-		return true;
-
 	return (rq->nr_running >= 2);
 }
 
