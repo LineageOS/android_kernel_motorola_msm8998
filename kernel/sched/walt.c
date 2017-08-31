@@ -199,6 +199,7 @@ update_window_start(struct rq *rq, u64 wallclock)
 
 	nr_windows = div64_u64(delta, walt_ravg_window);
 	rq->window_start += (u64)nr_windows * (u64)walt_ravg_window;
+	cpufreq_update_util(rq, 0);
 }
 
 static u64 scale_exec_time(u64 delta, struct rq *rq)
