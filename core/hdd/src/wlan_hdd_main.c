@@ -1498,6 +1498,8 @@ void hdd_update_tgt_cfg(void *context, void *param)
 	temp_band_cap = hdd_ctx->config->nBandCapability;
 
 	hdd_ctx->config->nBandCapability = cfg->band_cap;
+	hdd_ctx->config->is_fils_roaming_supported =
+			cfg->services.is_fils_roaming_supported;
 
 	/* now overwrite the target band capability with INI
 	 * setting if INI setting is a subset
@@ -4640,11 +4642,7 @@ static void hdd_connect_done(struct net_device *dev, const u8 *bssid,
 					 roam_fils_params->fils_pmk_len,
 					 roam_fils_params->fils_pmkid,
 					 roam_info->fils_seq_num);
-		wlan_hdd_save_gtk_offload_params(adapter, NULL,
-					roam_fils_params->kek,
-					roam_fils_params->kek_len,
-					roam_info->replay_ctr,
-					true, GTK_OFFLOAD_ENABLE);
+		hdd_save_gtk_params(adapter, roam_info, false);
 	}
 	hdd_debug("FILS indicate connect status %d seq no %d",
 		  fils_params.status,
