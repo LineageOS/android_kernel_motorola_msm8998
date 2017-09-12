@@ -23,11 +23,17 @@ GB_ARGS := $(GB_KDIRARG) $(GB_ARCHARG) $(GB_FLAGARG)
 #Create vendor/lib/modules directory if it doesn't exist
 $(shell mkdir -p $(TARGET_OUT_VENDOR)/lib/modules)
 
+ifeq ($(GREYBUS_DRIVER_INSTALL_TO_KERNEL_OUT),true)
+GB_MODULES_OUT := $(KERNEL_MODULES_OUT)
+else
+GB_MODULES_OUT := $(TARGET_OUT_VENDOR)/lib/modules/
+endif
+
 build-greybus: $(ACP) $(INSTALLED_KERNEL_TARGET)
 	$(MAKE) clean -C $(GB_SRC_PATH)
 	$(MAKE) -j$(MAKE_JOBS) -C $(GB_SRC_PATH) CROSS_COMPILE=$(GB_KERNEL_TOOLS_PREFIX) $(GB_ARGS)
 	ko=`find $(GB_SRC_PATH) -type f -name "*.ko"`;\
 	for i in $$ko;\
 	do $(GB_KERNEL_TOOLS_PREFIX)strip --strip-unneeded $$i;\
-	$(ACP) -fp $$i $(TARGET_OUT_VENDOR)/lib/modules/;\
+	$(ACP) -fp $$i $(GB_MODULES_OUT);\
 	done
