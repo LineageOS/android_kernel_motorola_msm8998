@@ -669,6 +669,42 @@ int wlan_hdd_validate_context(hdd_context_t *hdd_ctx)
 	return 0;
 }
 
+int hdd_validate_adapter(hdd_adapter_t *adapter)
+{
+	if (!adapter) {
+		hdd_err("adapter is null");
+		return -EINVAL;
+	}
+
+	if (adapter->magic != WLAN_HDD_ADAPTER_MAGIC) {
+		hdd_err("bad adapter magic: 0x%x (should be 0x%x)",
+		adapter->magic, WLAN_HDD_ADAPTER_MAGIC);
+		return -EINVAL;
+	}
+
+	if (!adapter->dev) {
+		hdd_err("adapter net_device is null");
+		return -EINVAL;
+	}
+
+	if (!(adapter->dev->flags & IFF_UP)) {
+		hdd_info("adapter net_device is not up");
+		return -EAGAIN;
+	}
+
+	if (adapter->sessionId == HDD_SESSION_ID_INVALID) {
+		hdd_info("adapter session is not open");
+		return -EAGAIN;
+	}
+
+	if (adapter->sessionId >= MAX_NUMBER_OF_ADAPTERS) {
+		hdd_err("bad adapter session Id: %u", adapter->sessionId);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /**
  * wlan_hdd_modules_are_enabled() - Check modules status
  * @hdd_ctx: HDD context pointer
@@ -2520,6 +2556,10 @@ static void __hdd_set_multicast_list(struct net_device *dev)
 
 	status = wlan_hdd_validate_context(hdd_ctx);
 	if (0 != status)
+		return;
+
+	status = hdd_validate_adapter(adapter);
+	if (status)
 		return;
 
 	if (!hdd_ctx->config->fEnableMCAddrList) {
@@ -5744,8 +5784,6 @@ static void hdd_wlan_exit(hdd_context_t *hdd_ctx)
 		hdd_abort_sched_scan_all_adapters(hdd_ctx);
 		hdd_stop_all_adapters(hdd_ctx);
 	}
-
-	wlan_destroy_bug_report_lock();
 
 	/*
 	 * Close the scheduler before calling cds_close to make sure
@@ -9673,8 +9711,6 @@ int hdd_wlan_startup(struct device *dev)
 		goto err_exit_nl_srv;
 	}
 
-	wlan_init_bug_report_lock();
-
 	wlan_hdd_update_wiphy(hdd_ctx);
 
 	hdd_ctx->hHal = cds_get_context(QDF_MODULE_ID_SME);
@@ -10896,6 +10932,9 @@ int hdd_init(void)
 	int ret = 0;
 
 	p_cds_context = cds_init();
+
+	wlan_init_bug_report_lock();
+
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	wlan_logging_sock_init_svc();
 #endif
@@ -10923,11 +10962,13 @@ err_out:
 void hdd_deinit(void)
 {
 	hdd_deinit_wowl();
-	cds_deinit();
 
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	wlan_logging_sock_deinit_svc();
 #endif
+
+	wlan_destroy_bug_report_lock();
+	cds_deinit();
 }
 
 #define HDD_WLAN_START_WAIT_TIME (CDS_WMA_TIMEOUT + 5000)
