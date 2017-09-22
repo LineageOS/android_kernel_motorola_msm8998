@@ -2986,32 +2986,43 @@ static __iw_softap_setparam(struct net_device *dev,
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
 	tHalHandle hHal;
 	//BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic
-    int *value;
-    int sub_cmd;
-    int set_value;
-    int *tmp = (int *) extra;
-    //END IKDREL3KK-11113
+	int *value;
+	uint8_t *mot_value; //MOT a19110 IKLOCSEN-3014 Use copy from user
+	int sub_cmd;
+	int set_value;
+	int *tmp = (int *) extra;
+	//END IKDREL3KK-11113
 	QDF_STATUS status;
 	int ret = 0;
 	hdd_context_t *hdd_ctx;
 
 	ENTER_DEV(dev);
 
-    //BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic to 8998
-    if (tmp[0] < 0 || tmp[0] > QCASAP_SET_PHYMODE) {
-        value = (int *)(wrqu->data.pointer);
-    } else {
-        value = (int *)extra;
-    }
+	//BEGIN MOT a19110 IKDREL3KK-11113 Fix iwpriv panic to 8998
+	//BEGIN MOT a19110 IKLOCSEN-3014 use copy_from_user to avoid junk value
+	if (tmp[0] < 0 || tmp[0] > QCSAP_ENABLE_RTS_BURSTING) {
+		mot_value = (uint8_t *)kmalloc(wrqu->data.length+1, GFP_KERNEL);
+		if(copy_from_user((uint8_t *) mot_value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+			hdd_err("%s -- copy_from_user --data pointer failed! bailing",
+				__func__);
+		kfree(mot_value);
+		return -EFAULT;
+		}
+		sub_cmd = (int )(*(mot_value + 0));
+		set_value = (int )(*(mot_value + 1));
+		kfree(mot_value);
+	} else {
+		value = (int *)extra;
+		sub_cmd = value[0];
+		set_value = value[1];
+	}
+	//END IKLOCSEN-3014
 
-    sub_cmd = value[0];
-    set_value = value[1];
-
-    if (!pHostapdAdapter || !pHostapdAdapter->pHddCtx) {
+	if (!pHostapdAdapter || !pHostapdAdapter->pHddCtx) {
 		hdd_err("Either hostpad adapter is null or Hal ctx is null");
 		return -EINVAL;
-    }
-    //END IKDREL3KK-11113
+	}
+	//END IKDREL3KK-11113
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
@@ -3979,7 +3990,7 @@ int __iw_softap_modify_acl(struct net_device *dev,
 			   union iwreq_data *wrqu, char *extra)
 {
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
-	uint8_t *value = (uint8_t *)(wrqu->data.pointer);
+	uint8_t *value = (uint8_t *) kmalloc(wrqu->data.length+1, GFP_KERNEL); //MOT IKLOCSEN-3014
 	uint8_t pPeerStaMac[QDF_MAC_ADDR_SIZE];
 	int listType, cmd, i;
 	int ret;
@@ -3990,8 +4001,19 @@ int __iw_softap_modify_acl(struct net_device *dev,
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
-	if (0 != ret)
+	if (0 != ret) {
+		kfree(value); //MOT IKLOCSEN-3014
 		return ret;
+	}
+
+	//BEGIN MOT a19110 IKLOCSEN-3014 use copy_from_user to avoid junk value
+        if(copy_from_user((uint8_t *) value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+            hdd_err("%s -- copy_from_user --data pointer failed! bailing",
+                  __func__);
+            kfree(value);
+            return -EFAULT;
+        }
+	//END IKLOCSEN-3014
 
 	for (i = 0; i < QDF_MAC_ADDR_SIZE; i++)
 		pPeerStaMac[i] = *(value + i);
@@ -3999,6 +4021,7 @@ int __iw_softap_modify_acl(struct net_device *dev,
 	listType = (int)(*(value + i));
 	i++;
 	cmd = (int)(*(value + i));
+	kfree(value);//MOT IKLOCSEN-3014
 
 	hdd_debug("Modify ACL mac:" MAC_ADDRESS_STR " type: %d cmd: %d",
 	       MAC_ADDR_ARRAY(pPeerStaMac), listType, cmd);
@@ -4322,7 +4345,7 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 {
 	hdd_adapter_t *pHostapdAdapter = (netdev_priv(dev));
 	hdd_context_t *hdd_ctx;
-	uint8_t *peerMacAddr;
+	uint8_t *peerMacAddr = (uint8_t *)kmalloc(wrqu->data.length+1, GFP_KERNEL); //MOT IKLOCSEN-3014
 	int ret;
 	struct tagCsrDelStaParams del_sta_params;
 
@@ -4330,18 +4353,28 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 
 	if (!capable(CAP_NET_ADMIN)) {
 		hdd_err("permission check failed");
+		kfree(peerMacAddr); //MOT IKLOCSEN-3014
 		return -EPERM;
 	}
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
-	if (0 != ret)
+	if (0 != ret) {
+		kfree(peerMacAddr); //MOT IKLOCSEN-3014
 		return ret;
+	}
 
 	/* iwpriv tool or framework calls this ioctl with
 	 * data passed in extra (less than 16 octets);
 	 */
-	peerMacAddr = (uint8_t *) (wrqu->data.pointer);
+	//BEGIN MOT a19110 IKLOCSEN-3014 use copy_from_user to avoid junk value
+        if(copy_from_user((uint8_t *) peerMacAddr, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+            hdd_err("%s -- copy_from_user --data pointer failed! bailing",
+                  __func__);
+            kfree(peerMacAddr);
+            return -EFAULT;
+        }
+	//END IKLOCSEN-3014
 
 	hdd_debug("data " MAC_ADDRESS_STR,
 	       MAC_ADDR_ARRAY(peerMacAddr));
@@ -4350,6 +4383,7 @@ static __iw_softap_disassoc_sta(struct net_device *dev,
 			(SIR_MAC_MGMT_DISASSOC >> 4),
 			&del_sta_params);
 	hdd_softap_sta_disassoc(pHostapdAdapter, &del_sta_params);
+	kfree(peerMacAddr); //MOT IKLOCSEN-3014
 	EXIT();
 	return 0;
 }
