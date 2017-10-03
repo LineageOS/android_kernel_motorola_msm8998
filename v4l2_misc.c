@@ -206,14 +206,21 @@ static ssize_t misc_dev_read(struct file *filp, char __user *ubuf,
 	    target_cmd->cmd == VIDIOC_S_EXT_CTRLS) {
 		struct v4l2_ext_controls *ctrls = target_cmd->data;
 		if (g_data->compat) {
-			ret =v4l2_hal_put_ext_controls32(ctrls,
-							 misc_cmd->data,
-							 target_cmd->priv);
+			unsigned int cmd;
+			ret = v4l2_hal_put_ext_controls32(ctrls,
+							  misc_cmd->data,
+							  target_cmd->priv);
 
 			if (target_cmd->cmd == VIDIOC_G_EXT_CTRLS)
-				misc_cmd->cmd = VIDIOC_G_EXT_CTRLS32;
+				cmd = VIDIOC_G_EXT_CTRLS32;
 			else
-				misc_cmd->cmd = VIDIOC_S_EXT_CTRLS32;
+				cmd = VIDIOC_S_EXT_CTRLS32;
+
+			if (copy_to_user((void __user *)&misc_cmd->cmd, &cmd,
+					 sizeof(cmd))) {
+				pr_err("%s: failed to copy cmd to user\n", __func__);
+				goto errout;
+			}
 		} else
 			ret =v4l2_hal_put_ext_controls(ctrls,
 						       misc_cmd->data,
