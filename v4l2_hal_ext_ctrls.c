@@ -249,7 +249,7 @@ int v4l2_hal_get_ext_controls32(struct v4l2_ext_controls *kp,
 		if (v4l2_hal_get_ext_control32(kcontrols, ucontrols))
 			return -EFAULT;
 
-		if (ucontrols->size) {
+		if (kcontrols->size) {
 			void __user *s;
 
 			if (!ptr)
@@ -259,10 +259,10 @@ int v4l2_hal_get_ext_controls32(struct v4l2_ext_controls *kp,
 				return -EFAULT;
 
 			s = compat_ptr(p);
-			if (copy_from_user(ptr, s, ucontrols->size))
+			if (copy_from_user(ptr, s, kcontrols->size))
 				return -EFAULT;
 
-			ptr += ucontrols->size;
+			ptr += kcontrols->size;
 		}
 		ucontrols++;
 		kcontrols++;
@@ -427,15 +427,15 @@ int v4l2_hal_get_ext_controls(struct v4l2_ext_controls *kp,
 		if (v4l2_hal_get_ext_control(kcontrols, ucontrols))
 			return -EFAULT;
 
-		if (ucontrols->size) {
+		if (kcontrols->size) {
 			if (!ptr)
 				return -EFAULT;
 
 			if (copy_from_user(ptr, ucontrols->ptr,
-					   ucontrols->size))
+					   kcontrols->size))
 				return -EFAULT;
 
-			ptr += ucontrols->size;
+			ptr += kcontrols->size;
 		}
 		ucontrols++;
 		kcontrols++;
