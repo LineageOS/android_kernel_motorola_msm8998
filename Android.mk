@@ -46,6 +46,13 @@ KBUILD_OPTIONS += MODNAME=wlan
 KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
 KBUILD_OPTIONS += $(WLAN_SELECT)
 
+# IBIS sometimes cannot scan channel one AP,
+# IBIS use epa for NA version and ipa for other version, this issue can be reproduced
+# on NA version because of epa issue.
+ifneq ($(filter payton%,$(TARGET_PRODUCT)),)
+KBUILD_OPTIONS += CONFIG_WLAN_CHANNEL_ONE_SCAN=y
+endif
+
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(WLAN_CHIPSET)_wlan.ko
 LOCAL_MODULE_KBUILD_NAME  := wlan.ko
