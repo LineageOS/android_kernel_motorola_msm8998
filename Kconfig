@@ -139,4 +139,9 @@ config CONFIG_BUILD_TIMESTAMP
 config WLAN_FEATURE_SARV1_TO_SARV2
 	bool "Enable conversion of SAR v1 to v2 feature"
 	default n
+
+config WLAN_CHANNEL_ONE_SCAN
+	bool "Enable Wlan scan channel 1 twice"
+	default n
+
 endif # QCA_CLD_WLAN
