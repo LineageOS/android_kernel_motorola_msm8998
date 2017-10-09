@@ -139,4 +139,9 @@ config ICMP_DISABLE_PS
 config CONFIG_BUILD_TIMESTAMP
 	bool "Embed timestamp in wlan version"
 	default n
+
+config WLAN_CHANNEL_ONE_SCAN
+	bool "Enable Wlan scan channel 1 twice"
+	default n
+
 endif # QCA_CLD_WLAN

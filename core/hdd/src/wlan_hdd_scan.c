@@ -2157,8 +2157,13 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 	}
 
 	if (request->n_channels) {
+/*WLAN_FEATURE_CHANNEL_ONE: only use for payton to solve scan issue caused by epa on NA version,*/
+#ifdef WLAN_FEATURE_CHANNEL_ONE
+		char chList[((request->n_channels + 1)* 5) + 1];
+#else
 		char chList[(request->n_channels * 5) + 1];
-		int len;
+#endif
+		int len=0;
 
 		channelList = qdf_mem_malloc(request->n_channels);
 		if (NULL == channelList) {
@@ -2166,7 +2171,13 @@ static int __wlan_hdd_cfg80211_scan(struct wiphy *wiphy,
 			status = -ENOMEM;
 			goto free_mem;
 		}
+#ifdef WLAN_FEATURE_CHANNEL_ONE
+		channelList[num_chan++] = request->channels[0]->hw_value;
+		len += snprintf(chList + len, 5, "%d ", channelList[0]);
+		for(i = 0; i < request->n_channels; i++) {
+#else
 		for (i = 0, len = 0; i < request->n_channels; i++) {
+#endif
 			if (cds_is_dsrc_channel(cds_chan_to_freq(
 			    request->channels[i]->hw_value)))
 				continue;

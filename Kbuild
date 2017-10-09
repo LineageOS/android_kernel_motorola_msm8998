@@ -1,5 +1,6 @@
 # We can build either as part of a standalone Kernel build or as
 # an external module.  Determine which mechanism is being used
+
 ifeq ($(MODNAME),)
 	KERNEL_BUILD := 1
 else
@@ -1299,6 +1300,12 @@ endif
 
 ifeq ($(CONFIG_QCACLD_WLAN_LFR3),y)
 CDEFINES += -DWLAN_FEATURE_ROAM_OFFLOAD
+endif
+
+# This is a workaround only used for payton epa version
+# To solve channel one scan issue
+ifeq ($(CONFIG_WLAN_CHANNEL_ONE_SCAN),y)
+CDEFINES += -DWLAN_FEATURE_CHANNEL_ONE
 endif
 
 ifeq ($(CONFIG_CNSS_GENL), y)
