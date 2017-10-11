@@ -417,7 +417,9 @@ int v4l2_hal_get_ext_controls(struct v4l2_ext_controls *kp,
 		return 0;
 	}
 
-	ucontrols = up->controls;
+	if (get_user(ucontrols, &up->controls))
+		return -EFAULT;
+
 	if (!access_ok(VERIFY_READ, ucontrols,
 		       n * sizeof(struct v4l2_ext_control)))
 		return -EFAULT;
