@@ -915,7 +915,9 @@ QDF_STATUS wlansap_start_bss(void *pCtx,     /* pwextCtx */
 		pSapCtx->sessionId;
 	pmac->sap.SapDfsInfo.dfs_beacon_tx_enhanced =
 		pConfig->dfs_beacon_tx_enhanced;
-
+//BEGIN MOT a19110 IKSWO-8490 Comment out initialisation of
+//acl list. We use driver ioctl to set it
+#if 0
 	/* Copy MAC filtering settings to sap context */
 	pSapCtx->eSapMacAddrAclMode = pConfig->SapMacaddr_acl;
 	qdf_mem_copy(pSapCtx->acceptMacList, pConfig->accept_mac,
@@ -926,7 +928,10 @@ QDF_STATUS wlansap_start_bss(void *pCtx,     /* pwextCtx */
 		     sizeof(pConfig->deny_mac));
 	pSapCtx->nDenyMac = pConfig->num_deny_mac;
 	sap_sort_mac_list(pSapCtx->denyMacList, pSapCtx->nDenyMac);
-	/* Fill in the event structure for FSM */
+#endif
+//END IKSWO-8490
+
+/* Fill in the event structure for FSM */
 	sapEvent.event = eSAP_HDD_START_INFRA_BSS;
 	sapEvent.params = 0;    /* pSapPhysLinkCreate */
 
