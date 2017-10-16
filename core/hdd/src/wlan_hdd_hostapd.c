@@ -4099,7 +4099,7 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 	hdd_context_t *hdd_ctx;
 	tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pHostapdAdapter);
 	//int *value = (int *)extra;
-	int *value = (int *)(wrqu->data.pointer);
+	uint8_t *mot_value;
 	int set_value;
 	int ret;
 	struct qdf_mac_addr bssid = QDF_MAC_ADDR_BROADCAST_INITIALIZER;
@@ -4107,8 +4107,19 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 
 	ENTER_DEV(dev);
 
-	if (NULL == value)
+	mot_value = (uint8_t*)kmalloc(wrqu->data.length+1, GFP_KERNEL);
+
+	if (NULL == mot_value)
 		return -ENOMEM;
+
+	if(copy_from_user((uint8_t *)mot_value, (uint8_t *)(wrqu->data.pointer), wrqu->data.length)) {
+		hdd_err("%s -- copy from user -- data pointer failed! bailing", __func__);
+		kfree(mot_value);
+		return -EFAULT;
+	}
+
+	set_value = (int)(*(mot_value + 0));
+	kfree(mot_value);
 
 	hdd_ctx = WLAN_HDD_GET_CTX(pHostapdAdapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
@@ -4119,7 +4130,6 @@ static __iw_softap_set_max_tx_power(struct net_device *dev,
 	qdf_copy_macaddr(&bssid, &pHostapdAdapter->macAddressCurrent);
 	qdf_copy_macaddr(&selfMac, &pHostapdAdapter->macAddressCurrent);
 
-	set_value = value[0];
 	if (QDF_STATUS_SUCCESS !=
 	    sme_set_max_tx_power(hHal, bssid, selfMac, set_value)) {
 		hdd_err("Setting maximum tx power failed");
