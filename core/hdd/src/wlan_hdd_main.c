@@ -91,6 +91,7 @@
 #include "wlan_hdd_driver_ops.h"
 #include "epping_main.h"
 #include "wlan_hdd_memdump.h"
+#include "wlan_hdd_data_stall_detection.h"
 
 #include <wlan_hdd_ipa.h>
 #include "hif.h"
@@ -6478,6 +6479,11 @@ static void hdd_bus_bw_work_handler(struct work_struct *work)
 	tx_packets += (uint64_t)ipa_tx_packets;
 	rx_packets += (uint64_t)ipa_rx_packets;
 
+	if (adapter) {
+		adapter->stats.tx_packets += ipa_tx_packets;
+		adapter->stats.rx_packets += ipa_rx_packets;
+	}
+
 	if (!connected) {
 		hdd_err("bus bandwidth timer running in disconnected state");
 		return;
@@ -10095,6 +10101,12 @@ int hdd_register_cb(hdd_context_t *hdd_ctx)
 	if (!QDF_IS_STATUS_SUCCESS(status))
 		hdd_err("set lost link info callback failed");
 
+	ret = hdd_register_data_stall_detect_cb();
+	if (ret) {
+		hdd_err("Register data stall detect detect callback failed.");
+		return ret;
+	}
+
 	wlan_hdd_dcc_register_for_dcc_stats_event(hdd_ctx);
 
 	status = sme_set_bt_activity_info_cb(hdd_ctx->hHal,
@@ -10126,6 +10138,7 @@ int hdd_register_cb(hdd_context_t *hdd_ctx)
 void hdd_deregister_cb(hdd_context_t *hdd_ctx)
 {
 	QDF_STATUS status;
+	int ret;
 
 	ENTER();
 
@@ -10159,6 +10172,10 @@ void hdd_deregister_cb(hdd_context_t *hdd_ctx)
 		hdd_err("Failed to de-register the fw mem dump callback: %d",
 			status);
 
+	ret = hdd_deregister_data_stall_detect_cb();
+	if (ret)
+		hdd_err("Failed to de-register data stall detect event callback");
+
 	sme_deregister_oem_data_rsp_callback(hdd_ctx->hHal);
 	sme_deregister11d_scan_done_callback(hdd_ctx->hHal);
 
@@ -10181,7 +10198,7 @@ QDF_STATUS hdd_softap_sta_deauth(hdd_adapter_t *adapter,
 
 	ENTER();
 
-	hdd_debug("hdd_softap_sta_deauth:(%p, false)",
+	hdd_debug("hdd_softap_sta_deauth:(%pK, false)",
 	       (WLAN_HDD_GET_CTX(adapter))->pcds_context);
 
 	/* Ignore request to deauth bcmc station */
@@ -10210,7 +10227,7 @@ void hdd_softap_sta_disassoc(hdd_adapter_t *adapter,
 {
 	ENTER();
 
-	hdd_debug("hdd_softap_sta_disassoc:(%p, false)",
+	hdd_debug("hdd_softap_sta_disassoc:(%pK, false)",
 	       (WLAN_HDD_GET_CTX(adapter))->pcds_context);
 
 	/* Ignore request to disassoc bcmc station */
@@ -10226,7 +10243,7 @@ void hdd_softap_tkip_mic_fail_counter_measure(hdd_adapter_t *adapter,
 {
 	ENTER();
 
-	hdd_debug("hdd_softap_tkip_mic_fail_counter_measure:(%p, false)",
+	hdd_debug("hdd_softap_tkip_mic_fail_counter_measure:(%pK, false)",
 	       (WLAN_HDD_GET_CTX(adapter))->pcds_context);
 
 	wlansap_set_counter_measure(WLAN_HDD_GET_SAP_CTX_PTR(adapter),

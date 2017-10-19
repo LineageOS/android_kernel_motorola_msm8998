@@ -209,6 +209,34 @@ static u8 wlan_hdd_tdls_hash_key(const u8 *mac)
 }
 
 /**
+ * wlan_hdd_tdls_get_adapter() - check system state and return hdd adapter
+ * @hdd_ctx: hdd context
+ *
+ * If TDLS possible, return the corresponding hdd adapter
+ * to enable TDLS in the system.
+ *
+ * Return: hdd adapter pointer or NULL.
+ */
+static hdd_adapter_t *wlan_hdd_tdls_get_adapter(hdd_context_t *hdd_ctx)
+{
+	uint32_t vdev_id;
+
+	if (cds_get_connection_count() > 1)
+		return NULL;
+
+	vdev_id = cds_mode_specific_vdev_id(CDS_STA_MODE);
+	if (CDS_INVALID_VDEV_ID != vdev_id)
+		return hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+
+	vdev_id = cds_mode_specific_vdev_id(CDS_P2P_CLIENT_MODE);
+	if (CDS_INVALID_VDEV_ID != vdev_id)
+		return hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+
+	return NULL;
+
+}
+
+/**
  * wlan_hdd_tdls_disable_offchan_and_teardown_links - Disable offchannel
  * and teardown TDLS links
  * @hddCtx : pointer to hdd context
@@ -227,7 +255,7 @@ void wlan_hdd_tdls_disable_offchan_and_teardown_links(hdd_context_t *hddctx)
 		return;
 	}
 
-	adapter = hdd_get_adapter(hddctx, QDF_STA_MODE);
+	adapter = wlan_hdd_tdls_get_adapter(hddctx);
 
 	if (adapter == NULL) {
 		hdd_debug("Station Adapter Not Found");
@@ -362,7 +390,7 @@ static void wlan_hdd_tdls_check_power_save_prohibited(hdd_adapter_t *pAdapter)
 
 	if ((NULL == pAdapter) ||
 	    (WLAN_HDD_ADAPTER_MAGIC != pAdapter->magic)) {
-		hdd_err("invalid pAdapter: %p", pAdapter);
+		hdd_err("invalid pAdapter: %pK", pAdapter);
 		return;
 	}
 
@@ -1879,34 +1907,6 @@ int wlan_hdd_tdls_set_params(struct net_device *dev,
 }
 
 /**
- * wlan_hdd_tdls_get_adapter() - check system state and return hdd adapter
- * @hdd_ctx: hdd context
- *
- * If TDLS possible, return the corresponding hdd adapter
- * to enable TDLS in the system.
- *
- * Return: hdd adapter pointer or NULL.
- */
-static hdd_adapter_t *wlan_hdd_tdls_get_adapter(hdd_context_t *hdd_ctx)
-{
-	uint32_t vdev_id;
-
-	if (cds_get_connection_count() > 1)
-		return NULL;
-
-	vdev_id = cds_mode_specific_vdev_id(CDS_STA_MODE);
-	if (CDS_INVALID_VDEV_ID != vdev_id)
-		return hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
-
-	vdev_id = cds_mode_specific_vdev_id(CDS_P2P_CLIENT_MODE);
-	if (CDS_INVALID_VDEV_ID != vdev_id)
-		return hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
-
-	return NULL;
-
-}
-
-/**
  * wlan_hdd_update_tdls_info - update tdls status info
  * @adapter: ptr to device adapter.
  * @tdls_prohibited: indicates whether tdls is prohibited.
@@ -2485,7 +2485,7 @@ uint16_t wlan_hdd_tdls_connected_peers(hdd_adapter_t *pAdapter)
 
 	if ((NULL == pAdapter) ||
 	    (WLAN_HDD_ADAPTER_MAGIC != pAdapter->magic)) {
-		hdd_err("invalid pAdapter: %p", pAdapter);
+		hdd_err("invalid pAdapter: %pK", pAdapter);
 		return 0;
 	}
 	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
@@ -2995,7 +2995,7 @@ void wlan_hdd_tdls_timer_restart(hdd_adapter_t *pAdapter,
 	hdd_station_ctx_t *pHddStaCtx;
 
 	if (NULL == pAdapter || WLAN_HDD_ADAPTER_MAGIC != pAdapter->magic) {
-		hdd_err("invalid pAdapter: %p", pAdapter);
+		hdd_err("invalid pAdapter: %pK", pAdapter);
 		return;
 	}
 
