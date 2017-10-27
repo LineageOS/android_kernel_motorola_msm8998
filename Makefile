@@ -118,6 +118,11 @@ ifneq ($(call kvers_cmp,"4.2.0"),4.2.0)
     CONFIG_OPTIONS_ENABLE += V4L2_FLASH_LED_CLASS
 endif
 
+#The new mods hw designation has add an gpio for spi/i2c select
+ifeq ($(CONFIG_MODS_2ND_GEN), y)
+CONFIG_OPTIONS_ENABLE += MODS_2ND_GEN
+endif
+
 $(foreach opt,$(CONFIG_OPTIONS_ENABLE),$(if $(CONFIG_$(opt)),, \
      $(error CONFIG_$(opt) is disabled in the kernel configuration and must be enable \
      to continue compilation)))
