@@ -33,6 +33,9 @@ enum {
 	MUC_GPIO_BPLUS_DISCHARG = 9,
 	MUC_GPIO_BPLUS_FAULT_N = 10,
 	MUC_GPIO_CLK = 11,
+#ifdef CONFIG_MODS_2ND_GEN
+	MUC_GPIO_SPI_I2C_SELECT = 12,
+#endif
 	MUC_MAX_GPIOS
 };
 
@@ -106,6 +109,13 @@ struct muc_data {
 	size_t en_seq_len;
 	u32 dis_seq[MUC_MAX_SEQ];
 	size_t dis_seq_len;
+
+#ifdef CONFIG_MODS_2ND_GEN
+	u32 select_spi_seq[MUC_MAX_SEQ];
+	size_t select_spi_seq_len;
+	u32 select_i2c_seq[MUC_MAX_SEQ];
+	size_t select_i2c_seq_len;
+#endif
 
 	/* Force Flash Sequences */
 	u32 ff_seq_v1[MUC_MAX_SEQ];
