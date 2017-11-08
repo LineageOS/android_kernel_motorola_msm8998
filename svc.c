@@ -333,12 +333,12 @@ static int gb_svc_hello(struct gb_operation *op)
 	return 0;
 }
 
-static void gb_svc_intf_remove(struct gb_svc *svc, struct gb_interface *intf)
+static void gb_svc_intf_remove(struct gb_svc *svc, struct gb_interface *intf, bool attached)
 {
 	u8 intf_id = intf->interface_id;
 	u8 device_id = intf->device_id;
 
-	intf->disconnected = true;
+	intf->disconnected = attached ? false : true;
 
 	gb_interface_remove(intf);
 
@@ -384,7 +384,7 @@ static void gb_svc_process_intf_hotplug(struct gb_operation *operation)
 		 */
 		dev_info(&svc->dev, "removing interface %u to add it again\n",
 				intf_id);
-		gb_svc_intf_remove(svc, intf);
+		gb_svc_intf_remove(svc, intf, false);
 	}
 
 	intf = gb_interface_create(hd, intf_id);
@@ -492,7 +492,7 @@ static void gb_svc_process_intf_hot_unplug(struct gb_operation *operation)
 		return;
 	}
 
-	gb_svc_intf_remove(svc, intf);
+	gb_svc_intf_remove(svc, intf, request->attach_state == 1);
 }
 
 static void gb_svc_process_deferred_request(struct work_struct *work)
