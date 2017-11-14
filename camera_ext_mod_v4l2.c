@@ -557,8 +557,20 @@ static int mod_v4l2_open(struct file *file)
 			rc = -EBUSY;
 			goto err_open;
 		}
-
-		goto user_present;
+		else if (g_v4l2_data->open_mode == mode) {
+			goto user_present;
+		}
+		else if (CAMERA_EXT_BOOTMODE_PREVIEW == g_v4l2_data->open_mode) {
+			// it is in preview mode and no change should be made
+			pr_warn("%s: already in preview mode\n", __func__);
+			rc = -EBUSY;
+			goto err_open;
+		}
+		/* MOD has been opened by other user in different mode.
+		 * Powered it off first and reopen it in the new mode.
+		 */
+		pr_warn("%s: close previous instance\n", __func__);
+		gb_camera_ext_power_off(cam_dev->connection);
 	}
 
 	/* init MOD */
