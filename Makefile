@@ -123,6 +123,10 @@ ifeq ($(CONFIG_MODS_2ND_GEN), y)
 CONFIG_OPTIONS_ENABLE += MODS_2ND_GEN
 endif
 
+ifeq ($(CONFIG_MODS_USE_EXTCODEC_MI2S), y)
+CONFIG_OPTIONS_ENABLE += MODS_USE_EXTCODEC_MI2S
+endif
+
 $(foreach opt,$(CONFIG_OPTIONS_ENABLE),$(if $(CONFIG_$(opt)),, \
      $(error CONFIG_$(opt) is disabled in the kernel configuration and must be enable \
      to continue compilation)))
