@@ -132,7 +132,7 @@ config ICMP_DISABLE_PS
 	bool "Enable ICMP packet disable powersave feature"
 	default n
 
-config CONFIG_BUILD_TIMESTAMP
+config BUILD_TIMESTAMP
 	bool "Embed timestamp in wlan version"
 	default n
 
@@ -142,6 +142,8 @@ config WLAN_FEATURE_SARV1_TO_SARV2
 
 config WLAN_CHANNEL_ONE_SCAN
 	bool "Enable Wlan scan channel 1 twice"
-	default n
+
+config WLAN_FEATURE_FILS
+	bool "Enable FILS_SK feature"
 
 endif # QCA_CLD_WLAN
