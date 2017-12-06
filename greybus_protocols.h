@@ -1189,7 +1189,6 @@ struct gb_svc_intf_hotplug_request {
 
 struct gb_svc_intf_hot_unplug_request {
 	__u8	intf_id;
-	__u8	attach_state;
 } __packed;
 /* hot unplug response has no payload */
 

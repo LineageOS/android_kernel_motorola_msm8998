@@ -53,8 +53,7 @@ static int gb_operation_get_active(struct gb_operation *operation)
 
 	spin_lock_irqsave(&connection->lock, flags);
 
-	if (connection->state != GB_CONNECTION_STATE_ENABLED
-		&& connection->state != GB_CONNECTION_STATE_ATTACHED_DESTROYING) {
+	if (connection->state != GB_CONNECTION_STATE_ENABLED) {
 		spin_unlock_irqrestore(&connection->lock, flags);
 		return -ENOTCONN;
 	}
@@ -955,8 +954,8 @@ void gb_connection_recv(struct gb_connection *connection,
 	u16 operation_id;
 
 	if (connection->state != GB_CONNECTION_STATE_ENABLED) {
-		dev_warn(dev, "%s: dropping %zu received bytes in state %d\n",
-				connection->name, size, connection->state);
+		dev_warn(dev, "%s: dropping %zu received bytes\n",
+				connection->name, size);
 		return;
 	}
 

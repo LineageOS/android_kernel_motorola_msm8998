@@ -2078,7 +2078,7 @@ static int muc_svc_generate_hotplug(struct mods_dl_device *mods_dev)
 	return 0;
 }
 
-static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev, bool attached)
+static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev)
 {
 	struct gb_message *msg;
 	struct gb_svc_intf_hot_unplug_request unplug;
@@ -2088,7 +2088,6 @@ static int muc_svc_generate_unplug(struct mods_dl_device *mods_dev, bool attache
 
 	mods_dev->hotplug_sent = 0;
 	unplug.intf_id = mods_dev->intf_id;
-	unplug.attach_state = attached ? 1 : 0;
 
 	msg = svc_gb_msg_send_sync_timeout(svc_dd->dld, (uint8_t *)&unplug,
 					GB_SVC_TYPE_INTF_HOT_UNPLUG,
@@ -2126,7 +2125,7 @@ void mods_dl_dev_detached(struct mods_dl_device *mods_dev)
 
 	flush_work(&mods_dev->hpw->work);
 
-	muc_svc_generate_unplug(mods_dev, false);
+	muc_svc_generate_unplug(mods_dev);
 
 	/* Destroy custom vendor control route */
 	muc_svc_destroy_control_route(mods_dev->intf_id,
@@ -2738,7 +2737,7 @@ static int muc_svc_enter_fw_flash(struct device *dev)
 	 * issue the reboot command */
 	mutex_lock(&svc_list_lock);
 	list_for_each_entry(mods_dev, &dd->ext_intf, list) {
-		muc_svc_generate_unplug(mods_dev, true);
+		muc_svc_generate_unplug(mods_dev);
 
 		/* Only do software reboot for hardware that can't
 		 * support force flash via hardware.
