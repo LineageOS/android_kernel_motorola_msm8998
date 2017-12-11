@@ -63,6 +63,11 @@ qcom,mdss-dsi-te-using-te-pin;
 qcom,partial-update-enabled = "single_roi";
 qcom,panel-roi-alignment = <360 64 360 64 360 64>;
 
+qcom,mdss-dsi-panel-hdr-enabled;
+qcom,mdss-dsi-panel-hdr-color-primaries = <14500 15500 32000 17000 15500 30000 8000 3000>;
+qcom,mdss-dsi-panel-peak-brightness = <4200000>;
+qcom,mdss-dsi-panel-blackness-level = <3230>;
+
 qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
 qcom,mdss-dsi-on-command = [
 	39 00 00 00 00 00 03 F0 5A 5A
