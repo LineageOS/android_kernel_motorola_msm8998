@@ -38,7 +38,7 @@ static inline void
 mods_queue_error_event_empty(char *name) {}
 #endif
 
-#ifdef CONFIG_MODS_MODBUS_EXT
+#if defined(CONFIG_MODS_MODBUS_EXT) || defined(CONFIG_MODS_MODBUS_SWITCH)
 #include <linux/mods/modbus_ext.h>
 
 static inline void mods_ext_bus_vote(bool enable)
