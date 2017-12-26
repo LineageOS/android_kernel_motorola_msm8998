@@ -97,7 +97,7 @@ void muc_register_spi_flash(void)
 void muc_deregister_spi_flash(void)
 {
 	if (!muc_misc_data ||
-	    !gpio_get_value(muc_misc_data->gpios[MUC_GPIO_DET_N]))
+	    gpio_get_value(muc_misc_data->gpios[MUC_GPIO_DET_N]))
 		return;
 
 	if (muc_misc_data->spi_shared_with_flash)
