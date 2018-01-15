@@ -46,6 +46,7 @@
 #include "cdp_txrx_bus.h"
 #include "pld_common.h"
 #include "wlan_hdd_driver_ops.h"
+#include "wlan_hdd_scan.h"
 
 #ifdef MODULE
 #define WLAN_MODULE_NAME  module_name(THIS_MODULE)
@@ -490,7 +491,7 @@ static inline void hdd_wlan_ssr_shutdown_event(void)
  */
 static void hdd_send_hang_reason(void)
 {
-	uint32_t reason = 0;
+	enum cds_hang_reason reason = CDS_REASON_UNSPECIFIED;
 	hdd_context_t *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 
 	if (wlan_hdd_validate_context(hdd_ctx))
@@ -1279,6 +1280,29 @@ static void wlan_hdd_purge_notifier(void)
 	EXIT();
 }
 
+
+/**
+ * hdd_cleanup_on_fw_down() - cleanup on FW down event
+ *
+ * Return: void
+ */
+static void hdd_cleanup_on_fw_down(void)
+{
+	hdd_context_t *hdd_ctx;
+
+	ENTER();
+
+	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	cds_set_fw_state(CDS_FW_STATE_DOWN);
+	cds_set_target_ready(false);
+	if (hdd_ctx != NULL)
+		hdd_cleanup_scan_queue(hdd_ctx, NULL);
+	wlan_hdd_purge_notifier();
+
+	EXIT();
+
+}
+
 /**
  * wlan_hdd_pld_uevent() - update driver status
  * @dev: device
@@ -1291,6 +1315,7 @@ static void wlan_hdd_pld_uevent(struct device *dev,
 {
 	ENTER();
 
+	hdd_info("pld event %d", uevent->uevent);
 	switch (uevent->uevent) {
 	case PLD_RECOVERY:
 		cds_set_recovery_in_progress(true);
@@ -1298,9 +1323,7 @@ static void wlan_hdd_pld_uevent(struct device *dev,
 		wlan_hdd_purge_notifier();
 		break;
 	case PLD_FW_DOWN:
-		cds_set_fw_state(CDS_FW_STATE_DOWN);
-		cds_set_target_ready(false);
-		wlan_hdd_purge_notifier();
+		hdd_cleanup_on_fw_down();
 		break;
 	case PLD_FW_READY:
 		cds_set_target_ready(true);
