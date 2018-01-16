@@ -132,9 +132,9 @@ QDF_STATUS hdd_generate_random_mac_from_serialno(char *serialNo, int serialnoLen
     hashBuf = (char*)qdf_mem_malloc(16);
 
     /*Motorola OUI*/
-    macAddr[0] = 0xA4;
-    macAddr[1] = 0x07;
-    macAddr[2] = 0xd6;
+    macAddr[0] = 0xF0;
+    macAddr[1] = 0xD7;
+    macAddr[2] = 0xAA;
 
     md5 = crypto_alloc_shash("md5", 0, 0);
     if (IS_ERR(md5)) {
