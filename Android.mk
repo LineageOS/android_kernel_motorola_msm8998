@@ -45,6 +45,24 @@ KBUILD_OPTIONS += MODNAME=wlan
 KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
 KBUILD_OPTIONS += $(WLAN_SELECT)
 
+##########################################################
+# Copy the unstrip file and corresponding elf file to  out symbols folders
+WLAN_SYMBOLS_OUT     := $(TARGET_OUT_UNSTRIPPED)/$(LOCAL_PATH)
+UNSTRIPPED_MODULE    := $(WLAN_CHIPSET)_wlan.ko.unstripped
+UNSTRIPPED_FILE_PATH := $(TARGET_OUT_INTERMEDIATES)/$(LOCAL_PATH)/$(UNSTRIPPED_MODULE)
+
+ifneq ($(filter msm8998 sdm845, $(TARGET_BOARD_PLATFORM)),)
+    WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/wlan_proc/build/ms/WLAN_MERGED.elf
+else ifneq ($(filter sdm660, $(TARGET_BOARD_PLATFORM)),)
+    WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.1.0.1/wlan_proc/build/ms/WLAN_MERGED.elf
+else ifneq ($(filter talos, $(TARGET_BOARD_PLATFORM)),)
+    WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.3.0.1/wlan_proc/build/ms/WLAN_MERGED.elf
+endif
+
+INSTALL_WLAN_UNSTRIPPED_MODULE := mkdir -p $(WLAN_SYMBOLS_OUT); \
+   cp -rf $(UNSTRIPPED_FILE_PATH) $(WLAN_SYMBOLS_OUT); \
+   cp -rf $(WLAN_ELF_FILE_PATH) $(WLAN_SYMBOLS_OUT)
+
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(WLAN_CHIPSET)_wlan.ko
 LOCAL_MODULE_KBUILD_NAME  := wlan.ko
@@ -58,6 +76,9 @@ ifeq ($(PRODUCT_VENDOR_MOVE_ENABLED),true)
 else
     LOCAL_MODULE_PATH := $(TARGET_OUT)/lib/modules/$(WLAN_CHIPSET)
 endif
+
+# Once unstripped file is generated, copy the same to out symbols folder
+LOCAL_POST_INSTALL_CMD := $(INSTALL_WLAN_UNSTRIPPED_MODULE)
 
 include $(DLKM_DIR)/AndroidKernelModule.mk
 ###########################################################
