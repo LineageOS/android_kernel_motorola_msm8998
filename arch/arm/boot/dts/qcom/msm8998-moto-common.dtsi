@@ -11,6 +11,7 @@
  */
 
 
+#include "msm8998-moto-cpu.dtsi"
 #include "msm8998-pinctrl.dtsi"
 #include "msm8998-moto-pinctrl.dtsi"
 #include "msm8998-mdss.dtsi"

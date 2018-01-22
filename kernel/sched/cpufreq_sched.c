@@ -202,7 +202,7 @@ static void update_fdomain_capacity_request(int cpu)
 	}
 
 	/* Convert the new maximum capacity request into a cpu frequency */
-	freq_new = capacity * policy->max >> SCHED_CAPACITY_SHIFT;
+	freq_new = capacity * policy->cpuinfo.max_freq >> SCHED_CAPACITY_SHIFT;
 	if (cpufreq_frequency_table_target(policy, policy->freq_table,
 					   freq_new, CPUFREQ_RELATION_L,
 					   &index_new))
@@ -235,6 +235,18 @@ out:
 	cpufreq_cpu_put(policy);
 }
 
+#ifdef CONFIG_SCHED_WALT
+static inline unsigned long
+requested_capacity(struct sched_capacity_reqs *scr)
+{
+	if (!walt_disabled && sysctl_sched_use_walt_cpu_util)
+		return scr->cfs;
+	return scr->cfs + scr->rt;
+}
+#else
+#define requested_capacity(scr) (scr->cfs + scr->rt)
+#endif
+
 void update_cpu_capacity_request(int cpu, bool request)
 {
 	unsigned long new_capacity;
@@ -245,7 +257,7 @@ void update_cpu_capacity_request(int cpu, bool request)
 
 	scr = &per_cpu(cpu_sched_capacity_reqs, cpu);
 
-	new_capacity = scr->cfs + scr->rt;
+	new_capacity = requested_capacity(scr);
 	new_capacity = new_capacity * capacity_margin
 		/ SCHED_CAPACITY_SCALE;
 	new_capacity += scr->dl;
