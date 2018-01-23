@@ -1,0 +1,12 @@
+#
+# Moto Mod drivers
+#
+menu "Moto Mod drivers"
+config MOTOMODS
+	tristate "Motorola Z Moto Mods"
+	default n
+	help
+	  This option enables support for Moto Mod peripherals for the
+	  Motorola Z family of handsets.
+
+endmenu

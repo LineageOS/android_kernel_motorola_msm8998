@@ -79,3 +79,4 @@ obj-$(CONFIG_TPS61280) += tps61280.o
 obj-$(CONFIG_MODS_CODEC_BUS) += mods_codec_bus.o
 obj-$(CONFIG_FSUSB42_MUX) += fsusb42_mux.o
 obj-$(CONFIG_MODS_MODBUS_SWITCH) += modbus_switch.o
+obj-$(CONFIG_MOTOMODS) += motomods/
