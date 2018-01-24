@@ -176,11 +176,13 @@ static int fmt_get(struct file *file, void *fh,
 		struct v4l2_format_compat cfmt;
 
 		cfmt.type = fmt->type;
-		memcpy(&cfmt.fmt, &fmt->fmt, sizeof(fmt->fmt));
+		if (0 != copy_from_user(&cfmt.fmt, &fmt->fmt, sizeof(fmt->fmt)))
+			return -ENOMEM;
 		ret = v4l2_misc_process_command(strm->id, VIDIOC_G_FMT32,
 						sizeof(cfmt), &cfmt);
 		fmt->type = cfmt.type;
-		memcpy(&fmt->fmt, &cfmt.fmt, sizeof(fmt->fmt));
+		if (0 != copy_to_user(&fmt->fmt, &cfmt.fmt, sizeof(fmt->fmt)))
+			return -ENOMEM;
 	} else
 		ret = v4l2_misc_process_command(strm->id, VIDIOC_G_FMT,
 						sizeof(*fmt), fmt);
@@ -200,11 +202,13 @@ static int fmt_set(struct file *file, void *fh,
 		struct v4l2_format_compat cfmt;
 
 		cfmt.type = fmt->type;
-		memcpy(&cfmt.fmt, &fmt->fmt, sizeof(fmt->fmt));
+		if (0 != copy_from_user(&cfmt.fmt, &fmt->fmt, sizeof(fmt->fmt)))
+			return -ENOMEM;
 		ret = v4l2_misc_process_command(strm->id, VIDIOC_S_FMT32,
 						sizeof(cfmt), &cfmt);
 		fmt->type = cfmt.type;
-		memcpy(&fmt->fmt, &cfmt.fmt, sizeof(fmt->fmt));
+		if (0 != copy_to_user(&fmt->fmt, &cfmt.fmt, sizeof(fmt->fmt)))
+			return -ENOMEM;
 	} else
 		ret = v4l2_misc_process_command(strm->id, VIDIOC_S_FMT,
 						sizeof(*fmt), fmt);
