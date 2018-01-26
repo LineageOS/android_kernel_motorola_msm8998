@@ -1,0 +1,125 @@
+What:		/sys/bus/greybus/device/greybusN
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The "root" greybus device for the Greybus device tree, or bus,
+		where N is a dynamically assigned 1-based id.
+
+What:		/sys/bus/greybus/device/N-I
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		An Interface I on the bus N, where I is the 1-byte interface
+		ID.
+
+What:		/sys/bus/greybus/device/N-I/interface_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The ID of a Greybus interface.
+
+What:		/sys/bus/greybus/device/N-I/product_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		Product ID of a Greybus interface.
+
+What:		/sys/bus/greybus/device/N-I/product_string
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		Product ID string of a Greybus interface.
+
+What:		/sys/bus/greybus/device/N-I/vendor_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		Vendor ID of a Greybus interface.
+
+What:		/sys/bus/greybus/device/N-I/vendor_string
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		Vendor ID string of a Greybus interface block.
+
+What:		/sys/bus/greybus/device/N-I.B
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		A bundle B on the Interface I, B is replaced by a 1-byte
+		number representing the bundle.
+
+What:		/sys/bus/greybus/device/N-I.B/bundle_class
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The greybus class of the bundle B.
+
+What:		/sys/bus/greybus/device/N-I.B/bundle_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The interface-unique id of the bundle B.
+
+What:		/sys/bus/greybus/device/N-I.B/state
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		A bundle has a state that is managed by the userspace
+		Endo process.  This file allows that Endo to signal
+		other Android HALs that the state of the bundle has
+		changed to a specific value.  When written to, any
+		process watching the file will be woken up, and the new
+		value can be read. It's a "poor-man's IPC", yes, but
+		simplifies the Android userspace code immensely.
+
+What:		/sys/bus/greybus/device/N-svc
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The singleton SVC device of bus N.
+
+What:		/sys/bus/greybus/device/N-svc/ap_intf_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The AP interface ID, a 1-byte non-zero integer which
+		defines the position of the AP module on the frame.
+		The interface positions are defined in the ARA
+		Module Developer Kit.
+
+What:		/sys/bus/greybus/device/N-svc/endo_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The Endo ID, which is a 2-byte hexadecimal value
+		defined by the Endo layout scheme, documented in
+		the ARA Module Developer Kit.
+
+What:		/sys/bus/greybus/device/N-svc/unique_id
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The unique ID, or serial number, of the SVC device
+
+What:		/sys/bus/greybus/device/N-svc/version
+Date:		October 2015
+KernelVersion:	4.XX
+Contact:	Greg Kroah-Hartman <greg@kroah.com>
+Description:
+		The version number of the firmware in the SVC device.
