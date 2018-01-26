@@ -1403,6 +1403,11 @@ CONFIG_MSM_ULTRASOUND=y
 # CONFIG_CAPSENSE_CYPRESS is not set
 
 #
+# Moto Mod drivers
+#
+CONFIG_MOTOMODS=y
+
+#
 # SCSI device support
 #
 CONFIG_SCSI_MOD=y
