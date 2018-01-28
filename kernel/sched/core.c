@@ -75,6 +75,7 @@
 #include <linux/binfmts.h>
 #include <linux/context_tracking.h>
 #include <linux/compiler.h>
+#include <linux/cpufreq.h>
 #include <linux/irq.h>
 #include <linux/sched/core_ctl.h>
 
@@ -96,6 +97,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
+#include "walt.h"
 
 ATOMIC_NOTIFIER_HEAD(load_alert_notifier_head);
 
@@ -1356,6 +1358,7 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 		p->se.nr_migrations++;
 		perf_event_task_migrate(p);
 
+		walt_fixup_busy_time(p, new_cpu);
 		fixup_busy_time(p, new_cpu);
 	}
 
@@ -2114,6 +2117,9 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 
 	raw_spin_lock(&rq->lock);
 	old_load = task_load(p);
+	wallclock = walt_ktime_clock();
+	walt_update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
+	walt_update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
 	wallclock = sched_ktime_clock();
 	update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
 	update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
@@ -2209,6 +2215,11 @@ static void try_to_wake_up_local(struct task_struct *p)
 
 		update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
 		update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
+
+		wallclock = walt_ktime_clock();
+
+		walt_update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
+		walt_update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
 		ttwu_activate(rq, p, ENQUEUE_WAKEUP);
 		note_task_waking(p, wallclock);
 	}
@@ -2337,15 +2348,21 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.vruntime			= 0;
 
 	INIT_LIST_HEAD(&p->se.group_node);
+	walt_init_new_task_load(p);
 
 #ifdef CONFIG_SCHEDSTATS
 	memset(&p->se.statistics, 0, sizeof(p->se.statistics));
+#endif
+
+#ifdef CONFIG_CPU_FREQ_STAT
+	cpufreq_task_stats_init(p);
 #endif
 
 	RB_CLEAR_NODE(&p->dl.rb_node);
 	init_dl_task_timer(&p->dl);
 	__dl_clear_params(p);
 
+	init_rt_schedtune_timer(&p->rt);
 	INIT_LIST_HEAD(&p->rt.run_list);
 	p->rt.timeout		= 0;
 	p->rt.time_slice	= sched_rr_timeslice;
@@ -2611,7 +2628,9 @@ void wake_up_new_task(struct task_struct *p)
 	struct rq *rq;
 
 	add_new_task_to_grp(p);
+	walt_init_new_task_load(p);
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
+
 	/* Initialize new task's runnable average */
 	init_entity_runnable_average(&p->se);
 #ifdef CONFIG_SMP
@@ -2624,6 +2643,7 @@ void wake_up_new_task(struct task_struct *p)
 #endif
 	rq = __task_rq_lock(p);
 	mark_task_starting(p);
+	walt_mark_task_starting(p);
 	post_init_entity_util_avg(&p->se);
 	activate_task(rq, p, ENQUEUE_WAKEUP_NEW);
 	p->on_rq = TASK_ON_RQ_QUEUED;
@@ -3169,7 +3189,9 @@ static void sched_freq_tick_pelt(int cpu)
 	 * utilization and to harm its performance the least, request
 	 * a jump to a higher OPP as soon as the margin of free capacity
 	 * is impacted (specified by capacity_margin).
+	 * Remember CPU utilization in sched_capacity_reqs should be normalised.
 	 */
+	cpu_utilization = cpu_utilization * SCHED_CAPACITY_SCALE / capacity_orig_of(cpu);
 	set_cfs_cpu_capacity(cpu, true, cpu_utilization);
 }
 
@@ -3196,7 +3218,9 @@ static void sched_freq_tick_walt(int cpu)
 	 * It is likely that the load is growing so we
 	 * keep the added margin in our request as an
 	 * extra boost.
+	 * Remember CPU utilization in sched_capacity_reqs should be normalised.
 	 */
+	cpu_utilization = cpu_utilization * SCHED_CAPACITY_SCALE / capacity_orig_of(cpu);
 	set_cfs_cpu_capacity(cpu, true, cpu_utilization);
 
 }
@@ -3241,10 +3265,13 @@ void scheduler_tick(void)
 
 	raw_spin_lock(&rq->lock);
 	old_load = task_load(curr);
+	walt_set_window_start(rq);
 	set_window_start(rq);
 	update_rq_clock(rq);
 	curr->sched_class->task_tick(rq, curr, 0);
 	update_cpu_load_active(rq);
+	walt_update_task_ravg(rq->curr, rq, TASK_UPDATE,
+			walt_ktime_clock(), 0);
 	calc_global_load_tick(rq);
 	wallclock = sched_ktime_clock();
 	update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
@@ -3571,6 +3598,9 @@ static void __sched notrace __schedule(bool preempt)
 		update_rq_clock(rq);
 
 	next = pick_next_task(rq, prev);
+	wallclock = walt_ktime_clock();
+	walt_update_task_ravg(prev, rq, PUT_PREV_TASK, wallclock, 0);
+	walt_update_task_ravg(next, rq, PICK_NEXT_TASK, wallclock, 0);
 	clear_tsk_need_resched(prev);
 	clear_preempt_need_resched();
 	rq->clock_skip_update = 0;
@@ -6312,6 +6342,7 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
 
 	case CPU_UP_PREPARE:
 		raw_spin_lock_irqsave(&rq->lock, flags);
+		walt_set_window_start(rq);
 		set_window_start(rq);
 		raw_spin_unlock_irqrestore(&rq->lock, flags);
 		rq->calc_load_update = calc_load_update;
@@ -6333,6 +6364,7 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
 		sched_ttwu_pending();
 		/* Update our root-domain */
 		raw_spin_lock_irqsave(&rq->lock, flags);
+		walt_migrate_sync_cpu(cpu);
 
 		if (rq->rd) {
 			BUG_ON(!cpumask_test_cpu(cpu, rq->rd->span));
@@ -8248,6 +8280,7 @@ void __init sched_init_smp(void)
 {
 	cpumask_var_t non_isolated_cpus;
 
+	walt_init_cpu_efficiency();
 	alloc_cpumask_var(&non_isolated_cpus, GFP_KERNEL);
 	alloc_cpumask_var(&fallback_doms, GFP_KERNEL);
 
@@ -8485,6 +8518,11 @@ void __init sched_init(void)
 		}
 #endif
 		rq->max_idle_balance_cost = sysctl_sched_migration_cost;
+#ifdef CONFIG_SCHED_WALT
+		rq->cur_irqload = 0;
+		rq->avg_irqload = 0;
+		rq->irqload_ts = 0;
+#endif
 
 		INIT_LIST_HEAD(&rq->cfs_tasks);
 
@@ -9233,9 +9271,18 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	if (IS_ERR(tg))
 		return ERR_PTR(-ENOMEM);
 
-	sched_online_group(tg, parent);
-
 	return &tg->css;
+}
+
+/* Expose task group only after completing cgroup initialization */
+static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
+{
+	struct task_group *tg = css_tg(css);
+	struct task_group *parent = css_tg(css->parent);
+
+	if (parent)
+		sched_online_group(tg, parent);
+	return 0;
 }
 
 static void cpu_cgroup_css_released(struct cgroup_subsys_state *css)
@@ -9619,6 +9666,7 @@ static struct cftype cpu_files[] = {
 
 struct cgroup_subsys cpu_cgrp_subsys = {
 	.css_alloc	= cpu_cgroup_css_alloc,
+	.css_online	= cpu_cgroup_css_online,
 	.css_released	= cpu_cgroup_css_released,
 	.css_free	= cpu_cgroup_css_free,
 	.fork		= cpu_cgroup_fork,

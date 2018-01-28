@@ -89,11 +89,6 @@ static unsigned int sync_cpu;
 static ktime_t ktime_last;
 static bool walt_ktime_suspended;
 
-static unsigned int task_load(struct task_struct *p)
-{
-	return p->ravg.demand;
-}
-
 void
 walt_inc_cumulative_runnable_avg(struct rq *rq,
 				 struct task_struct *p)
