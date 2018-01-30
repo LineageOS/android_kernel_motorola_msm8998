@@ -94,7 +94,9 @@ static void muc_svc_broadcast_slave_notification(struct mods_dl_device *master);
 static int muc_svc_send_reboot(struct mods_dl_device *mods_dev, uint8_t mode);
 static int muc_svc_send_current_limit(struct mods_dl_device *dev, uint8_t limit);
 static int muc_svc_send_current_rsv_ack(struct mods_dl_device *dev);
+#ifdef ENABLE_VERSION_HEARTBEAT
 static int muc_svc_version_heartbeat(void);
+#endif
 static int muc_svc_send_rtc_sync(struct mods_dl_device *mods_dev);
 static int muc_svc_send_test_mode(struct mods_dl_device *mods_dev, uint32_t val);
 
@@ -256,9 +258,11 @@ muc_svc_attach(struct notifier_block *nb, unsigned long state, void *unused)
 
 void muc_svc_communication_reset(struct mods_dl_device *error_dev)
 {
+#ifdef ENABLE_VERSION_HEARTBEAT
 	/* Try a heartbeat via the version; if it succeeds we are talking */
 	if (!muc_svc_version_heartbeat())
 		return;
+#endif
 
 	dev_err(&svc_dd->pdev->dev, "%s: resetting via interface: %d\n",
 		__func__, error_dev->intf_id);
@@ -1832,6 +1836,7 @@ static int muc_svc_control_version(struct mods_dl_device *mods_dev, u8 type,
 	return 0;
 }
 
+#ifdef ENABLE_VERSION_HEARTBEAT
 static int muc_svc_version_heartbeat(void)
 {
 	struct mods_dl_device *mods_dev;
@@ -1857,6 +1862,7 @@ static int muc_svc_version_heartbeat(void)
 
 	return ret;
 }
+#endif
 
 static int
 muc_svc_get_manifest(struct mods_dl_device *mods_dev, uint16_t out_cport)
