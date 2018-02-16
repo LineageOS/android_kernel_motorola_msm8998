@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "d547f634_ecfa83c7",
+        "filename": "drivers/misc/motomods/greybus/Makefile",
+        "patchSetId": 1
+      },
+      "lineNbr": 159,
+      "author": {
+        "id": 16713
+      },
+      "writtenOn": "2018-02-16T16:53:37Z",
+      "side": 1,
+      "message": "do we need these?",
+      "range": {
+        "startLine": 95,
+        "startChar": 0,
+        "endLine": 159,
+        "endChar": 46
+      },
+      "revId": "c5c9f7b542966ec50fd2a2dd0a7f3a8f89c4b08b",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
+    }
+  ]
+}
