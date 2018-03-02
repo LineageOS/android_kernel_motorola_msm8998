@@ -22,6 +22,30 @@
       "revId": "c5c9f7b542966ec50fd2a2dd0a7f3a8f89c4b08b",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "df6dc6ed_650abce0",
+        "filename": "drivers/misc/motomods/greybus/Makefile",
+        "patchSetId": 1
+      },
+      "lineNbr": 159,
+      "author": {
+        "id": 15964
+      },
+      "writtenOn": "2018-03-02T10:39:33Z",
+      "side": 1,
+      "message": "If we plan to make drivers built-in, then probably no.",
+      "parentUuid": "d547f634_ecfa83c7",
+      "range": {
+        "startLine": 95,
+        "startChar": 0,
+        "endLine": 159,
+        "endChar": 46
+      },
+      "revId": "c5c9f7b542966ec50fd2a2dd0a7f3a8f89c4b08b",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
     }
   ]
 }
