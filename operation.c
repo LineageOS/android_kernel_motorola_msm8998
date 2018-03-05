@@ -499,6 +499,11 @@ gb_operation_create_common(struct gb_connection *connection, u8 type,
 	struct gb_host_device *hd = connection->hd;
 	struct gb_operation *operation;
 
+	if (!connection) {
+		pr_err("%s connection NULL\n", __func__);
+		return NULL;
+	}
+
 	operation = kmem_cache_zalloc(gb_operation_cache, gfp_flags);
 	if (!operation)
 		return NULL;
