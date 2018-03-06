@@ -281,42 +281,48 @@ static void muc_handle_detection(bool force_removal)
 		muc_seq(cdata, cdata->en_seq, cdata->en_seq_len);
 		cdata->bplus_state = MUC_BPLUS_ENABLED;
 
-		/* Select SPI/I2C based on CLK signal */
-		if (!cdata->i2c_transport_err &&
-				gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
-			pr_info("%s: I2C selected\n", __func__);
-			muc_register_i2c();
-		}
-#ifdef CONFIG_MODS_2ND_GEN
-		else if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MISO]) &&
-				!gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
-			gpio_direction_input(cdata->gpios[MUC_GPIO_SPI_MOSI]);
-			if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MOSI])) {
-				pr_info("%s: 2nd mods bus selection, miso high,i2c selected\n", __func__);
-				pinctrl_select_state(cdata->pinctrl, cdata->pins_i2c_con);
-				muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
-				muc_register_i2c();
-			} else {
-				pr_info("%s: 2nd mods bus selection, SPI selected\n", __func__);
-				gpio_direction_output(cdata->gpios[MUC_GPIO_SPI_MOSI], 0);
-				cdata->i2c_transport_err = false;
-				muc_register_spi();
-			}
-		}
-#endif
-		else {
-			pr_info("%s: SPI selected\n", __func__);
-			cdata->i2c_transport_err = false;
-			muc_register_spi();
-		}
-
-		if (muc_pinctrl_select_state_con(cdata))
-			pr_warn("%s: select active pinctrl failed\n",
-				__func__);
-
 		/* Re-read state after BPLUS settle time */
 		detected = gpio_get_value(cdata->gpios[MUC_GPIO_DET_N]) == 0;
 	}
+
+#ifdef CONFIG_MODS_2ND_GEN
+	muc_seq(cdata, cdata->select_spi_seq, cdata->select_spi_seq_len);
+#endif
+
+	/* Select SPI/I2C based on CLK signal */
+	if (!cdata->i2c_transport_err &&
+			gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
+		pr_info("%s: I2C selected\n", __func__);
+		muc_register_i2c();
+	}
+#ifdef CONFIG_MODS_2ND_GEN
+	else if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MISO]) &&
+			!gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
+		gpio_direction_input(cdata->gpios[MUC_GPIO_SPI_MOSI]);
+		if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MOSI])) {
+			pr_info("%s: 2nd mods bus selection, miso high,i2c selected\n", __func__);
+			pinctrl_select_state(cdata->pinctrl, cdata->pins_i2c_con);
+			muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
+			muc_register_i2c();
+		} else {
+			pr_info("%s: 2nd mods bus selection, SPI selected\n", __func__);
+			gpio_direction_output(cdata->gpios[MUC_GPIO_SPI_MOSI], 0);
+			cdata->i2c_transport_err = false;
+			muc_register_spi();
+		}
+	}
+#endif
+	else {
+		pr_info("%s: SPI selected\n", __func__);
+		cdata->i2c_transport_err = false;
+		muc_register_spi();
+	}
+
+	if (muc_pinctrl_select_state_con(cdata))
+		pr_warn("%s: select active pinctrl failed\n",
+			__func__);
+
+
 
 	cdata->muc_detected = detected;
 
