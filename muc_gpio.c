@@ -285,16 +285,20 @@ static void muc_handle_detection(bool force_removal)
 		if (!cdata->i2c_transport_err &&
 				gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
 			pr_info("%s: I2C selected\n", __func__);
-#ifdef CONFIG_MODS_2ND_GEN
-			muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
-#endif
 			muc_register_i2c();
-		} else {
+		}
+#ifdef CONFIG_MODS_2ND_GEN
+		else if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MISO]) &&
+				!gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
+			pr_info("%s: 2nd mods bus selection, miso high,i2c selected\n", __func__);
+			pinctrl_select_state(cdata->pinctrl, cdata->pins_i2c_con);
+			muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
+			muc_register_i2c();
+		}
+#endif
+		else {
 			pr_info("%s: SPI selected\n", __func__);
 			cdata->i2c_transport_err = false;
-#ifdef CONFIG_MODS_2ND_GEN
-			muc_seq(cdata, cdata->select_spi_seq, cdata->select_spi_seq_len);
-#endif
 			muc_register_spi();
 		}
 
