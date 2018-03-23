@@ -1038,7 +1038,6 @@
 	muc_svc: muc_svc@0 {
 		compatible = "mmi,muc_svc";
 
-		mmi,use-authentication;
 		mmi,endo-mask = <0x4755>;
 		mmi,default-root-ver = /bits/ 8 <2>;
 	};
