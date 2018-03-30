@@ -290,10 +290,18 @@ static void muc_handle_detection(bool force_removal)
 #ifdef CONFIG_MODS_2ND_GEN
 		else if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MISO]) &&
 				!gpio_get_value(cdata->gpios[MUC_GPIO_CLK])) {
-			pr_info("%s: 2nd mods bus selection, miso high,i2c selected\n", __func__);
-			pinctrl_select_state(cdata->pinctrl, cdata->pins_i2c_con);
-			muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
-			muc_register_i2c();
+			gpio_direction_input(cdata->gpios[MUC_GPIO_SPI_MOSI]);
+			if (gpio_get_value(cdata->gpios[MUC_GPIO_SPI_MOSI])) {
+				pr_info("%s: 2nd mods bus selection, miso high,i2c selected\n", __func__);
+				pinctrl_select_state(cdata->pinctrl, cdata->pins_i2c_con);
+				muc_seq(cdata, cdata->select_i2c_seq, cdata->select_i2c_seq_len);
+				muc_register_i2c();
+			} else {
+				pr_info("%s: 2nd mods bus selection, SPI selected\n", __func__);
+				gpio_direction_output(cdata->gpios[MUC_GPIO_SPI_MOSI], 0);
+				cdata->i2c_transport_err = false;
+				muc_register_spi();
+			}
 		}
 #endif
 		else {
@@ -732,6 +740,11 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 			__func__, __LINE__);
 		goto free_attach_wq;
 	}
+
+	ret = gpio_direction_input(cdata->gpios[MUC_GPIO_SPI_MOSI]);
+	if (ret)
+		pr_info("%s set mosi(%d) input ret %d\n",
+			__func__, cdata->gpios[MUC_GPIO_SPI_MOSI], ret);
 #endif
 
 	/* Force Flash Sequences (mod core dependent) */
