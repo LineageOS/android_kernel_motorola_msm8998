@@ -477,6 +477,11 @@ static int gb_ptp_receive(u8 type, struct gb_operation *op)
 			return -EINVAL;
 	case GB_PTP_TYPE_EXT_POWER_CHANGED:
 	case GB_PTP_TYPE_POWER_REQUIRED_CHANGED:
+		if (!power_supply_ptr(ptp)) {
+			pr_warn("%s: psy not initialized\n",
+				__func__);
+			return -EAGAIN;
+		}
 		power_supply_changed(power_supply_ptr(ptp));
 		return 0;
 	default:
