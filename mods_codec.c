@@ -615,12 +615,15 @@ static void mods_codec_shutdown(struct snd_pcm_substream *substream,
 	gb_mods_i2s_get(gb_codec);
 	mutex_unlock(&gb_codec->lock);
 
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_RECEIVER, false);
-	else
+		priv->rx_active = false;
+	} else {
 		gb_i2s_mgmt_send_start(gb_codec,
 				GB_I2S_MGMT_PORT_TYPE_TRANSMITTER, false);
+		priv->tx_active = false;
+	}
 
 	if (!priv->rx_active && !priv->tx_active)
 		priv->is_params_set = false;
