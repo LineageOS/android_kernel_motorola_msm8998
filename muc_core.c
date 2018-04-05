@@ -38,6 +38,14 @@ void muc_enable_det(void)
 			__func__);
 		return;
 	}
+
+#ifdef CONFIG_MODS_2ND_GEN
+	pr_info("%s: reset gpio state as disconnected one\n", __func__);
+	if (pinctrl_select_state(muc_misc_data->pinctrl, muc_misc_data->pins_discon))
+		pr_warn("%s: select disconnected pinctrl failed\n",
+			__func__);
+#endif
+
 	muc_misc_data->det_irq_enabled = true;
 }
 
