@@ -48,8 +48,10 @@ static inline bool muc_gpio_optional(int index)
 	return ((index == MUC_GPIO_FORCE_FLASH) ||
 		(index == MUC_GPIO_BPLUS_ISET) ||
 		(index == MUC_GPIO_BPLUS_DISCHARG) ||
-		(index == MUC_GPIO_BPLUS_FAULT_N) ||
-		(index == MUC_GPIO_MOD_RGB_SELECT));
+#ifdef CONFIG_MODS_2ND_GEN
+		(index == MUC_GPIO_MOD_RGB_SELECT) ||
+#endif
+		(index == MUC_GPIO_BPLUS_FAULT_N));
 }
 
 #define MUC_ROOT_VER_UNKNOWN     0x00 /* For not implemented */
