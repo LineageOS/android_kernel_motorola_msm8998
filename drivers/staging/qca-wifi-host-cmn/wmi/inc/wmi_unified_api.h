@@ -873,8 +873,7 @@ QDF_STATUS wmi_unified_enable_arp_ns_offload_cmd(void *wmi_hdl,
 /**
  * wmi_unified_conf_hw_filter_mode_cmd() - Configure hardware filter
  * @wmi_hdl: wmi handle
- * @vdev_id: device identifier
- * @config_bitmap: bitmap of packet types to drop
+ * @req: HW filter request parameters
  *
  * The hardware filter is only effective in DTIM mode. Use this configuration
  * to blanket drop broadcast/multicast packets at the hardware level, without
@@ -882,9 +881,9 @@ QDF_STATUS wmi_unified_enable_arp_ns_offload_cmd(void *wmi_hdl,
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS wmi_unified_conf_hw_filter_mode_cmd(void *wmi_hdl,
-					       uint8_t vdev_id,
-					       uint8_t config_bitmap);
+QDF_STATUS
+wmi_unified_conf_hw_filter_mode_cmd(void *wmi_hdl,
+				    struct wmi_hw_filter_req_params *req);
 
 QDF_STATUS wmi_unified_set_led_flashing_cmd(void *wmi_hdl,
 				struct flashing_req_params *flashing);
@@ -1457,4 +1456,28 @@ QDF_STATUS wmi_unified_send_dbs_scan_sel_params_cmd(void *wmi_hdl,
 
 QDF_STATUS wmi_unified_send_limit_off_chan_cmd(void *wmi_hdl,
 				   struct wmi_limit_off_chan_param *wmi_param);
+
+/**
+ * wmi_unified_offload_11k_cmd() - send 11k offload command
+ * @wmi_hdl: wmi handle
+ * @params: 11k offload params
+ *
+ * This function passes the 11k offload command params to FW
+ *
+ * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
+ */
+QDF_STATUS wmi_unified_offload_11k_cmd(void *wmi_hdl,
+				struct wmi_11k_offload_params *params);
+
+/**
+ * wmi_unified_invoke_neighbor_report_cmd() - send invoke neighbor report cmd
+ * @wmi_hdl: wmi handle
+ * @params: invoke neighbor report params
+ *
+ * This function passes the invoke neighbor report command to fw
+ *
+ * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
+ */
+QDF_STATUS wmi_unified_invoke_neighbor_report_cmd(void *wmi_hdl,
+			struct wmi_invoke_neighbor_report_params *params);
 #endif /* _WMI_UNIFIED_API_H_ */

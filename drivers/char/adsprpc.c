@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -56,7 +56,7 @@
 #define ADSP_MMAP_HEAP_ADDR 4
 #define ADSP_MMAP_REMOTE_HEAP_ADDR 8
 #define FASTRPC_ENOSUCH 39
-#define VMID_SSC_Q6     5
+#define VMID_SSC_Q6    38
 #define VMID_ADSP_Q6    6
 #define AC_VM_ADSP_HEAP_SHARED 33
 #define DEBUGFS_SIZE 1024
@@ -66,6 +66,8 @@
 #define NUM_CHANNELS	4		/* adsp,sdsp,mdsp,cdsp */
 #define NUM_SESSIONS	9		/*8 compute, 1 cpz*/
 #define FASTRPC_CTX_MAGIC (0xbeeddeed)
+#define FASTRPC_CTX_MAX (256)
+#define FASTRPC_CTXID_MASK (0xFF0)
 
 #define IS_CACHE_ALIGNED(x) (((x) & ((L1_CACHE_BYTES)-1)) == 0)
 
@@ -177,6 +179,7 @@ struct smq_invoke_ctx {
 	struct overlap **overps;
 	struct smq_msg msg;
 	unsigned int magic;
+	uint64_t ctxid;
 };
 
 struct fastrpc_ctx_lst {
@@ -246,6 +249,8 @@ struct fastrpc_apps {
 	struct ion_client *client;
 	struct device *dev;
 	bool glink;
+	spinlock_t ctxlock;
+	struct smq_invoke_ctx *ctxtable[FASTRPC_CTX_MAX];
 };
 
 struct fastrpc_mmap {
@@ -299,6 +304,7 @@ struct fastrpc_file {
 	struct fastrpc_apps *apps;
 	struct fastrpc_perf perf;
 	struct dentry *debugfs_file;
+	struct mutex map_mutex;
 };
 
 static struct fastrpc_apps gfa;
@@ -908,7 +914,8 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 			 struct fastrpc_ioctl_invoke_attrs *invokefd,
 			 struct smq_invoke_ctx **po)
 {
-	int err = 0, bufs, size = 0;
+	int err = 0, bufs, ii, size = 0;
+	struct fastrpc_apps *me = &gfa;
 	struct smq_invoke_ctx *ctx = NULL;
 	struct fastrpc_ctx_lst *clst = &fl->clst;
 	struct fastrpc_ioctl_invoke *invoke = &invokefd->inv;
@@ -968,6 +975,21 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 	hlist_add_head(&ctx->hn, &clst->pending);
 	spin_unlock(&fl->hlock);
 
+	spin_lock(&me->ctxlock);
+	for (ii = 0; ii < FASTRPC_CTX_MAX; ii++) {
+		if (!me->ctxtable[ii]) {
+			me->ctxtable[ii] = ctx;
+			ctx->ctxid = (ptr_to_uint64(ctx) & ~0xFFF)|(ii << 4);
+			break;
+		}
+	}
+	spin_unlock(&me->ctxlock);
+	VERIFY(err, ii < FASTRPC_CTX_MAX);
+	if (err) {
+		pr_err("adsprpc: out of context memory\n");
+		goto bail;
+	}
+
 	*po = ctx;
 bail:
 	if (ctx && err)
@@ -989,6 +1011,7 @@ static void context_save_interrupted(struct smq_invoke_ctx *ctx)
 static void context_free(struct smq_invoke_ctx *ctx)
 {
 	int i;
+	struct fastrpc_apps *me = &gfa;
 	int nbufs = REMOTE_SCALARS_INBUFS(ctx->sc) +
 		    REMOTE_SCALARS_OUTBUFS(ctx->sc);
 	spin_lock(&ctx->fl->hlock);
@@ -998,6 +1021,17 @@ static void context_free(struct smq_invoke_ctx *ctx)
 		fastrpc_mmap_free(ctx->maps[i]);
 	fastrpc_buf_free(ctx->buf, 1);
 	ctx->magic = 0;
+	ctx->ctxid = 0;
+
+	spin_lock(&me->ctxlock);
+	for (i = 0; i < FASTRPC_CTX_MAX; i++) {
+		if (me->ctxtable[i] == ctx) {
+			me->ctxtable[i] = NULL;
+			break;
+		}
+	}
+	spin_unlock(&me->ctxlock);
+
 	kfree(ctx);
 }
 
@@ -1436,7 +1470,7 @@ static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 	msg->tid = current->pid;
 	if (kernel)
 		msg->pid = 0;
-	msg->invoke.header.ctx = ptr_to_uint64(ctx) | fl->pd;
+	msg->invoke.header.ctx = ctx->ctxid | fl->pd;
 	msg->invoke.header.handle = handle;
 	msg->invoke.header.sc = ctx->sc;
 	msg->invoke.page.addr = ctx->buf ? ctx->buf->phys : 0;
@@ -1470,20 +1504,31 @@ static void fastrpc_smd_read_handler(int cid)
 {
 	struct fastrpc_apps *me = &gfa;
 	struct smq_invoke_rsp rsp = {0};
-	struct smq_invoke_ctx *ctx;
 	int ret = 0, err = 0;
+	uint32_t index;
 
 	do {
 		ret = smd_read_from_cb(me->channel[cid].chan, &rsp,
 					sizeof(rsp));
 		if (ret != sizeof(rsp))
 			break;
-		ctx = (struct smq_invoke_ctx *)(uint64_to_ptr(rsp.ctx));
-		VERIFY(err, (ctx && ctx->magic == FASTRPC_CTX_MAGIC));
+		index = (uint32_t)((rsp.ctx & FASTRPC_CTXID_MASK) >> 4);
+		VERIFY(err, index < FASTRPC_CTX_MAX);
 		if (err)
 			goto bail;
-		context_notify_user(uint64_to_ptr(rsp.ctx), rsp.retval);
+
+		VERIFY(err, !IS_ERR_OR_NULL(me->ctxtable[index]));
+		if (err)
+			goto bail;
+
+		VERIFY(err, ((me->ctxtable[index]->ctxid == (rsp.ctx & ~1)) &&
+			me->ctxtable[index]->magic == FASTRPC_CTX_MAGIC));
+		if (err)
+			goto bail;
+
+		context_notify_user(me->ctxtable[index], rsp.retval);
 	} while (ret == sizeof(rsp));
+
 bail:
 	if (err)
 		pr_err("adsprpc: invalid response or context\n");
@@ -1513,6 +1558,7 @@ static void fastrpc_init(struct fastrpc_apps *me)
 	INIT_HLIST_HEAD(&me->drivers);
 	INIT_HLIST_HEAD(&me->maps);
 	spin_lock_init(&me->hlock);
+	spin_lock_init(&me->ctxlock);
 	mutex_init(&me->smd_mutex);
 	me->channel = &gcinfo[0];
 	for (i = 0; i < NUM_CHANNELS; i++) {
@@ -2059,6 +2105,7 @@ static int fastrpc_internal_munmap(struct fastrpc_file *fl,
 	int err = 0;
 	struct fastrpc_mmap *map = NULL;
 
+	mutex_lock(&fl->map_mutex);
 	VERIFY(err, !fastrpc_mmap_remove(fl, ud->vaddrout, ud->size, &map));
 	if (err)
 		goto bail;
@@ -2069,6 +2116,7 @@ static int fastrpc_internal_munmap(struct fastrpc_file *fl,
 bail:
 	if (err && map)
 		fastrpc_mmap_add(map);
+	mutex_unlock(&fl->map_mutex);
 	return err;
 }
 
@@ -2078,10 +2126,13 @@ static int fastrpc_internal_mmap(struct fastrpc_file *fl,
 
 	struct fastrpc_mmap *map = NULL;
 	int err = 0;
-	if (!fastrpc_mmap_find(fl, ud->fd, (uintptr_t)ud->vaddrin, ud->size,
-			       ud->flags, &map))
-		return 0;
 
+	mutex_lock(&fl->map_mutex);
+	if (!fastrpc_mmap_find(fl, ud->fd, (uintptr_t)ud->vaddrin, ud->size,
+			       ud->flags, &map)){
+		mutex_unlock(&fl->map_mutex);
+		return 0;
+	}
 	VERIFY(err, !fastrpc_mmap_create(fl, ud->fd, 0,
 			(uintptr_t)ud->vaddrin, ud->size, ud->flags, &map));
 	if (err)
@@ -2093,6 +2144,7 @@ static int fastrpc_internal_mmap(struct fastrpc_file *fl,
  bail:
 	if (err && map)
 		fastrpc_mmap_free(map);
+	mutex_unlock(&fl->map_mutex);
 	return err;
 }
 
@@ -2165,14 +2217,32 @@ static void fastrpc_glink_notify_rx(void *handle, const void *priv,
 	const void *pkt_priv, const void *ptr, size_t size)
 {
 	struct smq_invoke_rsp *rsp = (struct smq_invoke_rsp *)ptr;
-	int len = size;
+	struct fastrpc_apps *me = &gfa;
+	uint32_t index;
+	int err = 0;
 
-	while (len >= sizeof(*rsp) && rsp) {
-		rsp->ctx = rsp->ctx & ~1;
-		context_notify_user(uint64_to_ptr(rsp->ctx), rsp->retval);
-		rsp++;
-		len = len - sizeof(*rsp);
-	}
+	VERIFY(err, (rsp && size >= sizeof(*rsp)));
+	if (err)
+		goto bail;
+
+	index = (uint32_t)((rsp->ctx & FASTRPC_CTXID_MASK) >> 4);
+	VERIFY(err, index < FASTRPC_CTX_MAX);
+	if (err)
+		goto bail;
+
+	VERIFY(err, !IS_ERR_OR_NULL(me->ctxtable[index]));
+	if (err)
+		goto bail;
+
+	VERIFY(err, ((me->ctxtable[index]->ctxid == (rsp->ctx & ~1)) &&
+		me->ctxtable[index]->magic == FASTRPC_CTX_MAGIC));
+	if (err)
+		goto bail;
+
+	context_notify_user(me->ctxtable[index], rsp->retval);
+bail:
+	if (err)
+		pr_err("adsprpc: invalid response or context\n");
 	glink_rx_done(handle, ptr, true);
 }
 
@@ -2273,6 +2343,7 @@ static int fastrpc_device_release(struct inode *inode, struct file *file)
 	if (fl) {
 		if (fl->debugfs_file != NULL)
 			debugfs_remove(fl->debugfs_file);
+		mutex_destroy(&fl->map_mutex);
 		fastrpc_file_free(fl);
 		file->private_data = NULL;
 	}
@@ -2599,6 +2670,7 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 		fl->debugfs_file = debugfs_file;
 	memset(&fl->perf, 0, sizeof(fl->perf));
 	filp->private_data = fl;
+	mutex_init(&fl->map_mutex);
 	spin_lock(&me->hlock);
 	hlist_add_head(&fl->hn, &me->drivers);
 	spin_unlock(&me->hlock);

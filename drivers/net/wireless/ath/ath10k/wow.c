@@ -25,7 +25,9 @@
 
 static const struct wiphy_wowlan_support ath10k_wowlan_support = {
 	.flags = WIPHY_WOWLAN_DISCONNECT |
-		 WIPHY_WOWLAN_MAGIC_PKT,
+		WIPHY_WOWLAN_MAGIC_PKT |
+		WIPHY_WOWLAN_SUPPORTS_GTK_REKEY |
+		WIPHY_WOWLAN_GTK_REKEY_FAILURE,
 	.pattern_min_len = WOW_MIN_PATTERN_SIZE,
 	.pattern_max_len = WOW_MAX_PATTERN_SIZE,
 	.max_pkt_offset = WOW_MAX_PKT_OFFSET,
@@ -82,6 +84,7 @@ static int ath10k_vif_wow_set_wakeups(struct ath10k_vif *arvif,
 	int ret, i;
 	unsigned long wow_mask = 0;
 	struct ath10k *ar = arvif->ar;
+	struct ieee80211_bss_conf *bss = &arvif->vif->bss_conf;
 	const struct cfg80211_pkt_pattern *patterns = wowlan->patterns;
 	int pattern_id = 0;
 
@@ -100,15 +103,19 @@ static int ath10k_vif_wow_set_wakeups(struct ath10k_vif *arvif,
 		__set_bit(WOW_RA_MATCH_EVENT, &wow_mask);
 		break;
 	case WMI_VDEV_TYPE_STA:
-		if (wowlan->disconnect) {
-			__set_bit(WOW_DEAUTH_RECVD_EVENT, &wow_mask);
-			__set_bit(WOW_DISASSOC_RECVD_EVENT, &wow_mask);
-			__set_bit(WOW_BMISS_EVENT, &wow_mask);
-			__set_bit(WOW_CSA_IE_EVENT, &wow_mask);
-		}
+		if (arvif->is_up && bss->assoc) {
+			if (wowlan->disconnect) {
+				__set_bit(WOW_DEAUTH_RECVD_EVENT, &wow_mask);
+				__set_bit(WOW_DISASSOC_RECVD_EVENT, &wow_mask);
+				__set_bit(WOW_BMISS_EVENT, &wow_mask);
+				__set_bit(WOW_CSA_IE_EVENT, &wow_mask);
+			}
 
-		if (wowlan->magic_pkt)
-			__set_bit(WOW_MAGIC_PKT_RECVD_EVENT, &wow_mask);
+			if (wowlan->magic_pkt)
+				__set_bit(WOW_MAGIC_PKT_RECVD_EVENT, &wow_mask);
+			if (wowlan->gtk_rekey_failure)
+				__set_bit(WOW_GTK_ERR_EVENT, &wow_mask);
+		}
 		break;
 	default:
 		break;
@@ -331,7 +338,7 @@ void ath10k_wow_op_set_rekey_data(struct ieee80211_hw *hw,
 	memcpy(&arvif->gtk_rekey_data.kek, data->kek, NL80211_KEK_LEN);
 	memcpy(&arvif->gtk_rekey_data.kck, data->kck, NL80211_KCK_LEN);
 	arvif->gtk_rekey_data.replay_ctr =
-			__cpu_to_le64(*(__le64 *)data->replay_ctr);
+		cpu_to_le64(be64_to_cpup((__be64 *)data->replay_ctr));
 	arvif->gtk_rekey_data.valid = true;
 	mutex_unlock(&ar->conf_mutex);
 }
@@ -459,6 +466,46 @@ void ath10k_wow_op_set_wakeup(struct ieee80211_hw *hw, bool enabled)
 	mutex_unlock(&ar->conf_mutex);
 }
 
+static void ath10k_wow_op_report_wakeup_reason(struct ath10k *ar)
+{
+	struct cfg80211_wowlan_wakeup *wakeup = &ar->wow.wakeup;
+	struct ath10k_vif *arvif;
+
+	memset(wakeup, 0, sizeof(struct cfg80211_wowlan_wakeup));
+	switch (ar->wow.wakeup_reason) {
+	case WOW_REASON_UNSPECIFIED:
+		wakeup = NULL;
+		break;
+	case WOW_REASON_RECV_MAGIC_PATTERN:
+		wakeup->magic_pkt = true;
+		break;
+	case WOW_REASON_DEAUTH_RECVD:
+	case WOW_REASON_DISASSOC_RECVD:
+	case WOW_REASON_AP_ASSOC_LOST:
+	case WOW_REASON_CSA_EVENT:
+		wakeup->disconnect = true;
+		break;
+	case WOW_REASON_GTK_HS_ERR:
+		wakeup->gtk_rekey_failure = true;
+		break;
+	}
+	ar->wow.wakeup_reason = WOW_REASON_UNSPECIFIED;
+
+	if (wakeup) {
+		wakeup->pattern_idx = -1;
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			ieee80211_report_wowlan_wakeup(arvif->vif,
+						       wakeup, GFP_KERNEL);
+			if (wakeup->disconnect)
+				ieee80211_resume_disconnect(arvif->vif);
+		}
+	} else {
+		list_for_each_entry(arvif, &ar->arvifs, list)
+			ieee80211_report_wowlan_wakeup(arvif->vif,
+						       NULL, GFP_KERNEL);
+	}
+}
+
 int ath10k_wow_op_resume(struct ieee80211_hw *hw)
 {
 	struct ath10k *ar = hw->priv;
@@ -513,6 +560,7 @@ exit:
 		}
 	}
 
+	ath10k_wow_op_report_wakeup_reason(ar);
 	mutex_unlock(&ar->conf_mutex);
 	return ret;
 }

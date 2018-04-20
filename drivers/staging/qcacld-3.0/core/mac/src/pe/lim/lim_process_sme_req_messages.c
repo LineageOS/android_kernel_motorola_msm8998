@@ -1898,6 +1898,7 @@ __lim_process_sme_join_req(tpAniSirGlobal mac_ctx, uint32_t *msg_buf)
 		session->maxTxPower = lim_get_max_tx_power(reg_max,
 					local_power_constraint,
 					mac_ctx->roam.configParam.nTxPowerCap);
+		session->def_max_tx_pwr = session->maxTxPower;
 
 		pe_debug("Reg max %d local power con %d max tx pwr %d",
 			reg_max, local_power_constraint, session->maxTxPower);
@@ -3526,7 +3527,7 @@ void __lim_process_sme_assoc_cnf_new(tpAniSirGlobal mac_ctx, uint32_t msg_type,
 				       sta_ds->mlmStaContext.subType,
 				       true, sta_ds->mlmStaContext.authType,
 				       sta_ds->assocId, true,
-				       eSIR_SME_UNEXPECTED_REQ_RESULT_CODE,
+				       eSIR_MAC_UNSPEC_FAILURE_STATUS,
 				       session_entry);
 	}
 end:
@@ -6060,7 +6061,6 @@ skip_vht:
 	lim_send_chan_switch_action_frame(mac_ctx,
 		session_entry->gLimChannelSwitch.primaryChannel,
 		ch_offset, session_entry);
-	session_entry->gLimChannelSwitch.switchCount--;
 }
 
 /**

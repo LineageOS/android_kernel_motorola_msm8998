@@ -3220,17 +3220,16 @@ QDF_STATUS wmi_unified_enable_arp_ns_offload_cmd(void *wmi_hdl,
 	return QDF_STATUS_E_FAILURE;
 }
 
-QDF_STATUS wmi_unified_conf_hw_filter_mode_cmd(void *wmi_hdl,
-					       uint8_t vdev_id,
-					       uint8_t mode_bitmap)
+QDF_STATUS
+wmi_unified_conf_hw_filter_mode_cmd(void *wmi_hdl,
+				    struct wmi_hw_filter_req_params *req)
 {
 	wmi_unified_t wmi = wmi_hdl;
 
 	if (!wmi->ops->send_conf_hw_filter_mode_cmd)
 		return QDF_STATUS_E_FAILURE;
 
-	return wmi->ops->send_conf_hw_filter_mode_cmd(wmi, vdev_id,
-						      mode_bitmap);
+	return wmi->ops->send_conf_hw_filter_mode_cmd(wmi, req);
 }
 
 /**
@@ -6388,6 +6387,30 @@ QDF_STATUS wmi_unified_send_limit_off_chan_cmd(void *wmi_hdl,
 	if (wmi_handle->ops->send_limit_off_chan_cmd)
 		return wmi_handle->ops->send_limit_off_chan_cmd(wmi_handle,
 				limit_off_chan_param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_unified_offload_11k_cmd(void *wmi_hdl,
+				struct wmi_11k_offload_params *params)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_offload_11k_cmd)
+		return wmi_handle->ops->send_offload_11k_cmd(
+				wmi_handle, params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_unified_invoke_neighbor_report_cmd(void *wmi_hdl,
+			struct wmi_invoke_neighbor_report_params *params)
+{
+	wmi_unified_t wmi_handle = (wmi_unified_t) wmi_hdl;
+
+	if (wmi_handle->ops->send_invoke_neighbor_report_cmd)
+		return wmi_handle->ops->send_invoke_neighbor_report_cmd(
+				wmi_handle, params);
 
 	return QDF_STATUS_E_FAILURE;
 }

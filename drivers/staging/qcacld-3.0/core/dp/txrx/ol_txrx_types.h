@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -1053,6 +1053,7 @@ struct ol_txrx_vdev_t {
 						* pseudo-peer)
 						*/
 	ol_txrx_rx_fp rx; /* receive function used by this vdev */
+	ol_txrx_stats_rx_fp stats_rx; /* receive function used by this vdev */
 
 	struct {
 		/*
@@ -1383,6 +1384,11 @@ struct ol_error_info {
 struct ol_rx_remote_data {
 	qdf_nbuf_t msdu;
 	uint8_t mac_id;
+};
+
+struct ol_fw_data {
+	void *data;
+	uint32_t len;
 };
 
 #define INVALID_REORDER_INDEX 0xFFFF

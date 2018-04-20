@@ -185,8 +185,9 @@ QDF_STATUS (*send_vdev_delete_cmd)(wmi_unified_t wmi_handle,
 QDF_STATUS (*send_vdev_stop_cmd)(wmi_unified_t wmi,
 					uint8_t vdev_id);
 
-QDF_STATUS (*send_conf_hw_filter_mode_cmd)(wmi_unified_t wmi, uint8_t vdev_id,
-					   uint8_t mode_bitmap);
+QDF_STATUS
+(*send_conf_hw_filter_mode_cmd)(wmi_unified_t wmi,
+				struct wmi_hw_filter_req_params *req);
 
 QDF_STATUS (*send_vdev_down_cmd)(wmi_unified_t wmi,
 			uint8_t vdev_id);
@@ -1199,6 +1200,12 @@ QDF_STATUS (*send_get_rcpi_cmd)(wmi_unified_t wmi_handle,
 
 QDF_STATUS (*send_limit_off_chan_cmd)(wmi_unified_t wmi_handle,
 			struct wmi_limit_off_chan_param *limit_off_chan_param);
+
+QDF_STATUS (*send_offload_11k_cmd)(wmi_unified_t wmi_handle,
+		struct wmi_11k_offload_params *params);
+
+QDF_STATUS (*send_invoke_neighbor_report_cmd)(wmi_unified_t wmi_handle,
+		struct wmi_invoke_neighbor_report_params *params);
 };
 
 struct target_abi_version {

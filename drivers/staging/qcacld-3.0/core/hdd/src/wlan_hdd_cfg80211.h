@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -301,6 +301,25 @@ typedef struct sHddAvoidFreqList {
  */
 bool hdd_is_ie_valid(const uint8_t *ie, size_t ie_len);
 
+
+#define CONNECTIVITY_CHECK_SET_ARP \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_ARP
+#define CONNECTIVITY_CHECK_SET_DNS \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_DNS
+#define CONNECTIVITY_CHECK_SET_TCP_HANDSHAKE \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_TCP_HANDSHAKE
+#define CONNECTIVITY_CHECK_SET_ICMPV4 \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_ICMPV4
+#define CONNECTIVITY_CHECK_SET_ICMPV6 \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_ICMPV6
+#define CONNECTIVITY_CHECK_SET_TCP_SYN \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_TCP_SYN
+#define CONNECTIVITY_CHECK_SET_TCP_SYN_ACK \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_TCP_SYN_ACK
+#define CONNECTIVITY_CHECK_SET_TCP_ACK \
+	QCA_WLAN_VENDOR_CONNECTIVITY_CHECK_SET_TCP_ACK
+
+
 struct cfg80211_bss *wlan_hdd_cfg80211_update_bss_db(hdd_adapter_t *pAdapter,
 						tCsrRoamInfo *pRoamInfo);
 
@@ -590,6 +609,17 @@ void hdd_process_defer_disconnect(hdd_adapter_t *adapter);
 int wlan_hdd_try_disconnect(hdd_adapter_t *adapter);
 
 /**
+ * wlan_hdd_disconnect() - hdd disconnect api
+ * @pAdapter: Pointer to adapter
+ * @reason: Disconnect reason code
+ *
+ * This function is used to issue a disconnect request to SME
+ *
+ * Return: 0 for success, non-zero for failure
+ */
+int wlan_hdd_disconnect(hdd_adapter_t *pAdapter, u16 reason);
+
+/**
  * hdd_bt_activity_cb() - callback function to receive bt activity
  * @context: HDD context
  * @bt_activity: specifies the kind of bt activity
@@ -645,4 +675,22 @@ void wlan_hdd_save_gtk_offload_params(hdd_adapter_t *adapter,
 					     uint8_t *replay_ctr,
 					     bool big_endian,
 					     uint32_t ul_flags);
+
+/*
+ * wlan_hdd_send_sta_authorized_event() - Function to send station authorized
+ * event to user space in case of SAP
+ * @pAdapter: Pointer to the adapter
+ * @pHddCtx: HDD Context
+ * @mac_addr: MAC address of the STA for which the Authorized event needs to
+ * be sent
+ *
+ * This api is used to send station authorized event to user space
+ *
+ * Return: Returns QDF_STATUS_SUCCESS on success else rturns error value
+ */
+
+QDF_STATUS wlan_hdd_send_sta_authorized_event(
+					hdd_adapter_t *pAdapter,
+					hdd_context_t *pHddCtx,
+					const struct qdf_mac_addr *mac_addr);
 #endif

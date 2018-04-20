@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -11495,6 +11495,8 @@ enum hw_filter_mode {
  * <ini>
  * gActionOUIConnect1x1 - Used to specify action OUIs for 1x1 connection
  * @Default: 000C43 00 25 42 001018 06 02FFF02C0000 BC 25 42 001018 06 02FF040C0000 BC 25 42 00037F 00 35 6C
+ * Note: User should strictly add new action OUIs at the end of this
+ * default value.
  *
  * Default OUIs: (All values in Hex)
  * OUI 1 : 000C43
@@ -11535,7 +11537,22 @@ enum hw_filter_mode {
 /*
  * <ini>
  * gActionOUIITOExtension - Used to extend in-activity time for specified APs
- * @Default: Empty string
+ * @Default: 00037F 06 01010000FF7F FC 01 000AEB 02 0100 C0 01
+ * Note: User should strictly add new action OUIs at the end of this
+ * default value.
+ *
+ * Default OUIs: (All values in Hex)
+ * OUI 1: 00037F
+ *   OUI data Len: 06
+ *   OUI Data: 01010000FF7F
+ *   OUI data Mask: FC - 11111100
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
+ * OUI 2: 000AEB
+ *   OUI data Len: 02
+ *   OUI Data: 0100
+ *   OUI data Mask: C0 - 11000000
+ *   Info Mask : 01 - only OUI present in Info mask
  *
  * This ini is used to specify AP OUIs using which station's in-activity time
  * can be extended with the respective APs
@@ -11549,7 +11566,7 @@ enum hw_filter_mode {
  * </ini>
  */
 #define CFG_ACTION_OUI_ITO_EXTENSION_NAME    "gActionOUIITOExtension"
-#define CFG_ACTION_OUI_ITO_EXTENSION_DEFAULT ""
+#define CFG_ACTION_OUI_ITO_EXTENSION_DEFAULT "00037F 06 01010000FF7F FC 01 000AEB 02 0100 C0 01"
 
 /*
  * <ini>
@@ -12997,6 +13014,207 @@ enum hw_filter_mode {
 #define CFG_CHAN_SWITCH_HOSTAPD_RATE_ENABLED_DEFAULT (0)
 
 
+#define OFFLOAD_11K_BITMASK_NEIGHBOR_REPORT_REQUEST  0x1
+
+/*
+ * <ini>
+ * 11k_offload_enable_bitmask - Bitmask to enable 11k offload to FW
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to set which of the 11k features is offloaded to FW
+ * Currently Neighbor Report Request is supported for offload and is enabled
+ * by default
+ * B0: Offload 11k neighbor report requests
+ * B1-B31: Reserved
+ *
+ * Related : None
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+
+#define CFG_OFFLOAD_11K_ENABLE_BITMASK_NAME    "11k_offload_enable_bitmask"
+#define CFG_OFFLOAD_11K_ENABLE_BITMASK_MIN     (0)
+#define CFG_OFFLOAD_11K_ENABLE_BITMASK_MAX     (1)
+#define CFG_OFFLOAD_11K_ENABLE_BITMASK_DEFAULT (1)
+
+/*
+ * <ini>
+ * nr_offload_params_bitmask - bitmask to specify which of the
+ * neighbor report offload params are valid in the ini
+ * frame
+ * @Min: 0
+ * @Max: 63
+ * @Default: 63
+ *
+ * This ini specifies which of the neighbor report offload params are valid
+ * and should be considered by the FW. The bitmask is as follows
+ * B0: nr_offload_time_offset
+ * B1: nr_offload_low_rssi_offset
+ * B2: nr_offload_bmiss_count_trigger
+ * B3: nr_offload_per_threshold_offset
+ * B4: nr_offload_cache_timeout
+ * B5: nr_offload_max_req_cap
+ * B6-B7: Reserved
+ *
+ * Related : 11k_offload_enable_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PARAMS_BITMASK_NAME \
+	"nr_offload_params_bitmask"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PARAMS_BITMASK_MIN      (0)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PARAMS_BITMASK_MAX      (63)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PARAMS_BITMASK_DEFAULT  (63)
+
+/*
+ * <ini>
+ * nr_offload_time_offset - time interval in seconds after the
+ * neighbor report offload command to send the first neighbor report request
+ * frame
+ * @Min: 0
+ * @Max: 3600
+ * @Default: 30
+ *
+ * Related : nr_offload_params_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_TIME_OFFSET_NAME \
+	"nr_offload_time_offset"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_TIME_OFFSET_MIN      (0)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_TIME_OFFSET_MAX      (3600)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_TIME_OFFSET_DEFAULT  (30)
+
+/*
+ * <ini>
+ * nr_offload_low_rssi_offset - offset from the roam RSSI threshold
+ * to trigger the neighbor report request frame (in dBm)
+ * @Min: 4
+ * @Max: 10
+ * @Default: 4
+ *
+ * Related : nr_offload_params_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_LOW_RSSI_OFFSET_NAME \
+	"nr_offload_low_rssi_offset"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_LOW_RSSI_OFFSET_MIN     (4)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_LOW_RSSI_OFFSET_MAX     (10)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_LOW_RSSI_OFFSET_DEFAULT (4)
+
+/*
+ * <ini>
+ * nr_offload_bmiss_count_trigger - Number of beacon miss events to
+ * trigger a neighbor report request frame
+ * @Min: 1
+ * @Max: 5
+ * @Default: 1
+ *
+ * Related : nr_offload_params_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_BMISS_COUNT_TRIGGER_NAME \
+	"nr_offload_bmiss_count_trigger"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_BMISS_COUNT_TRIGGER_MIN     (1)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_BMISS_COUNT_TRIGGER_MAX     (5)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_BMISS_COUNT_TRIGGER_DEFAULT (1)
+
+/*
+ * <ini>
+ * nr_offload_per_threshold_offset - offset from PER threshold to
+ * trigger a neighbor report request frame (in %)
+ * @Min: 5
+ * @Max: 20
+ * @Default: 5
+ *
+ * This ini is used to set the neighbor report offload parameter:
+ *
+ * Related : nr_offload_params_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PER_THRESHOLD_OFFSET_NAME \
+	"nr_offload_per_threshold_offset"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PER_THRESHOLD_OFFSET_MIN     (5)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PER_THRESHOLD_OFFSET_MAX     (20)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_PER_THRESHOLD_OFFSET_DEFAULT (5)
+
+/*
+ * <ini>
+ * nr_offload_cache_timeout - time in seconds after which the
+ * neighbor report cache is marked as timed out and any of the triggers would
+ * cause a neighbor report request frame to be sent.
+ * @Min: 5
+ * @Max: 86400
+ * @Default: 1200
+ *
+ * Related : nr_offload_params_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_CACHE_TIMEOUT_NAME \
+	"nr_offload_cache_timeout"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_CACHE_TIMEOUT_MIN     (5)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_CACHE_TIMEOUT_MAX     (86400)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_CACHE_TIMEOUT_DEFAULT (1200)
+
+/*
+ * <ini>
+ * nr_offload_max_req_cap - Max number of neighbor
+ * report requests that can be sent to a connected peer in the current session.
+ * This counter is reset once a successful roam happens or at cache timeout
+ * @Min: 3
+ * @Max: 300
+ * @Default: 3
+ *
+ * Related : nr_offload_params_bitmask
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_MAX_REQ_CAP_NAME \
+	"nr_offload_max_req_cap"
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_MAX_REQ_CAP_MIN     (3)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_MAX_REQ_CAP_MAX     (300)
+#define CFG_OFFLOAD_NEIGHBOR_REPORT_MAX_REQ_CAP_DEFAULT (3)
+
+/*
+ * <ini>
+ * gTxSchDelay - Enable/Disable Tx sch delay
+ * @Min: 0
+ * @Max: 5
+ * @Default: 2
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
+
+#define CFG_TX_SCH_DELAY_NAME          "gTxSchDelay"
+#define CFG_TX_SCH_DELAY_MIN           (0)
+#define CFG_TX_SCH_DELAY_MAX           (5)
+#define CFG_TX_SCH_DELAY_DEFAULT       (2)
+
 /*---------------------------------------------------------------------------
    Type declarations
    -------------------------------------------------------------------------*/
@@ -13848,6 +14066,16 @@ struct hdd_config {
 	uint32_t oce_wan_score_slots15_to_12;
 	bool enable_scoring_for_roam;
 	bool chan_switch_hostapd_rate_enabled;
+	bool is_11k_offload_supported;
+	uint32_t offload_11k_enable_bitmask;
+	uint32_t neighbor_report_offload_params_bitmask;
+	uint32_t neighbor_report_offload_time_offset;
+	uint32_t neighbor_report_offload_low_rssi_offset;
+	uint32_t neighbor_report_offload_bmiss_count_trigger;
+	uint32_t neighbor_report_offload_per_threshold_offset;
+	uint32_t neighbor_report_offload_cache_timeout;
+	uint32_t neighbor_report_offload_max_req_cap;
+	uint8_t enable_tx_sch_delay;
 };
 
 #define VAR_OFFSET(_Struct, _Var) (offsetof(_Struct, _Var))
