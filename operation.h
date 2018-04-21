@@ -17,7 +17,7 @@
 struct gb_operation;
 
 /* The default amount of time a request is given to complete */
-#define GB_OPERATION_TIMEOUT_DEFAULT	1000	/* milliseconds */
+#define GB_OPERATION_TIMEOUT_DEFAULT	2000	/* milliseconds */
 
 /*
  * No protocol may define an operation that has numeric value 0x00.
