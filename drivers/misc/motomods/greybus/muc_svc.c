@@ -612,7 +612,7 @@ static int muc_svc_create_dl_dev_sysfs(struct mods_dl_device *mods_dev)
 
 	/* Hold a timed wakelock for userspace to handle attach */
 	wake_lock_timeout(&svc_dd->wlock, msecs_to_jiffies(1000));
-	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ONLINE);
+	kobject_uevent(&mods_dev->intf_kobj, KOBJ_ADD);
 
 	return 0;
 
@@ -2983,7 +2983,7 @@ static int muc_svc_probe(struct platform_device *pdev)
 	 * userspace won't be able to know new sysfs entries have been
 	 * created....
 	 */
-	kobject_uevent(&pdev->dev.kobj, KOBJ_ONLINE);
+	kobject_uevent(&pdev->dev.kobj, KOBJ_ADD);
 
 	return 0;
 
