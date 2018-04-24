@@ -17,7 +17,11 @@
 struct gb_operation;
 
 /* The default amount of time a request is given to complete */
+#ifdef CONFIG_MODS_USE_EXTCODEC_MI2S
 #define GB_OPERATION_TIMEOUT_DEFAULT	2000	/* milliseconds */
+#else
+#define GB_OPERATION_TIMEOUT_DEFAULT	1000	/* milliseconds */
+#endif
 
 /*
  * No protocol may define an operation that has numeric value 0x00.
