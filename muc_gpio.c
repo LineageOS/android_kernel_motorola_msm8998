@@ -287,6 +287,7 @@ static void muc_handle_detection(bool force_removal)
 
 	if (detected) {
 #ifdef CONFIG_MODS_2ND_GEN
+		pinctrl_select_state(cdata->pinctrl, cdata->pins_discon);
 		muc_seq(cdata, cdata->select_spi_seq, cdata->select_spi_seq_len);
 #endif
 
