@@ -83,5 +83,4 @@ obj-$(CONFIG_MOTOMODS) += motomods/
 
 # TODO: remove me b/62058353
 subdir-ccflags-y += \
-	-Wno-ignored-attributes \
 	-Wno-header-guard

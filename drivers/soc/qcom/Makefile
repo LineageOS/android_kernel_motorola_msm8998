@@ -120,6 +120,5 @@ obj-$(CONFIG_BOOTINFO) += bootinfo.o
 
 # TODO: remove me b/62058353
 subdir-ccflags-y += \
-	-Wno-ignored-attributes \
 	-Wno-gcc-compat \
 	-Wno-enum-conversion
