@@ -326,6 +326,7 @@ static void muc_handle_detection(bool force_removal)
 				__func__);
 	}
 
+	pm_qos_update_request(&cdata->req, 500);
 	cdata->muc_detected = detected;
 
 	err = muc_attach_notifier_call_chain(detected);
@@ -791,6 +792,10 @@ int muc_gpio_init(struct device *dev, struct muc_data *cdata)
 
 	cdata->need_det_output = of_property_read_bool(dev->of_node,
 		"mmi,muc-det-pin-reconfig");
+
+	memset(&cdata->req, 0, sizeof(cdata->req));
+	cdata->req.type = PM_QOS_REQ_ALL_CORES;
+	pm_qos_add_request(&cdata->req, PM_QOS_CPU_DMA_LATENCY, 300);
 
 	return 0;
 free_attach_wq:
