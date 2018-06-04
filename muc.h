@@ -19,7 +19,6 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/notifier.h>
 #include <linux/workqueue.h>
-#include <linux/pm_qos.h>
 
 enum {
 	MUC_GPIO_DET_N    = 0,
@@ -103,7 +102,6 @@ struct muc_data {
 	struct muc_attach_work isr_work; /* Dedicated work for ISR */
 	struct muc_reset_work ff_work; /* Dedicated work for FF/Reset */
 	struct mutex work_lock;
-	struct pm_qos_request req;
 	uint8_t bplus_state;
 
 	/* Configuration */
