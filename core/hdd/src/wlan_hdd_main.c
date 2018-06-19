@@ -9940,7 +9940,7 @@ static int hdd_initialize_mac_address(hdd_context_t *hdd_ctx)
 
 	status = hdd_update_mac_serial(hdd_ctx);
 	if (QDF_IS_STATUS_SUCCESS(status))
-		return;
+		return 0;
 
 	hdd_info("MAC is not programmed in wlan_mac.bin ret %d, use default MAC",
 		 status);
