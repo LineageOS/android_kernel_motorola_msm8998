@@ -4945,7 +4945,7 @@ static QDF_STATUS sap_get_channel_list(ptSapContext sap_ctx,
 			if (CDS_CHANNEL_NUM(loop_count) >=
 			    CDS_CHANNEL_NUM(CHAN_ENUM_1) &&
 			    CDS_CHANNEL_NUM(loop_count) <=
-			    CDS_CHANNEL_NUM(CHAN_ENUM_14))
+			    CDS_CHANNEL_NUM(CHAN_ENUM_13))
 				continue;
 		}
 
