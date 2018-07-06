@@ -74,7 +74,7 @@
 #include "sap_api.h"
 #include "csr_api.h"
 #include "pld_common.h"
-
+#include "wlan_hdd_request_manager.h"
 
 #ifdef FEATURE_WLAN_EXTSCAN
 #include "wlan_hdd_ext_scan.h"
@@ -3912,6 +3912,10 @@ fail:
 	return -EINVAL;
 }
 
+struct peer_txrx_rate_priv {
+	struct sir_peer_info_ext peer_info_ext;
+};
+
 /**
  * hdd_get_peer_txrx_rate_cb() - get station's txrx rate callback
  * @peer_info: pointer of peer information
@@ -3923,66 +3927,33 @@ fail:
 static void hdd_get_peer_txrx_rate_cb(struct sir_peer_info_ext_resp *peer_info,
 		void *context)
 {
-	struct statsContext *get_txrx_rate_context;
-	struct sir_peer_info_ext *txrx_rate;
-	hdd_adapter_t *adapter;
-	uint8_t staid;
+	struct hdd_request *request;
+	struct peer_txrx_rate_priv *priv;
 
-	if ((peer_info == NULL) || (context == NULL)) {
-		hdd_err("Bad param, peer_info [%pK] context [%pK]",
-			peer_info, context);
-		return;
-	}
-
-	spin_lock(&hdd_context_lock);
-	/*
-	 * there is a race condition that exists between this callback
-	 * function and the caller since the caller could time out either
-	 * before or while this code is executing.  we use a spinlock to
-	 * serialize these actions
-	 */
-	get_txrx_rate_context = context;
-	if (get_txrx_rate_context->magic != PEER_INFO_CONTEXT_MAGIC) {
-		/*
-		 * the caller presumably timed out so there is nothing
-		 * we can do
-		 */
-		spin_unlock(&hdd_context_lock);
-		hdd_warn("Invalid context, magic [%08x]",
-			get_txrx_rate_context->magic);
+	if (NULL == peer_info) {
+		hdd_err("Bad param, peer_info [%pK]", peer_info);
 		return;
 	}
 
 	if (!peer_info->count || !peer_info->info) {
-		spin_unlock(&hdd_context_lock);
 		hdd_err("Fail to get remote peer info");
 		return;
 	}
 
-	adapter = get_txrx_rate_context->pAdapter;
-	txrx_rate = peer_info->info;
-	if (hdd_softap_get_sta_id(adapter,
-				&txrx_rate->peer_macaddr,
-				&staid) != QDF_STATUS_SUCCESS) {
-		spin_unlock(&hdd_context_lock);
-		hdd_err("Station MAC address does not matching");
+	request = hdd_request_get(context);
+	if (!request) {
+		hdd_err("Obsolete request");
 		return;
 	}
 
-	adapter->aStaInfo[staid].tx_rate = txrx_rate->tx_rate;
-	adapter->aStaInfo[staid].rx_rate = txrx_rate->rx_rate;
-	hdd_debug("%pM txrate %u rxrate %u",
-			txrx_rate->peer_macaddr.bytes,
-			adapter->aStaInfo[staid].tx_rate,
-			adapter->aStaInfo[staid].rx_rate);
+	priv = hdd_request_priv(request);
 
-	get_txrx_rate_context->magic = 0;
+	qdf_mem_copy(&priv->peer_info_ext,
+		     peer_info->info,
+		     sizeof(peer_info->info[0]));
 
-	/* notify the caller */
-	complete(&get_txrx_rate_context->completion);
-
-	/* serialization is complete */
-	spin_unlock(&hdd_context_lock);
+	hdd_request_complete(request);
+	hdd_request_put(request);
 }
 
 /**
@@ -3999,17 +3970,30 @@ static int wlan_hdd_get_txrx_rate(hdd_adapter_t *adapter,
 {
 	QDF_STATUS status;
 	int ret;
-	static struct statsContext context;
+	uint8_t staid;
+	void *cookie;
 	struct sir_peer_info_ext_req txrx_rate_req;
+	struct hdd_request *request;
+	struct peer_txrx_rate_priv *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_STATS,
+	};
 
 	if (adapter == NULL) {
 		hdd_err("pAdapter is NULL");
 		return -EFAULT;
 	}
 
-	init_completion(&context.completion);
-	context.magic = PEER_INFO_CONTEXT_MAGIC;
-	context.pAdapter = adapter;
+	request = hdd_request_alloc(&params);
+	if (!request) {
+		hdd_err("%s: Request allocation failure",
+			__func__);
+		return -ENOMEM;
+	}
+
+	cookie = hdd_request_cookie(request);
+	priv = hdd_request_priv(request);
 
 	qdf_mem_copy(&(txrx_rate_req.peer_macaddr), &macaddress,
 				QDF_MAC_ADDR_SIZE);
@@ -4017,36 +4001,38 @@ static int wlan_hdd_get_txrx_rate(hdd_adapter_t *adapter,
 	txrx_rate_req.reset_after_request = 0;
 	status = sme_get_peer_info_ext(WLAN_HDD_GET_HAL_CTX(adapter),
 				&txrx_rate_req,
-				&context,
+				cookie,
 				hdd_get_peer_txrx_rate_cb);
 	if (status != QDF_STATUS_SUCCESS) {
 		hdd_err("Unable to retrieve statistics for txrx_rate");
 		ret = -EFAULT;
 	} else {
-		if (!wait_for_completion_timeout(&context.completion,
-				msecs_to_jiffies(WLAN_WAIT_TIME_STATS))) {
+		ret = hdd_request_wait_for_response(request);
+		if (ret) {
 			hdd_err("SME timed out while retrieving txrx_rate");
 			ret = -EFAULT;
 		} else {
-			ret = 0;
+			if (hdd_softap_get_sta_id(adapter,
+					&priv->peer_info_ext.peer_macaddr,
+					&staid) != QDF_STATUS_SUCCESS) {
+				hdd_err("Station MAC address does not matching");
+				ret = -EFAULT;
+			} else {
+				adapter->aStaInfo[staid].tx_rate =
+						priv->peer_info_ext.tx_rate;
+				adapter->aStaInfo[staid].rx_rate =
+						priv->peer_info_ext.rx_rate;
+
+				hdd_info("%pM tx rate %u rx rate %u",
+					priv->peer_info_ext.peer_macaddr.bytes,
+					adapter->aStaInfo[staid].tx_rate,
+					adapter->aStaInfo[staid].rx_rate);
+				ret = 0;
+			}
 		}
 	}
-	/*
-	 * either we never sent a request, we sent a request and received a
-	 * response or we sent a request and timed out.  if we never sent a
-	 * request or if we sent a request and got a response, we want to
-	 * clear the magic out of paranoia.  if we timed out there is a
-	 * race condition such that the callback function could be
-	 * executing at the same time we are. of primary concern is if the
-	 * callback function had already verified the "magic" but had not
-	 * yet set the completion variable when a timeout occurred. we
-	 * serialize these activities by invalidating the magic while
-	 * holding a shared spinlock which will cause us to block if the
-	 * callback is currently executing
-	 */
-	spin_lock(&hdd_context_lock);
-	context.magic = 0;
-	spin_unlock(&hdd_context_lock);
+
+	hdd_request_put(request);
 	return ret;
 }
 
@@ -4765,8 +4751,8 @@ static int __wlan_hdd_cfg80211_keymgmt_set_key(struct wiphy *wiphy,
 		return -EPERM;
 	}
 
-	if ((data == NULL) || (data_len == 0) ||
-			(data_len > SIR_ROAM_SCAN_PSK_SIZE)) {
+	if ((data == NULL) || (data_len <= 0) ||
+	    (data_len > SIR_ROAM_SCAN_PSK_SIZE)) {
 		hdd_err("Invalid data");
 		return -EINVAL;
 	}
@@ -11049,6 +11035,11 @@ static int __wlan_hdd_cfg80211_set_limit_offchan_param(struct wiphy *wiphy,
 	}
 
 	tos = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ACTIVE_TOS]);
+	if (tos >= HDD_MAX_AC) {
+		hdd_err("tos value %d exceeded Max value %d",
+			tos, HDD_MAX_AC);
+		goto fail;
+	}
 	hdd_debug("tos %d", tos);
 
 	if (!tb[QCA_WLAN_VENDOR_ATTR_ACTIVE_TOS_START]) {
@@ -15927,7 +15918,7 @@ static bool wlan_hdd_handle_sap_sta_dfs_conc(hdd_adapter_t *adapter,
 	 * machine from disconnected to started and set this event.
 	 * wait for 10 secs to finish this.
 	 */
-	status = qdf_wait_single_event(&hostapd_state->qdf_event, 10000);
+	status = qdf_wait_for_event_completion(&hostapd_state->qdf_event, 10000);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		hdd_err("wait for qdf_event failed, STA not allowed!!");
 		return false;
@@ -16705,9 +16696,9 @@ static int wlan_hdd_cfg80211_set_ie(hdd_adapter_t *pAdapter, const uint8_t *ie,
 	uint16_t remLen = ie_len;
 #ifdef FEATURE_WLAN_WAPI
 	uint32_t akmsuite[MAX_NUM_AKM_SUITES];
-	u16 *tmp;
+	uint8_t *tmp;
 	uint16_t akmsuiteCount;
-	int *akmlist;
+	uint32_t *akmlist;
 #endif
 	int status;
 
@@ -16900,6 +16891,11 @@ static int wlan_hdd_cfg80211_set_ie(hdd_adapter_t *pAdapter, const uint8_t *ie,
 			}
 			break;
 		case DOT11F_EID_RSN:
+			if  (eLen  > DOT11F_IE_RSN_MAX_LEN) {
+				hdd_err("%s: Invalid WPA RSN IE length[%d]",
+						__func__, eLen);
+				return -EINVAL;
+			}
 			hdd_debug("Set RSN IE(len %d)", eLen + 2);
 			memset(pWextState->WPARSNIE, 0, MAX_WPA_RSN_IE_LEN);
 			memcpy(pWextState->WPARSNIE, genie - 2,
@@ -16946,13 +16942,16 @@ static int wlan_hdd_cfg80211_set_ie(hdd_adapter_t *pAdapter, const uint8_t *ie,
 			/* Setting WAPI Mode to ON=1 */
 			pAdapter->wapi_info.nWapiMode = 1;
 			hdd_debug("WAPI MODE IS %u", pAdapter->wapi_info.nWapiMode);
-			tmp = (u16 *) ie;
-			tmp = tmp + 2;  /* Skip element Id and Len, Version */
+			tmp = (uint8_t *)ie;
+			tmp = tmp + 4;  /* Skip element Id and Len, Version */
+			/* Get the number of AKM suite */
 			akmsuiteCount = WPA_GET_LE16(tmp);
-			tmp = tmp + 1;
-			akmlist = (int *)(tmp);
+			/* Skip the number of AKM suite */
+			tmp = tmp + 2;
+			/* AKM suite list, each OUI contains 4 bytes */
+			akmlist = (uint32_t *)(tmp);
 			if (akmsuiteCount <= MAX_NUM_AKM_SUITES) {
-				memcpy(akmsuite, akmlist, (4 * akmsuiteCount));
+				memcpy(akmsuite, akmlist, akmsuiteCount);
 			} else {
 				hdd_err("Invalid akmSuite count: %u",
 					akmsuiteCount);
@@ -17968,6 +17967,7 @@ static int wlan_hdd_cfg80211_set_privacy_ibss(hdd_adapter_t *pAdapter,
 					      struct cfg80211_ibss_params
 					      *params)
 {
+	uint32_t ret;
 	int status = 0;
 	hdd_wext_state_t *pWextState = WLAN_HDD_GET_WEXT_STATE_PTR(pAdapter);
 	eCsrEncryptionType encryptionType = eCSR_ENCRYPT_TYPE_NONE;
@@ -18001,13 +18001,22 @@ static int wlan_hdd_cfg80211_set_privacy_ibss(hdd_adapter_t *pAdapter,
 					hdd_err("invalid ie len:%d", ie[1]);
 					return -EINVAL;
 				}
-				/* Unpack the WPA IE */
-				/* Skip past the EID byte and length byte - and four byte WiFi OUI */
-				dot11f_unpack_ie_wpa((tpAniSirGlobal) halHandle,
-						     &ie[2 + 4], ie[1] - 4,
-						     &dot11WPAIE, false);
-				/*Extract the multicast cipher, the encType for unicast
-				   cipher for wpa-none is none */
+				/*
+				 * Unpack the WPA IE. Skip past the EID byte and
+				 * length byte - and four byte WiFi OUI
+				 */
+				ret = dot11f_unpack_ie_wpa(
+						(tpAniSirGlobal) halHandle,
+						&ie[2 + 4], ie[1] - 4,
+						&dot11WPAIE, false);
+				if (DOT11F_FAILED(ret)) {
+					hdd_err("unpack failed ret: 0x%x", ret);
+					return -EINVAL;
+				}
+				/*
+				 * Extract the multicast cipher, the encType for
+				 * unicast cipher for wpa-none is none
+				 */
 				encryptionType =
 					hdd_translate_wpa_to_csr_encryption_type
 						(dot11WPAIE.multicast_cipher);
@@ -18668,7 +18677,7 @@ int __wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
 						pAdapter->aStaInfo[i].
 						isDeauthInProgress = true;
 						qdf_status =
-							qdf_wait_single_event(
+							qdf_wait_for_event_completion(
 							 &hapd_state->
 							 qdf_sta_disassoc_event,
 							 SME_CMD_TIMEOUT_VALUE);
@@ -18704,8 +18713,6 @@ int __wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
 			}
 
 			pAdapter->aStaInfo[staId].isDeauthInProgress = true;
-			pAdapter->cache_sta_info[staId].reason_code =
-				pDelStaParams->reason_code;
 
 			hdd_debug("Delete STA with MAC::" MAC_ADDRESS_STR,
 			       MAC_ADDR_ARRAY(mac));
@@ -18735,10 +18742,10 @@ int __wlan_hdd_cfg80211_del_station(struct wiphy *wiphy,
 				       MAC_ADDR_ARRAY(mac));
 				return -ENOENT;
 			} else {
-				qdf_status = qdf_wait_single_event(
-						&hapd_state->
-						qdf_sta_disassoc_event,
-						SME_CMD_TIMEOUT_VALUE);
+				qdf_status = qdf_wait_for_event_completion(
+							&hapd_state->
+							qdf_sta_disassoc_event,
+							SME_CMD_TIMEOUT_VALUE);
 				if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 					hdd_warn("Deauth wait time expired");
 			}
@@ -18935,13 +18942,15 @@ static inline bool wlan_hdd_is_pmksa_valid(struct cfg80211_pmksa *pmksa)
 
 /*
  * hdd_fill_pmksa_info: API to update tPmkidCacheInfo from cfg80211_pmksa
- * @pmk_cache: pmksa from supplicant
- * @pmk_cache: pmk needs to be updated
- *
+ * @adapter: Pointer to hdd adapter
+ * @pmk_cache: pmk that needs to be udated
+ * @pmksa: pmk from supplicant
+ * @is_delete: Bool to decide set or delete PMK
  * Return: None
  */
-static void hdd_fill_pmksa_info(tPmkidCacheInfo *pmk_cache,
-				  struct cfg80211_pmksa *pmksa, bool is_delete)
+static void hdd_fill_pmksa_info(hdd_adapter_t *adapter,
+				tPmkidCacheInfo *pmk_cache,
+				struct cfg80211_pmksa *pmksa, bool is_delete)
 {
 	if (pmksa->bssid) {
 		hdd_debug("%s PMKSA for " MAC_ADDRESS_STR,
@@ -18950,8 +18959,7 @@ static void hdd_fill_pmksa_info(tPmkidCacheInfo *pmk_cache,
 		qdf_mem_copy(pmk_cache->BSSID.bytes,
 			     pmksa->bssid, QDF_MAC_ADDR_SIZE);
 	} else {
-		qdf_mem_copy(pmk_cache->ssid, pmksa->ssid,
-			     SIR_MAC_MAX_SSID_LENGTH);
+		qdf_mem_copy(pmk_cache->ssid, pmksa->ssid, pmksa->ssid_len);
 		qdf_mem_copy(pmk_cache->cache_id, pmksa->cache_id,
 			     CACHE_ID_LEN);
 		pmk_cache->ssid_len = pmksa->ssid_len;
@@ -18990,14 +18998,18 @@ static inline bool wlan_hdd_is_pmksa_valid(struct cfg80211_pmksa *pmksa)
 
 /*
  * hdd_fill_pmksa_info: API to update tPmkidCacheInfo from cfg80211_pmksa
- * @pmk_cache: pmksa from supplicant
- * @pmk_cache: pmk needs to be updated
+ * @adapter: Pointer to hdd adapter
+ * @pmk_cache: pmk which needs to be updated
+ * @pmksa: pmk from supplicant
+ * @is_delete: Bool to decide whether to set or delete PMK
  *
  * Return: None
  */
-static void hdd_fill_pmksa_info(tPmkidCacheInfo *pmk_cache,
-				  struct cfg80211_pmksa *pmksa, bool is_delete)
+static void hdd_fill_pmksa_info(hdd_adapter_t *adapter,
+				tPmkidCacheInfo *pmk_cache,
+				struct cfg80211_pmksa *pmksa, bool is_delete)
 {
+	tHalHandle hal = WLAN_HDD_GET_HAL_CTX(adapter);
 	hdd_debug("%s PMKSA for " MAC_ADDRESS_STR, is_delete ? "Delete" : "Set",
 	MAC_ADDR_ARRAY(pmksa->bssid));
 	qdf_mem_copy(pmk_cache->BSSID.bytes,
@@ -19005,7 +19017,7 @@ static void hdd_fill_pmksa_info(tPmkidCacheInfo *pmk_cache,
 
 	if (is_delete)
 		return;
-
+	sme_get_pmk_info(hal, adapter->sessionId, pmk_cache);
 	qdf_mem_copy(pmk_cache->PMKID, pmksa->pmkid, CSR_RSN_PMKID_SIZE);
 }
 #endif
@@ -19064,7 +19076,7 @@ static int __wlan_hdd_cfg80211_set_pmksa(struct wiphy *wiphy,
 
 	qdf_mem_zero(&pmk_cache, sizeof(pmk_cache));
 
-	hdd_fill_pmksa_info(&pmk_cache, pmksa, false);
+	hdd_fill_pmksa_info(pAdapter, &pmk_cache, pmksa, false);
 
 	/*
 	 * Add to the PMKSA Cache in CSR
@@ -19159,7 +19171,7 @@ static int __wlan_hdd_cfg80211_del_pmksa(struct wiphy *wiphy,
 
 	qdf_mem_zero(&pmk_cache, sizeof(pmk_cache));
 
-	hdd_fill_pmksa_info(&pmk_cache, pmksa, true);
+	hdd_fill_pmksa_info(pAdapter, &pmk_cache, pmksa, true);
 
 	/* Delete the PMKID CSR cache */
 	if (QDF_STATUS_SUCCESS !=
@@ -20335,6 +20347,12 @@ static int __wlan_hdd_cfg80211_update_connect_params(
 		fils_info->key_nai_length = req->fils_erp_username_len +
 					    sizeof(char) +
 					    req->fils_erp_realm_len;
+		if (fils_info->key_nai_length >
+		    FILS_MAX_KEYNAME_NAI_LENGTH) {
+			hdd_err("Key NAI Length %d",
+				fils_info->key_nai_length);
+			return -EINVAL;
+		}
 		if (req->fils_erp_username_len && req->fils_erp_username) {
 			buf = fils_info->keyname_nai;
 			qdf_mem_copy(buf, req->fils_erp_username,
