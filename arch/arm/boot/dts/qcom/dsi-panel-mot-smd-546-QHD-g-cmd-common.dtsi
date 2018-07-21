@@ -63,6 +63,7 @@ qcom,mdss-dsi-te-using-te-pin;
 
 qcom,partial-update-enabled = "single_roi";
 qcom,panel-roi-alignment = <1440 16 1440 16 1440 16>;
+qcom,mdss-dsi-panel-orientation = "180";
 
 qcom,mdss-dsi-panel-hdr-enabled;
 qcom,mdss-dsi-panel-hdr-color-primaries = <14500 15500 32000 17000 15500 30000 8000 3000>;
