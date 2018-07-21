@@ -184,10 +184,6 @@
 	};
 };
 
-&mdss_fb0 {
-	qcom,mdss-fb-rot-180;
-};
-
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&mot_smd_546_QHD_p_cmd_v0>;
 };
