@@ -1514,6 +1514,7 @@ static int wlan_hdd_cfg80211_start_acs(hdd_adapter_t *adapter)
 	tsap_Config_t *sap_config;
 	tpWLAN_SAPEventCB acs_event_callback;
 	int status;
+	uint8_t end_ch; //MOT a19110 IKSWP-1069
 
 	if (!adapter) {
 		hdd_err("adapater is NULL");
@@ -1525,6 +1526,16 @@ static int wlan_hdd_cfg80211_start_acs(hdd_adapter_t *adapter)
 		sap_config->channel = hdd_ctx->acs_policy.acs_channel;
 	else
 		sap_config->channel = AUTO_CHANNEL_SELECT;
+
+	//BEGIN MOT a19110 IKSWP-1069 Restrict channel 12,13 and 165
+	end_ch = sap_config->acs_cfg.end_ch;
+	if(end_ch >= 12 && end_ch <= 14) {
+		sap_config->acs_cfg.end_ch = 11;
+	}
+	if(end_ch >= 165) {
+		sap_config->acs_cfg.end_ch = 161;
+	}
+	//END IKSWP-1069
 
 	status = wlan_hdd_sap_cfg_dfs_override(adapter);
 	if (status < 0) {
