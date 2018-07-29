@@ -136,24 +136,23 @@
 
 	drv2624: drv2624@5a {
 		compatible = "ti,drv2624";
-		reg = <0x5A>;
-		/* voltage = *_voltage x 22 mV */
-		/* 2V for now */
-		ti,rated_voltage = /bits/ 8 <0x49>;
-		ti,overdrive_voltage = /bits/ 8 <0x9A>;
-		ti,rated_voltage_reduced = /bits/ 8 <0x19>;
-		ti,overdrive_voltage_reduced = /bits/ 8 <0x55>;
-		/* LRA period = lra_freq x 24.39 us */
-		/* 205 Hz for now */
-		ti,lra_freq = /bits/ 8 <0xCD>;
-		ti,lra_drive;
-		ti,auto_cal;
-		ti,auto_cal_time = /bits/ 8 <0x02>;
-		/* OD_CLAMP time 25ms, sample time 300us, ZC_DET time 200us */
-		ti,sample_time = /bits/ 8 <0x1D>;
-		ti,drive_time = /bits/ 8 <0x10>;
-		ti,nrst-gpio = <&pmi8998_gpios 9 0>;   /* EN_GPIO */
-		ti,nvctrl-gpio = <&tlmm 0 0>;
+		reg = <0x5a>;
+		ti,reset-gpio = <&pmi8998_gpios 9 0>;
+		ti,smart-loop = <0>; /* 0-closeloop, 1-openloop */
+		ti,actuator = <1>; /* 0-ERM, 1-LRA */
+		ti,rated-voltage = <77>; /* 1.8 Vrms */
+		ti,odclamp-voltage = <165>; /* 3.5 Vpeak */
+		ti,lra-frequency = <155>; /* f0 = 155Hz */
+		ti,ol-lra-frequency = <155>; /* off-f0 in OL */
+		ti,bemf-factor = <188>;
+		ti,bemf-gain = <1>;
+		ti,voltage-comp = <9>;
+		ti,blanking-time = <2>; /* 50 us */
+		ti,idiss-time = <2>; /* 50 us */
+		ti,zc-det-time = <0>; /* 100 us*/
+		ti,lra-wave-shape = <0>; /* Square wave */
+		ti,waveform-interval = <1>; /* 1 ms */
+		status = "ok";
 	};
 
 	usb3813: usb3813@2D {
