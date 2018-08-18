@@ -318,7 +318,9 @@ struct msm_wdog_cpuctx_info {
 
 struct msm_wdog_lnx_info {
 	uint32_t tsk_size;
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 	uint32_t ti_tsk_offset;
+#endif
 	uint32_t aa64;
 	uint32_t lpae;
 	uint64_t text_paddr;
@@ -494,7 +496,9 @@ static void msm_wdog_ctx_lnx_arch(struct msm_wdog_lnx_info *lnx)
 static void msm_wdog_ctx_lnx(struct msm_wdog_lnx_info *lnx)
 {
 	lnx->tsk_size = sizeof(struct task_struct);
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 	lnx->ti_tsk_offset = offsetof(struct thread_info, task);
+#endif
 	lnx->aa64 = config_enabled(CONFIG_ARM64);
 	lnx->lpae = config_enabled(CONFIG_ARM_LPAE);
 	lnx->text_paddr = virt_to_phys(_text);
