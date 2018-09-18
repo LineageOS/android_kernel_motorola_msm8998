@@ -189,8 +189,14 @@ static int gb_raw_send(struct gb_raw *raw, u32 len, const char __user *data)
 
 	request->len = cpu_to_le32(len);
 
-	retval = gb_operation_unidirectional(connection, GB_RAW_TYPE_SEND,
-					 request, len + sizeof(*request));
+	if (connection->protocol_id == GREYBUS_PROTOCOL_PACKETBUS) {
+		retval = gb_operation_sync(connection, GB_RAW_TYPE_SEND,
+					   request, len + sizeof(*request),
+					   NULL, 0);
+	} else {
+		retval = gb_operation_unidirectional(connection, GB_RAW_TYPE_SEND,
+						 request, len + sizeof(*request));
+	}
 
 	kfree(request);
 	return retval;
