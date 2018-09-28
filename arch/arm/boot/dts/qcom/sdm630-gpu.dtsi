@@ -174,7 +174,7 @@
 
 				qcom,speed-bin = <0>;
 
-				qcom,initial-pwrlevel = <5>;
+				qcom,initial-pwrlevel = <6>;
 
 				/* TURBO */
 				qcom,gpu-pwrlevel@0 {
@@ -264,7 +264,7 @@
 
 				qcom,speed-bin = <162>;
 
-				qcom,initial-pwrlevel = <5>;
+				qcom,initial-pwrlevel = <7>;
 
 				/* TURBO */
 				qcom,gpu-pwrlevel@0 {
@@ -354,7 +354,7 @@
 
 				qcom,speed-bin = <146>;
 
-				qcom,initial-pwrlevel = <4>;
+				qcom,initial-pwrlevel = <6>;
 
 				/* TURBO */
 				qcom,gpu-pwrlevel@0 {
@@ -435,7 +435,7 @@
 
 				qcom,speed-bin = <135>;
 
-				qcom,initial-pwrlevel = <3>;
+				qcom,initial-pwrlevel = <5>;
 
 				/* NOM_L1 */
 				qcom,gpu-pwrlevel@0 {
