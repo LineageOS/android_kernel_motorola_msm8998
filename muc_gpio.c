@@ -10,7 +10,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/err.h>
@@ -543,6 +542,13 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 	if (IS_ERR(cdata->pins_i2c_con)) {
 		dev_err(dev, "Failed to lookup 'i2c_active' pinctrl\n");
 		return PTR_ERR(cdata->pins_i2c_con);
+	}
+
+	cdata->pins_spi_cs_sleep = pinctrl_lookup_state(cdata->pinctrl,
+				"spi_cs_sleep");
+	if (IS_ERR(cdata->pins_spi_cs_sleep)) {
+		dev_err(dev, "Failed to lookup 'pins_spi_cs_sleep' pinctrl\n");
+		return PTR_ERR(cdata->pins_spi_cs_sleep);
 	}
 
 	/* Default to connected initially until detection is complete */

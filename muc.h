@@ -133,6 +133,7 @@ struct muc_data {
 	struct pinctrl_state *pins_spi_con;
 	struct pinctrl_state *pins_spi_ack;
 	struct pinctrl_state *pins_i2c_con;
+	struct pinctrl_state *pins_spi_cs_sleep;
 	bool pinctrl_disconnect;
 
 	bool need_det_output;
