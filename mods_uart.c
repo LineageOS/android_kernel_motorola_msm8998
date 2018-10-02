@@ -59,6 +59,7 @@ struct mods_uart_data {
 	const char *tty_name;
 	uint8_t intf_id;
 	speed_t default_baud;
+	int without_pinctrl;
 };
 
 enum {
@@ -331,12 +332,13 @@ int mods_uart_open(void *uart_data)
 
 	dev_dbg(&mud->pdev->dev, "%s: opening uart\n", __func__);
 
-	ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_active);
-	if (ret) {
-		dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
-		goto open_fail;
+	if (!mud->without_pinctrl) {
+		ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_active);
+		if (ret) {
+			dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
+			goto open_fail;
+		}
 	}
-
 	/* Find the driver for the specified tty */
 	driver = find_tty_driver((char *)mud->tty_name, &tty_line);
 	if (!driver || !driver->ttys) {
@@ -429,7 +431,7 @@ open_fail:
 int mods_uart_close(void *uart_data)
 {
 	struct mods_uart_data *mud = (struct mods_uart_data *)uart_data;
-	int ret;
+	int ret = 0;
 
 	dev_dbg(&mud->pdev->dev, "%s: closing uart\n", __func__);
 	mods_uart_pm_off(mud);
@@ -465,9 +467,11 @@ int mods_uart_close(void *uart_data)
 		mud->mods_uart_pm_data = NULL;
 	}
 
-	ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_default);
-	if (ret)
-		dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
+	if (!mud->without_pinctrl) {
+		ret = pinctrl_select_state(mud->pinctrl, mud->pinctrl_state_default);
+		if (ret)
+			dev_err(&mud->pdev->dev, "%s: Pinctrl set failed %d\n", __func__, ret);
+	}
 
 	mutex_unlock(&mud->tx_mutex);
 
@@ -510,6 +514,12 @@ static int mods_uart_probe(struct platform_device *pdev)
 	}
 	dev_info(&pdev->dev, "%s: Using %s\n", __func__, mud->tty_name);
 
+	mud->without_pinctrl = of_property_read_bool(np, "mmi,without-pinctrl");
+	if (mud->without_pinctrl) {
+		pr_info("%s without pinctrl\n", __func__);
+		goto jump_pinctrl;
+	}
+
 	mud->pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR(mud->pinctrl)) {
 		dev_err(&pdev->dev, "Pinctrl not defined\n");
@@ -530,6 +540,7 @@ static int mods_uart_probe(struct platform_device *pdev)
 		return PTR_ERR(mud->pinctrl_state_active);
 	}
 
+jump_pinctrl:
 	mutex_init(&mud->tx_mutex);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, uart_groups);
