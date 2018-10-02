@@ -28,7 +28,11 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#ifdef CONFIG_MODS_NEW_SW_ARCH
+#include <uapi/video/mods/v4l2_camera_ext_events.h>
+#else
 #include <uapi/video/v4l2_camera_ext_events.h>
+#endif
 
 #include "camera_ext.h"
 #include "greybus.h"

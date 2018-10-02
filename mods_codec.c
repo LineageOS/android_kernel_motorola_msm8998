@@ -20,7 +20,11 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#ifdef CONFIG_MODS_NEW_SW_ARCH
+#include <linux/mods/mods_codec_dev.h>
+#else
 #include <linux/mods_codec_dev.h>
+#endif
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>

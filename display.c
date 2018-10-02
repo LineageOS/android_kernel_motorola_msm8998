@@ -13,7 +13,11 @@
 #include <linux/kdev_t.h>
 #include <linux/idr.h>
 
+#ifdef CONFIG_MODS_NEW_SW_ARCH
+#include <linux/mods/mod_display_comm.h>
+#else
 #include <linux/mod_display_comm.h>
+#endif
 
 #include "greybus.h"
 

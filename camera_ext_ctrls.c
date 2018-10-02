@@ -27,7 +27,11 @@
  */
 
 #include <linux/kernel.h>
+#ifdef CONFIG_MODS_NEW_SW_ARCH
+#include <uapi/video/mods/v4l2_camera_ext_ctrls.h>
+#else
 #include <uapi/video/v4l2_camera_ext_ctrls.h>
+#endif
 #include <media/v4l2-ctrls.h>
 #include "camera_ext_defs.h" /* CAMERA_EXT_CTRL_FLAG_NEED_XXX flags */
 

@@ -18,7 +18,11 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#ifdef CONFIG_MODS_NEW_SW_ARCH
+#include <linux/mods/wakelock.h>
+#else
 #include <linux/wakelock.h>
+#endif
 #include <linux/workqueue.h>
 
 #include "cust_kernel_ver.h"
