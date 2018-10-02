@@ -182,6 +182,7 @@ struct apba_ctrl {
 	struct workqueue_struct *wq;
 	struct mhb_diag_id_not apba_ids;
 	struct mhb_diag_id_not apbe_ids;
+	int gpio_spi_cs;
 } *g_ctrl;
 
 #define APBA_LOG_SIZE	SZ_16K
@@ -835,6 +836,46 @@ static void apba_seq(struct apba_ctrl *ctrl, struct apba_seq *seq)
 	}
 }
 
+#ifdef CONFIG_APBA_SPI_SWITCH
+#define APBA_SPI_SWITCH_PIN	5
+#define APBA_SPI_2_SWITCH_PIN	6
+int apba_spi_switch_select(int sel, int sel2)
+{
+	int gpio;
+	int ret = 0;
+
+	if (!g_ctrl) {
+		pr_err("%sactrl is not valid\n", __func__);
+		return -1;
+	}
+
+	gpio = g_ctrl->gpios[APBA_SPI_SWITCH_PIN];
+	sel = !!sel;
+	if (gpio_is_valid(gpio)) {
+		pr_debug("%s: set gpio=%d, value=%u\n",
+			__func__, gpio, sel);
+		gpio_set_value(gpio, sel);
+	} else {
+		pr_err("%s gpio %d is not valid\n", __func__, gpio);
+		ret = -2;
+	}
+
+	gpio = g_ctrl->gpios[APBA_SPI_2_SWITCH_PIN];
+	sel2 = !!sel2;
+	if (gpio_is_valid(gpio)) {
+		pr_debug("%s: set gpio=%d, value=%u\n",
+			__func__, gpio, sel2);
+		gpio_set_value(gpio, sel2);
+	} else {
+		pr_err("%s gpio %d is not valid\n", __func__, gpio);
+		ret = -3;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(apba_spi_switch_select);
+#endif
+
 static void apba_on(struct apba_ctrl *ctrl, bool on)
 {
 	if (on == ctrl->on) {
@@ -957,6 +998,9 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 		}
 
 		apba_seq(ctrl, &ctrl->flash_start_seq);
+		if (gpio_is_valid(ctrl->gpio_spi_cs)) {
+			gpio_set_value(ctrl->gpio_spi_cs, 0);
+		}
 
 		/* Register SPI transport for shared muc_spi and spi_flash */
 		muc_register_spi_flash();
@@ -970,6 +1014,9 @@ static void apba_flash_on(struct apba_ctrl *ctrl, bool on)
 			ctrl->flash_dev_populated = false;
 		}
 
+		if (gpio_is_valid(ctrl->gpio_spi_cs)) {
+			gpio_set_value(ctrl->gpio_spi_cs, 1);
+		}
 		apba_seq(ctrl, &ctrl->flash_end_seq);
 
 		muc_deregister_spi_flash();
@@ -2110,6 +2157,20 @@ static int apba_gpio_setup(struct apba_ctrl *ctrl, struct device *dev)
 		ctrl->gpio_cnt++;
 	}
 
+	//gpio cs-pin
+	ctrl->gpio_spi_cs = of_get_named_gpio(dev->of_node, "mmi,spi-cs-gpio", 0);
+	if (ctrl->gpio_spi_cs < 0) {
+		pr_err("there is no gpio spi-cs-pin. Using spi phy cs!\n");
+	} else {
+		if (gpio_is_valid(ctrl->gpio_spi_cs)) {
+			ret = gpio_request(ctrl->gpio_spi_cs, "apba_spi_cs");
+			if (ret == 0) {
+				gpio_direction_output(ctrl->gpio_spi_cs, 1);
+			}
+		}
+		gpio_export(ctrl->gpio_spi_cs, true);
+	}
+
 	return 0;
 
 gpio_cleanup:
@@ -2493,3 +2554,5 @@ void apba_ctrl_exit(void)
 {
 	platform_driver_unregister(&apba_ctrl_driver);
 }
+
+MODULE_LICENSE("GPL v2");
