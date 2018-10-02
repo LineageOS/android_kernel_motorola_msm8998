@@ -32,6 +32,9 @@
 #include <linux/iio/trigger_consumer.h>
 #include <linux/platform_device.h>
 #include <linux/random.h>
+#ifdef KERNEL_4_14_ARCH
+#include <linux/iio/buffer_impl.h>
+#endif
 
 #include "kernel_ver.h"
 #include "sensors_ext_iio.h"

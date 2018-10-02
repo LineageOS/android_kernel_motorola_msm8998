@@ -340,6 +340,13 @@ static int gb_hid_open(struct hid_device *hid)
 	int ret = 0;
 
 	mutex_lock(&gb_hid_open_mutex);
+#ifdef KERNEL_4_14_ARCH
+	ret = gb_hid_set_power(ghid, GB_HID_TYPE_PWR_ON);
+	if (ret < 0)
+		pr_err("%s hid set power fail %d\n", __func__, ret);
+	else
+		set_bit(GB_HID_STARTED, &ghid->flags);
+#else
 	if (!hid->open++) {
 		ret = gb_hid_set_power(ghid, GB_HID_TYPE_PWR_ON);
 		if (ret < 0)
@@ -347,6 +354,7 @@ static int gb_hid_open(struct hid_device *hid)
 		else
 			set_bit(GB_HID_STARTED, &ghid->flags);
 	}
+#endif
 	mutex_unlock(&gb_hid_open_mutex);
 
 	return ret;
@@ -362,6 +370,15 @@ static void gb_hid_close(struct hid_device *hid)
 	 * due to a resumption we no longer care about..
 	 */
 	mutex_lock(&gb_hid_open_mutex);
+#ifdef KERNEL_4_14_ARCH
+	clear_bit(GB_HID_STARTED, &ghid->flags);
+
+	/* Save some power */
+	ret = gb_hid_set_power(ghid, GB_HID_TYPE_PWR_OFF);
+	if (ret)
+		dev_err(&ghid->connection->bundle->dev,
+			"failed to power off (%d)\n", ret);
+#else
 	if (!--hid->open) {
 		clear_bit(GB_HID_STARTED, &ghid->flags);
 
@@ -371,6 +388,7 @@ static void gb_hid_close(struct hid_device *hid)
 			dev_err(&ghid->connection->bundle->dev,
 				"failed to power off (%d)\n", ret);
 	}
+#endif
 	mutex_unlock(&gb_hid_open_mutex);
 }
 

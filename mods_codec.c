@@ -986,10 +986,14 @@ int mods_codec_report_devices(struct gb_snd_codec *codec)
 static struct snd_soc_codec_driver soc_codec_dev_mods = {
 	.probe = mods_codec_probe,
 	.remove = mods_codec_remove,
+#ifdef KERNEL_4_14_ARCH
+	//dummy. no dapm_widgets in kernel 4.9
+#else
 	.dapm_widgets = mods_dai_dapm_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(mods_dai_dapm_widgets),
 	.dapm_routes = mods_codec_dapm_routes,
 	.num_dapm_routes = ARRAY_SIZE(mods_codec_dapm_routes),
+#endif
 };
 
 static struct snd_soc_dai_driver mods_codec_codec_dai = {

@@ -449,7 +449,11 @@ static void gb_lights_led_operations_set(struct gb_channel *channel,
 	cdev->brightness_set = gb_brightness_set;
 	cdev->brightness_get = gb_brightness_get;
 #ifdef LED_HAVE_SET_SYNC
+#ifdef KERNEL_4_14_ARCH
+	cdev->brightness_set_blocking = gb_brightness_set_sync;
+#else
 	cdev->brightness_set_sync = gb_brightness_set_sync;
+#endif
 #endif
 	INIT_WORK(&channel->work_brightness_set, gb_brightness_set_work);
 
@@ -488,12 +492,20 @@ static int gb_lights_light_v4l2_register(struct gb_light *light)
 	channel_torch = get_channel_from_mode(light, GB_CHANNEL_MODE_TORCH);
 	if (channel_torch)
 		__gb_lights_channel_v4l2_config(&channel_torch->intensity_uA,
+#ifdef KERNEL_4_14_ARCH
+						&sd_cfg->intensity);
+#else
 						&sd_cfg->torch_intensity);
+#endif
 
 	channel_ind = get_channel_from_mode(light, GB_CHANNEL_MODE_INDICATOR);
 	if (channel_ind) {
 		__gb_lights_channel_v4l2_config(&channel_ind->intensity_uA,
+#ifdef KERNEL_4_14_ARCH
+						&sd_cfg->intensity);
+#else
 						&sd_cfg->indicator_intensity);
+#endif
 		iled = &channel_ind->fled;
 	}
 
@@ -511,7 +523,12 @@ static int gb_lights_light_v4l2_register(struct gb_light *light)
 		LED_FAULT_UNDER_VOLTAGE | LED_FAULT_INPUT_VOLTAGE |
 		LED_FAULT_LED_OVER_TEMPERATURE;
 
-	light->v4l2_flash = v4l2_flash_init(dev, NULL, fled, iled,
+	light->v4l2_flash = v4l2_flash_init(dev, NULL, fled,
+#ifdef KERNEL_4_14_ARCH
+					    /*empty*/
+#else
+					    iled,
+#endif
 					    &v4l2_flash_ops, sd_cfg);
 	if (IS_ERR_OR_NULL(light->v4l2_flash)) {
 		ret = PTR_ERR(light->v4l2_flash);
