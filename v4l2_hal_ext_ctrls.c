@@ -143,7 +143,11 @@ int v4l2_hal_put_ext_controls32(struct v4l2_ext_controls *kp,
 	char *ptr = priv;
 
 	if (!access_ok(VERIFY_WRITE, up, sizeof(struct v4l2_ext_controls32)) ||
+#ifndef __KERNEL__
 	    put_user(kp->ctrl_class, &up->ctrl_class) ||
+#else
+	    put_user(kp->which, &up->ctrl_class) ||
+#endif
 	    put_user(kp->count, &up->count) ||
 	    put_user(kp->error_idx, &up->error_idx) ||
 	    copy_to_user(up->reserved, kp->reserved, sizeof(up->reserved)))
@@ -226,7 +230,11 @@ int v4l2_hal_get_ext_controls32(struct v4l2_ext_controls *kp,
 	char *ptr = priv;
 
 	if (!access_ok(VERIFY_READ, up, sizeof(struct v4l2_ext_controls32)) ||
+#ifndef __KERNEL__
 	    get_user(kp->ctrl_class, &up->ctrl_class) ||
+#else
+	    get_user(kp->which, &up->ctrl_class) ||
+#endif
 	    get_user(kp->count, &up->count) ||
 	    get_user(kp->error_idx, &up->error_idx) ||
 	    copy_from_user(kp->reserved, up->reserved, sizeof(kp->reserved)))
@@ -405,7 +413,11 @@ int v4l2_hal_get_ext_controls(struct v4l2_ext_controls *kp,
 	char *ptr = priv;
 
 	if (!access_ok(VERIFY_READ, up, sizeof(struct v4l2_ext_controls)) ||
+#ifndef __KERNEL__
 	    get_user(kp->ctrl_class, &up->ctrl_class) ||
+#else
+	    get_user(kp->which, &up->which) ||
+#endif
 	    get_user(kp->count, &up->count) ||
 	    get_user(kp->error_idx, &up->error_idx) ||
 	    copy_from_user(kp->reserved, up->reserved, sizeof(kp->reserved)))

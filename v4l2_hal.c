@@ -335,7 +335,12 @@ static int get_ctrl(struct file *file, void *fh,
 			struct v4l2_control *ctrl)
 {
 	int ret;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+/*just for compiling, idx without a fixing value*/
+	__u32 idx = 0;
+#else
 	__u32 idx;
+#endif
 	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	if (v4l2_hal_is_set_mapping_cid(ctrl->id))
@@ -391,11 +396,18 @@ static int set_ext_ctrls(struct file *file, void *fh,
 	return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+static int v4l2_hal_queue_setup(struct vb2_queue *q,
+				unsigned int *num_buffers,
+				unsigned int *num_planes,
+				unsigned int sizes[], struct device *alloc_devs[])
+#else
 static int v4l2_hal_queue_setup(struct vb2_queue *q,
 				const void *parg,
 				unsigned int *num_buffers,
 				unsigned int *num_planes,
 				unsigned int sizes[], void *alloc_ctxs[])
+#endif
 {
 	struct v4l2_stream_data *strm = q->drv_priv;
 	struct v4l2_hal_reqbufs_data data;
@@ -454,9 +466,15 @@ static void v4l2_hal_stop_streaming(struct vb2_queue *q)
 	v4l2_misc_process_command(strm->id, VIOC_HAL_STREAM_OFF, 0, NULL);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+static void *v4l2_hal_get_userptr(struct device *dev,
+				  unsigned long vaddr,
+				  unsigned long size, enum dma_data_direction dma_dir)
+#else
 static void *v4l2_hal_get_userptr(void *alloc_ctx,
 				  unsigned long vaddr,
 				  unsigned long size, enum dma_data_direction dma_dir)
+#endif
 {
 	return (void *)vaddr;
 }
@@ -593,8 +611,12 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 		vb = strm->vb2_q.bufs[index];
 		if (vb != NULL) {
 			struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+			//empty
+#else
 			vbuf->timestamp.tv_sec = ts_sec;
 			vbuf->timestamp.tv_usec = ts_usec;
+#endif
 			vbuf->sequence = seq;
 			vbuf->vb2_buf.planes[0].bytesused = length;
 			vb2_buffer_done(vb, buffer_state);
