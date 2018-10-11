@@ -986,7 +986,7 @@ int mods_codec_report_devices(struct gb_snd_codec *codec)
 static struct snd_soc_codec_driver soc_codec_dev_mods = {
 	.probe = mods_codec_probe,
 	.remove = mods_codec_remove,
-#ifdef KERNEL_4_14_ARCH
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 	//dummy. no dapm_widgets in kernel 4.9
 #else
 	.dapm_widgets = mods_dai_dapm_widgets,

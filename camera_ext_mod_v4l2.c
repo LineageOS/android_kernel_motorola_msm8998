@@ -320,7 +320,7 @@ static int _camera_ext_queue_setup(struct vb2_queue *q,
 }
 
 #ifdef V4L2_VIDEOBUF2_VOID_FORMAT
-#ifdef KERNEL_4_14_ARCH
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 static int camera_ext_queue_setup(struct vb2_queue *q,
 	unsigned int *num_buffers, unsigned int *num_planes,
 	unsigned int sizes[], struct device *alloc_ctxs[])

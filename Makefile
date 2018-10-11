@@ -143,14 +143,6 @@ ccflags-y += -I$(src)
 
 $(warning CURRENT KERNEL VER : $(KERNELVERSION))
 
-ifneq ($(call kvers_cmp,"4.9.103"),4.9.103)
-    ccflags-y += -DKERNEL_4_9_ARCH
-endif
-
-ifneq ($(call kvers_cmp,"4.14.56"),4.9.56)
-    ccflags-y += -DKERNEL_4_14_ARCH
-endif
-
 all: module
 
 module:
