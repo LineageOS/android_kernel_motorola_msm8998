@@ -35,13 +35,8 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
 #include <media/videobuf2-vmalloc.h>
-#ifdef CONFIG_MODS_NEW_SW_ARCH
-#include <uapi/video/mods/v4l2_camera_ext_ctrls.h>
-#include <uapi/video/mods/v4l2_camera_ext_events.h>
-#else
 #include <uapi/video/v4l2_camera_ext_ctrls.h>
 #include <uapi/video/v4l2_camera_ext_events.h>
-#endif
 
 #include "camera_ext.h"
 #include "connection.h"

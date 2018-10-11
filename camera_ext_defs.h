@@ -29,11 +29,7 @@
 #ifndef __CAMERA_EXT_DEFS_H
 #define __CAMERA_EXT_DEFS_H
 
-#ifdef CONFIG_MODS_NEW_SW_ARCH
-#include <uapi/video/mods/v4l2_camera_ext_defs.h>
-#else
 #include <uapi/video/v4l2_camera_ext_defs.h>
-#endif
 
 #include "greybus_protocols.h"
 
