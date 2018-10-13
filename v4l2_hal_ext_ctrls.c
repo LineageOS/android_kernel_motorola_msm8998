@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include "v4l2_hal_internal.h"
 
@@ -143,10 +144,14 @@ int v4l2_hal_put_ext_controls32(struct v4l2_ext_controls *kp,
 	char *ptr = priv;
 
 	if (!access_ok(VERIFY_WRITE, up, sizeof(struct v4l2_ext_controls32)) ||
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 #ifndef __KERNEL__
 	    put_user(kp->ctrl_class, &up->ctrl_class) ||
 #else
 	    put_user(kp->which, &up->ctrl_class) ||
+#endif
+#else
+	    put_user(kp->ctrl_class, &up->ctrl_class) ||
 #endif
 	    put_user(kp->count, &up->count) ||
 	    put_user(kp->error_idx, &up->error_idx) ||
@@ -230,10 +235,14 @@ int v4l2_hal_get_ext_controls32(struct v4l2_ext_controls *kp,
 	char *ptr = priv;
 
 	if (!access_ok(VERIFY_READ, up, sizeof(struct v4l2_ext_controls32)) ||
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 #ifndef __KERNEL__
 	    get_user(kp->ctrl_class, &up->ctrl_class) ||
 #else
 	    get_user(kp->which, &up->ctrl_class) ||
+#endif
+#else
+	    get_user(kp->ctrl_class, &up->ctrl_class) ||
 #endif
 	    get_user(kp->count, &up->count) ||
 	    get_user(kp->error_idx, &up->error_idx) ||
@@ -413,10 +422,14 @@ int v4l2_hal_get_ext_controls(struct v4l2_ext_controls *kp,
 	char *ptr = priv;
 
 	if (!access_ok(VERIFY_READ, up, sizeof(struct v4l2_ext_controls)) ||
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 #ifndef __KERNEL__
 	    get_user(kp->ctrl_class, &up->ctrl_class) ||
 #else
 	    get_user(kp->which, &up->which) ||
+#endif
+#else
+	    get_user(kp->ctrl_class, &up->ctrl_class) ||
 #endif
 	    get_user(kp->count, &up->count) ||
 	    get_user(kp->error_idx, &up->error_idx) ||
