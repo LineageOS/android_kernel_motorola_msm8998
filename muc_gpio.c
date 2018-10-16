@@ -545,6 +545,17 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 		return PTR_ERR(cdata->pins_i2c_con);
 	}
 
+	cdata->with_cs_sleep = of_property_read_bool(dev->of_node,
+					"mmi,with-cs-sleep-pinctrl");
+	if (cdata->with_cs_sleep) {
+		cdata->pins_spi_cs_sleep = pinctrl_lookup_state(cdata->pinctrl,
+					"spi_cs_sleep");
+		if (IS_ERR(cdata->pins_spi_cs_sleep)) {
+			dev_err(dev, "Failed to lookup 'pins_spi_cs_sleep' pinctrl\n");
+			return PTR_ERR(cdata->pins_spi_cs_sleep);
+		}
+	}
+
 	/* Default to connected initially until detection is complete */
 	ret = pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con);
 	if (ret) {

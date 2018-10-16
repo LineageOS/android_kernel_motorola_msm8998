@@ -98,6 +98,9 @@ void muc_register_spi_flash(void)
 	if (muc_misc_data->spi_shared_with_flash) {
 		pinctrl_select_state(muc_misc_data->pinctrl,
 				     muc_misc_data->pins_spi_con);
+		if (muc_misc_data->with_cs_sleep)
+			pinctrl_select_state(muc_misc_data->pinctrl,
+					muc_misc_data->pins_spi_cs_sleep);
 		muc_register_spi();
 	}
 }
