@@ -10843,6 +10843,14 @@ static int hdd_initialize_mac_address(struct hdd_context *hdd_ctx)
 		return 0;
 	}
 
+#ifdef MOTO_UTAGS_MAC
+	hdd_warn("Can't update mac config via wlan_mac.bin, using MAC from serial number");
+
+	status = hdd_update_mac_serial(hdd_ctx);
+	if (QDF_IS_STATUS_SUCCESS(status))
+		return;
+#endif
+
 	hdd_info("using default MAC address");
 
 	/* Use fw provided MAC */

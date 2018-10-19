@@ -17275,6 +17275,11 @@ bool hdd_validate_prb_req_ie_bitmap(struct hdd_context *hdd_ctx);
 int hdd_parse_probe_req_ouis(struct hdd_context *hdd_ctx);
 
 QDF_STATUS hdd_update_mac_config(struct hdd_context *hdd_ctx);
+#ifdef MOTO_UTAGS_MAC
+QDF_STATUS hdd_update_mac_serial(struct hdd_context *hdd_ctx);
+QDF_STATUS hdd_generate_random_mac_from_serialno(char *serialNo,
+                     int serialength, char *computedMac);
+#endif
 QDF_STATUS hdd_set_sme_config(struct hdd_context *hdd_ctx);
 QDF_STATUS hdd_set_policy_mgr_user_cfg(struct hdd_context *hdd_ctx);
 QDF_STATUS hdd_set_sme_chan_list(struct hdd_context *hdd_ctx);
