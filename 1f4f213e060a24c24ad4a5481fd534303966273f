@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "cdae8413_62b34878",
+        "filename": "arch/arm/boot/dts/qcom/msm8998-moto-common.dtsi",
+        "patchSetId": 1
+      },
+      "lineNbr": 798,
+      "author": {
+        "id": 20478
+      },
+      "writtenOn": "2018-10-21T06:26:50Z",
+      "side": 1,
+      "message": "linux, name should be meaningful.under red led, it is white. Please also choose name structure as led_red which is more structured. ie. type_subcategory.",
+      "range": {
+        "startLine": 797,
+        "startChar": 0,
+        "endLine": 798,
+        "endChar": 22
+      },
+      "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
+    }
+  ]
+}
