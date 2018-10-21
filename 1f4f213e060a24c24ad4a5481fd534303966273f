@@ -46,6 +46,30 @@
       "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "35fae923_bf806993",
+        "filename": "arch/arm/boot/dts/qcom/msm8998-moto-common.dtsi",
+        "patchSetId": 1
+      },
+      "lineNbr": 798,
+      "author": {
+        "id": 20478
+      },
+      "writtenOn": "2018-10-21T14:10:22Z",
+      "side": 1,
+      "message": "White under red led is not very structured way of representation. Also whether I have the device or not is irrelevant. The nomenclature should follow uniform naming.",
+      "parentUuid": "abdb5b1e_e66e95a9",
+      "range": {
+        "startLine": 797,
+        "startChar": 0,
+        "endLine": 798,
+        "endChar": 22
+      },
+      "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
     }
   ]
 }
