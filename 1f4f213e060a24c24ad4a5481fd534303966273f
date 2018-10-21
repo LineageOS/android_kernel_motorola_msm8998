@@ -70,6 +70,30 @@
       "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "11020327_b953111e",
+        "filename": "arch/arm/boot/dts/qcom/msm8998-moto-common.dtsi",
+        "patchSetId": 1
+      },
+      "lineNbr": 798,
+      "author": {
+        "id": 11801
+      },
+      "writtenOn": "2018-10-21T17:23:50Z",
+      "side": 1,
+      "message": "The label red_led here means nothing, that\u0027s a qcom label that moto chose to use. Changing it here is pointless and accomplishes nothing. Please stop wasting my time.",
+      "parentUuid": "35fae923_bf806993",
+      "range": {
+        "startLine": 797,
+        "startChar": 0,
+        "endLine": 798,
+        "endChar": 22
+      },
+      "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
     }
   ]
 }
