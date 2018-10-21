@@ -22,6 +22,30 @@
       "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
       "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "abdb5b1e_e66e95a9",
+        "filename": "arch/arm/boot/dts/qcom/msm8998-moto-common.dtsi",
+        "patchSetId": 1
+      },
+      "lineNbr": 798,
+      "author": {
+        "id": 11801
+      },
+      "writtenOn": "2018-10-21T13:09:16Z",
+      "side": 1,
+      "message": "It is entirely meaningful if you had the device.",
+      "parentUuid": "cdae8413_62b34878",
+      "range": {
+        "startLine": 797,
+        "startChar": 0,
+        "endLine": 798,
+        "endChar": 22
+      },
+      "revId": "1f4f213e060a24c24ad4a5481fd534303966273f",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
     }
   ]
 }
