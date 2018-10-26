@@ -430,6 +430,7 @@ struct temp_buffer {
 
 /*
  * struct synaptics_rmi4_data - rmi4 device instance data
+ * @pdev: pointer to platform device
  * @i2c_client: pointer to associated i2c client
  * @input_dev: pointer to associated input device
  * @board: constant pointer to platform data
@@ -465,6 +466,7 @@ struct temp_buffer {
  * @irq_enable: pointer to irq enable function
  */
 struct synaptics_rmi4_data {
+    struct platform_device *pdev;
 	struct i2c_client *i2c_client;
 	struct input_dev *input_dev;
 	const struct synaptics_dsx_platform_data *board;
@@ -561,6 +563,7 @@ struct synaptics_rmi4_data {
 	int test_irq_delay_ms;
 	int test_irq_data_contig;
 #endif
+    struct proc_dir_entry *input_proc;
 };
 
 static inline ssize_t synaptics_rmi4_show_error(struct device *dev,

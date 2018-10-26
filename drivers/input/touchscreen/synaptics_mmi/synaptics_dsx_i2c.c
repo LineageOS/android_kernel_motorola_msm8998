@@ -20,6 +20,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/of.h>
@@ -28,6 +29,7 @@
 #include <linux/delay.h>
 #include <linux/input.h>
 #include <linux/gpio.h>
+#include <linux/platform_device.h>
 #include <linux/ctype.h>
 #include <linux/jiffies.h>
 #include <linux/semaphore.h>
@@ -43,6 +45,7 @@
 
 #define DRIVER_NAME "synaptics_dsx_i2c"
 #define INPUT_PHYS_NAME "synaptics_dsx_i2c/input0"
+#define PROC_SYMLINK_PATH "touchpanel"
 #define TYPE_B_PROTOCOL
 
 #define RMI4_WAIT_READY 0
@@ -7084,6 +7087,35 @@ device_destroy:
 	return -ENODEV;
 }
 
+static ssize_t synaptics_rmi4_input_symlink(struct synaptics_rmi4_data *rmi4_data) {
+	char *driver_path;
+	int ret = 0;
+ 	
+    if (rmi4_data->input_proc) {
+		proc_remove(rmi4_data->input_proc);
+		rmi4_data->input_proc = NULL;
+	}
+ 	
+    driver_path = kzalloc(PATH_MAX, GFP_KERNEL);
+    if (!driver_path) {
+		pr_err("%s: failed to allocate memory\n", __func__);
+		return -ENOMEM;
+	}
+ 	
+    sprintf(driver_path, "/sys%s",
+			kobject_get_path(&rmi4_data->input_dev->dev.kobj, GFP_KERNEL));
+
+ 	pr_err("%s: driver_path=%s\n", __func__, driver_path);
+ 	
+    rmi4_data->input_proc = proc_symlink(PROC_SYMLINK_PATH, NULL, driver_path);
+    if (!rmi4_data->input_proc)
+        ret = -ENOMEM;
+ 	
+    kfree(driver_path);
+
+ 	return ret;
+}
+
  /**
  * synaptics_rmi4_probe()
  *
@@ -7160,6 +7192,7 @@ static int synaptics_rmi4_probe(struct i2c_client *client,
 	rmi4_data->set_state = synaptics_dsx_sensor_state;
 	rmi4_data->ready_state = synaptics_dsx_sensor_ready_state;
 	rmi4_data->irq_enable = synaptics_rmi4_irq_enable;
+    rmi4_data->input_proc = NULL;
 	rmi4_data->reset_device = synaptics_rmi4_reset_device;
 	rmi4_data->get_status = synaptics_rmi4_f01_flashprog_status;
 
@@ -7301,6 +7334,13 @@ static int synaptics_rmi4_probe(struct i2c_client *client,
 					__func__);
 			goto err_sysfs;
 		}
+	}
+
+    retval = synaptics_rmi4_input_symlink(rmi4_data);
+	if (retval < 0) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: Failed to symlink input device\n",
+				__func__);
 	}
 
 	rmi4_data->pm_qos_irq.irq = rmi4_data->irq;
