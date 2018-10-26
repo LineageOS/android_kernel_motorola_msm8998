@@ -2291,18 +2291,6 @@ static int smblib_dm_pulse(struct smb_charger *chg)
 }
 #endif
 
-static int smblib_force_vbus_voltage(struct smb_charger *chg, u8 val)
-{
-	int rc;
-
-	rc = smblib_masked_write(chg, CMD_HVDCP_2_REG, val, val);
-	if (rc < 0)
-		smblib_err(chg, "Couldn't write to CMD_HVDCP_2_REG rc=%d\n",
-				rc);
-
-	return rc;
-}
-
 int smblib_dp_dm(struct smb_charger *chg, int val)
 {
 #ifdef QCOM_BASE
