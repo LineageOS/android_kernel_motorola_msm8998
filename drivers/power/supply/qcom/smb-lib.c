@@ -2289,7 +2289,6 @@ static int smblib_dm_pulse(struct smb_charger *chg)
 
 	return rc;
 }
-#endif
 
 static int smblib_force_vbus_voltage(struct smb_charger *chg, u8 val)
 {
@@ -2302,7 +2301,7 @@ static int smblib_force_vbus_voltage(struct smb_charger *chg, u8 val)
 
 	return rc;
 }
-
+#endif
 int smblib_dp_dm(struct smb_charger *chg, int val)
 {
 #ifdef QCOM_BASE
