@@ -218,6 +218,18 @@ static int enable_11d = -1;
 static int enable_dfs_chan_scan = -1;
 static bool is_mode_change_psoc_idle_shutdown;
 
+#define BUF_LEN_SAR 10
+static char  sar_sta_buffer[BUF_LEN_SAR];
+static struct kparam_string sar_sta = {
+	.string = sar_sta_buffer,
+	.maxlen = BUF_LEN_SAR,
+};
+static char  sar_mhs_buffer[BUF_LEN_SAR];
+static struct kparam_string sar_mhs = {
+	.string = sar_mhs_buffer,
+	.maxlen = BUF_LEN_SAR,
+};
+
 /*
  * spinlock for synchronizing asynchronous request/response
  * (full description of use in wlan_hdd_main.h)
@@ -13763,6 +13775,12 @@ static int fwpath_changed_handler(const char *kmessage,
 	return param_set_copystring(kmessage, kp);
 }
 
+static int sar_changed_handler(const char *kmessage,
+                                const struct kernel_param *kp)
+{
+        return param_set_copystring(kmessage, kp);
+}
+
 #ifdef FEATURE_MONITOR_MODE_SUPPORT
 static bool is_monitor_mode_supported(void)
 {
@@ -15606,6 +15624,11 @@ static const struct kernel_param_ops fwpath_ops = {
 	.get = param_get_string,
 };
 
+static const struct kernel_param_ops sar_ops = {
+	.set = sar_changed_handler,
+	.get = param_get_string,
+};
+
 module_param_cb(con_mode, &con_mode_ops, &con_mode,
 		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
@@ -15619,6 +15642,11 @@ module_param_cb(con_mode_monitor, &con_mode_monitor_ops, &con_mode_monitor,
 
 module_param_cb(fwpath, &fwpath_ops, &fwpath,
 		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+module_param_cb(sar_sta, &sar_ops, &sar_sta,
+		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+module_param_cb(sar_mhs, &sar_ops, &sar_mhs,
+		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
 
 module_param(enable_dfs_chan_scan, int, S_IRUSR | S_IRGRP | S_IROTH);
 
