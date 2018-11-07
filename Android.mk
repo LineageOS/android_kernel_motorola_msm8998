@@ -54,7 +54,8 @@ else
 endif
 
 ifeq ($(GREYBUS_KERNEL_MODULE_SIG), true)
-build-greybus: $(ACP) $(INSTALLED_KERNEL_TARGET)
+build-greybus: $(INSTALLED_KERNEL_TARGET) | $(ACP)
+	@mkdir -p $(GB_MODULES_OUT)
 	$(MAKE) clean -C $(GB_SRC_PATH)
 	$(MAKE) -j$(MAKE_JOBS) -C $(GB_SRC_PATH) CROSS_COMPILE=$(GB_KERNEL_TOOLS_PREFIX) $(GB_ARGS)
 	ko=`find $(GB_SRC_PATH) -type f -name "*.ko"`;\
