@@ -23,6 +23,15 @@
 #ifndef _WLAN_IOCTL_FTM_H_
 #define _WLAN_IOCTL_FTM_H_
 
+//A TLV stream contains a 28-byte stream header, and its payload. It represents
+//a command from host or a response from target.
+#define WLAN_FTM_OPCODE_TX_ON 28
+#define WLAN_FTM_OPCODE_PHY   40
+#define WLAN_FTM_OPCODE_DATA  52
+
+void getHexDump(char *s0, char *s1, int len);
+QDF_STATUS vos_is_tcmd_data_white_listed(uint8_t *data, uint32_t len);
+
 /**
  * wlan_ioctl_ftm_testmode_cmd() - handle the ftm ioctl command
  * @pdev: pdev object
