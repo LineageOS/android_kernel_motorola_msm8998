@@ -94,7 +94,6 @@ static const struct chan_map channel_map_old[NUM_CHANNELS] = {
 	[CHAN_ENUM_11] = {2462, 11, 2, 40},
 	[CHAN_ENUM_12] = {2467, 12, 2, 40},
 	[CHAN_ENUM_13] = {2472, 13, 2, 40},
-	[CHAN_ENUM_14] = {2484, 14, 2, 40},
 
 	[CHAN_ENUM_36] = {5180, 36, 2, 160},
 	[CHAN_ENUM_40] = {5200, 40, 2, 160},
