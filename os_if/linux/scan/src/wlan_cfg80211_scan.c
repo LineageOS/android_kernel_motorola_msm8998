@@ -575,6 +575,12 @@ int wlan_cfg80211_sched_scan_start(struct wlan_objmgr_vdev *vdev,
 		req->slow_scan_period);
 	wlan_hdd_sched_scan_update_relative_rssi(req, request);
 
+	//BEGIN MOT a19110 IKSWM-31041 Modify PNO timers
+	req->fast_scan_period = 45000;
+	req->fast_scan_max_cycles = 7;
+	req->slow_scan_period = 480000;
+	//END IKSWM-31041
+
 	psoc = wlan_pdev_get_psoc(pdev);
 	ucfg_scan_register_pno_cb(psoc,
 		wlan_cfg80211_pno_callback, NULL);
