@@ -1,0 +1,50 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "868b96fb_8d326afc",
+        "filename": "fs/binfmt_elf.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 162,
+      "author": {
+        "id": 20478
+      },
+      "writtenOn": "2018-11-16T14:56:08Z",
+      "side": 1,
+      "message": "declare this variable outside the while loop",
+      "range": {
+        "startLine": 162,
+        "startChar": 2,
+        "endLine": 162,
+        "endChar": 30
+      },
+      "revId": "b15b459edd86ab7d0408f781352028f68778462f",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
+    },
+    {
+      "key": {
+        "uuid": "b30d5bb9_34db245c",
+        "filename": "fs/binfmt_elf.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 163,
+      "author": {
+        "id": 20478
+      },
+      "writtenOn": "2018-11-16T14:56:08Z",
+      "side": 1,
+      "message": "declare this variable outside the while loop",
+      "range": {
+        "startLine": 163,
+        "startChar": 2,
+        "endLine": 163,
+        "endChar": 14
+      },
+      "revId": "b15b459edd86ab7d0408f781352028f68778462f",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71",
+      "unresolved": false
+    }
+  ]
+}
