@@ -799,6 +799,7 @@ struct rq {
 	u64 cur_irqload;
 	u64 avg_irqload;
 	u64 irqload_ts;
+    u64 cum_window_demand;
 #endif /* CONFIG_SCHED_WALT */
 
 #ifdef CONFIG_SCHED_HMP
@@ -831,19 +832,6 @@ struct rq {
 	int prev_top;
 	int curr_top;
 #endif
-
-#ifdef CONFIG_SCHED_WALT
-	u64 cumulative_runnable_avg;
-	u64 window_start;
-	u64 curr_runnable_sum;
-	u64 prev_runnable_sum;
-	u64 nt_curr_runnable_sum;
-	u64 nt_prev_runnable_sum;
-	u64 cur_irqload;
-	u64 avg_irqload;
-	u64 irqload_ts;
-	u64 cum_window_demand;
-#endif /* CONFIG_SCHED_WALT */
 
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 	u64 prev_irq_time;
