@@ -112,7 +112,7 @@ QDF_STATUS hdd_update_mac_serial(struct hdd_context *hdd_ctx)
         qdf_status = QDF_STATUS_E_FAILURE;
         goto config_exit;
     }
-    qdf_mem_copy(&hdd_ctx->config->intfMacAddr[0].bytes[0],
+    qdf_mem_copy(&hdd_ctx->provisioned_mac_addr[0].bytes[0],
                        (uint8_t *)computedMac, QDF_MAC_ADDR_SIZE);
 
 config_exit:
@@ -8329,7 +8329,7 @@ QDF_STATUS hdd_update_mac_config(struct hdd_context *hdd_ctx)
     macTable[0].value = &buffer_temp[0];
     update_mac_from_string(hdd_ctx, &macTable[0], MACADDRESSUSED);
     qdf_mem_copy(&customMacAddr,
-             &hdd_ctx->config->intfMacAddr[0].bytes[0],
+             &hdd_ctx->provisioned_mac_addr[0].bytes[0],
              sizeof(tSirMacAddr));
 	sme_set_custom_mac_addr(customMacAddr);
 
