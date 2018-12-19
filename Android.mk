@@ -55,7 +55,7 @@ ifneq ($(filter msm8998 sdm845, $(TARGET_BOARD_PLATFORM)),)
     WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/wlan_proc/build/ms/WLAN_MERGED.elf
 else ifneq ($(filter sdm660, $(TARGET_BOARD_PLATFORM)),)
     WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.1.0.1/wlan_proc/build/ms/WLAN_MERGED.elf
-else ifneq ($(filter talos, $(TARGET_BOARD_PLATFORM)),)
+else ifneq ($(filter sm6150, $(TARGET_BOARD_PLATFORM)),)
     WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.3.0.1/wlan_proc/build/ms/WLAN_MERGED.elf
 endif
 
