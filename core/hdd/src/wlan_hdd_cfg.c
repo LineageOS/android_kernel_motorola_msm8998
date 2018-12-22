@@ -8328,6 +8328,7 @@ QDF_STATUS hdd_update_mac_config(struct hdd_context *hdd_ctx)
     macTable[0].name = "Intf0MacAddress";
     macTable[0].value = &buffer_temp[0];
     update_mac_from_string(hdd_ctx, &macTable[0], MACADDRESSUSED);
+    hdd_ctx->num_provisioned_addr = MACADDRESSUSED;
     qdf_mem_copy(&customMacAddr,
              &hdd_ctx->provisioned_mac_addr[0].bytes[0],
              sizeof(tSirMacAddr));
