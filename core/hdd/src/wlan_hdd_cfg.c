@@ -112,6 +112,7 @@ QDF_STATUS hdd_update_mac_serial(struct hdd_context *hdd_ctx)
         qdf_status = QDF_STATUS_E_FAILURE;
         goto config_exit;
     }
+    hdd_ctx->num_provisioned_addr = MACADDRESSUSED;
     qdf_mem_copy(&hdd_ctx->provisioned_mac_addr[0].bytes[0],
                        (uint8_t *)computedMac, QDF_MAC_ADDR_SIZE);
 
