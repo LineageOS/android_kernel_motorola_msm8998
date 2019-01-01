@@ -155,6 +155,7 @@ struct muc_data {
 	bool det_testmode;
 
 	bool with_cs_sleep;
+	bool without_default_bus_pinctrl;
 };
 
 /* Global functions */

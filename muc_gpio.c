@@ -556,11 +556,18 @@ static int muc_pinctrl_setup(struct muc_data *cdata, struct device *dev)
 		}
 	}
 
-	/* Default to connected initially until detection is complete */
-	ret = pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con);
-	if (ret) {
-		dev_err(dev, "Failed to select pinctrl initial state\n");
-		return ret;
+	cdata->without_default_bus_pinctrl = of_property_read_bool(dev->of_node,
+					"mmi,without-default-bus-pinctrl");
+	if (!cdata->without_default_bus_pinctrl) {
+		/* Default to connected initially until detection is complete */
+		ret = pinctrl_select_state(cdata->pinctrl, cdata->pins_spi_con);
+		if (ret) {
+			dev_err(dev, "Failed to select pinctrl initial state\n");
+			return ret;
+		}
+	} else {
+		dev_info(dev, "without select default greybus pinctrl initial state\n");
+		ret = 0;
 	}
 
 	return 0;
