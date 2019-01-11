@@ -180,7 +180,7 @@ static void check_is_string(struct check *c, struct dt_info *dti,
 #define ERROR_IF_NOT_STRING(nm, propname) \
 	ERROR(nm, check_is_string, (propname))
 
-static void check_is_null_terminated(struct check *c, struct node *root,
+static void check_is_null_terminated(struct check *c, struct dt_info *dti,
 			    struct node *node)
 {
 	struct property *prop;
