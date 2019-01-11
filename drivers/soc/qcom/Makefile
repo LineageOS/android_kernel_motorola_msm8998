@@ -117,9 +117,3 @@ obj-$(CONFIG_MMI_RAM_INFO) += mmi-ram-info.o
 obj-$(CONFIG_MMI_STORAGE_INFO) += mmi_storage_info.o
 obj-$(CONFIG_MMI_UNIT_INFO) += mmi-unit-info.o
 obj-$(CONFIG_BOOTINFO) += bootinfo.o
-
-# TODO: remove me b/62058353
-subdir-ccflags-y += \
-	-Wno-ignored-attributes \
-	-Wno-gcc-compat \
-	-Wno-enum-conversion
