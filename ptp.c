@@ -670,6 +670,11 @@ init_and_register(struct gb_connection *connection, struct gb_ptp *ptp)
 	if (IS_ERR(ptp->psy))
 		return PTR_ERR(ptp->psy);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	pr_info("muc send uvent add %s\n", ptp->psy->dev.kobj.name);
+	kobject_uevent(&ptp->psy->dev.kobj, KOBJ_ADD);
+#endif
+
 	return 0;
 }
 #endif
