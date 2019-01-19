@@ -612,7 +612,8 @@ int v4l2_hal_buffer_ready(void *hal_data, unsigned int stream, int index,
 		if (vb != NULL) {
 			struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
-			//empty
+			vbuf->vb2_buf.timestamp =
+				(ts_sec * 1000000000ULL) + (ts_usec * 1000ULL);
 #else
 			vbuf->timestamp.tv_sec = ts_sec;
 			vbuf->timestamp.tv_usec = ts_usec;
