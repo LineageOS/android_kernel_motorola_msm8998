@@ -117,6 +117,31 @@ struct ath_pktlog_info_lnx {
 	struct ctl_table_header *sysctl_header;
 };
 
+struct pktlog_rx_history {
+	uint8_t event_id;
+	int cpu_id;
+	int pid;
+	uint64_t timestamp;
+};
+
+struct pktlog_tx_history {
+	uint8_t event_id;
+	int cpu_id;
+	int pid;
+	uint64_t timestamp;
+};
+
+struct pktlog_history {
+	uint8_t event_id;
+	int cpu_id;
+	int pid;
+	uint64_t timestamp;
+};
+
+#define PKTLOG_HISTORY_MAX 1024
+#define PKTLOG_RX_HISTORY_MAX 1024
+#define PKTLOG_TX_HISTORY_MAX 1024
+
 #define PL_INFO_LNX(_pl_info)   ((struct ath_pktlog_info_lnx *)(_pl_info))
 
 extern struct ol_pktlog_dev_t ol_pl_dev;

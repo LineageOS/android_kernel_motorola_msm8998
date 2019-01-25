@@ -70,6 +70,9 @@ static struct proc_dir_entry *g_pktlog_pde;
 
 static DEFINE_MUTEX(proc_mutex);
 
+struct pktlog_tx_history pktlog_tx_history[PKTLOG_TX_HISTORY_MAX];
+static uint16_t pktlog_tx_hist_idx = 0;
+
 static int pktlog_attach(struct hif_opaque_softc *scn);
 static void pktlog_detach(struct hif_opaque_softc *scn);
 static int pktlog_open(struct inode *i, struct file *f);
@@ -113,12 +116,32 @@ int pktlog_alloc_buf(struct hif_opaque_softc *scn)
 	page_cnt = (sizeof(*(pl_info->buf)) + pl_info->buf_size) / PAGE_SIZE;
 
 	qdf_spin_lock_bh(&pl_info->log_lock);
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 30;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	if (pl_info->buf != NULL) {
 		qdf_spin_unlock_bh(&pl_info->log_lock);
 		printk(PKTLOG_TAG "Buffer is already in use\n");
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 31;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+
 		return -EINVAL;
 	}
 	qdf_spin_unlock_bh(&pl_info->log_lock);
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 32;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
 
 	buffer = vmalloc((page_cnt + 2) * PAGE_SIZE);
 	if (buffer == NULL) {
@@ -140,11 +163,27 @@ int pktlog_alloc_buf(struct hif_opaque_softc *scn)
 	}
 
 	qdf_spin_lock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 33;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	if (pl_info->buf != NULL)
 		pktlog_release_buf(scn);
 
 	pl_info->buf =  buffer;
 	qdf_spin_unlock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 34;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	return 0;
 }
 
@@ -516,11 +555,26 @@ static void pktlog_detach(struct hif_opaque_softc *scn)
 
 	qdf_spin_lock_bh(&pl_info->log_lock);
 
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 35;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	if (pl_info->buf) {
 		pktlog_release_buf(scn);
 		pl_dev->tgt_pktlog_alloced = false;
 	}
 	qdf_spin_unlock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 36;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	pktlog_cleanup(pl_info);
 
 	if (pl_dev) {
@@ -535,6 +589,13 @@ static int __pktlog_open(struct inode *i, struct file *f)
 	struct pktlog_dev_t *pl_dev;
 	struct ath_pktlog_info *pl_info;
 	int ret = 0;
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 50;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
 
 	PKTLOG_MOD_INC_USE_COUNT;
 	pl_info = (struct ath_pktlog_info *)
@@ -567,6 +628,13 @@ static int __pktlog_open(struct inode *i, struct file *f)
 
 	pl_dev = get_pktlog_handle();
 
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 51;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	if (!pl_dev) {
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: Invalid pktlog handle\n", __func__);
@@ -581,6 +649,12 @@ static int __pktlog_open(struct inode *i, struct file *f)
 		 */
 		pl_info->curr_pkt_state =
 			PKTLOG_OPR_IN_PROGRESS_READ_START_PKTLOG_DISABLED;
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 52;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
 		return ret;
 	}
 	/* Disbable the pktlog internally. */
@@ -588,6 +662,14 @@ static int __pktlog_open(struct inode *i, struct file *f)
 	pl_info->log_state = 0;
 	pl_info->curr_pkt_state =
 			PKTLOG_OPR_IN_PROGRESS_READ_START_PKTLOG_DISABLED;
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 53;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	return ret;
 }
 
@@ -608,6 +690,13 @@ static int __pktlog_release(struct inode *i, struct file *f)
 	struct pktlog_dev_t *pl_dev;
 	struct ath_pktlog_info *pl_info;
 	int ret = 0;
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 60;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
 
 	PKTLOG_MOD_DEC_USE_COUNT;
 
@@ -650,11 +739,26 @@ static int __pktlog_release(struct inode *i, struct file *f)
 			(struct hif_opaque_softc *)scn, pl_info->log_state,
 			cds_is_packet_log_enabled(), 0, 1);
 
-	if (ret != 0)
+	if (ret != 0) {
 		pr_warn("%s: pktlog cannot be enabled. ret value %d\n",
 			__func__, ret);
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 61;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+	}
 
 	pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 62;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	return ret;
 }
 
@@ -701,6 +805,14 @@ pktlog_read_proc_entry(char *buf, size_t nbytes, loff_t *ppos,
 	struct ath_pktlog_buf *log_buf;
 
 	qdf_spin_lock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 20;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	log_buf = pl_info->buf;
 
 	*read_complete = false;
@@ -708,6 +820,14 @@ pktlog_read_proc_entry(char *buf, size_t nbytes, loff_t *ppos,
 	if (log_buf == NULL) {
 		*read_complete = true;
 		qdf_spin_unlock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 21;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+
 		return 0;
 	}
 
@@ -739,6 +859,13 @@ pktlog_read_proc_entry(char *buf, size_t nbytes, loff_t *ppos,
 	fold_offset = -1;
 	cur_rd_offset = start_offset;
 
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 22;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	/* Find the last offset and fold-offset if the buffer is folded */
 	do {
 		struct ath_pktlog_hdr *log_hdr;
@@ -764,6 +891,13 @@ pktlog_read_proc_entry(char *buf, size_t nbytes, loff_t *ppos,
 	} while (cur_rd_offset != cur_wr_offset);
 
 	ppos_data = *ppos + ret_val - bufhdr_size + start_offset;
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 23;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
 
 	if (fold_offset == -1) {
 		if (ppos_data > end_offset)
@@ -825,6 +959,14 @@ rd_done:
 		}
 	}
 	qdf_spin_unlock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 24;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	return ret_val;
 }
 
@@ -850,10 +992,26 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 		return 0;
 
 	qdf_spin_lock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 0;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	log_buf = pl_info->buf;
 
 	if (log_buf == NULL) {
 		qdf_spin_unlock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 1;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+
 		return 0;
 	}
 
@@ -863,6 +1021,14 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 		 * pktlog disable command first.
 		 */
 		qdf_spin_unlock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 2;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+
 		return -EINVAL;
 	}
 
@@ -881,13 +1047,30 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 	if (*ppos < bufhdr_size) {
 		count = QDF_MIN((bufhdr_size - *ppos), rem_len);
 		qdf_spin_unlock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 3;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+
 		if (copy_to_user(buf, ((char *)&log_buf->bufhdr) + *ppos,
 				 count)) {
 			return -EFAULT;
 		}
 		rem_len -= count;
 		ret_val += count;
+
 		qdf_spin_lock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 4;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
+
 	}
 
 	start_offset = log_buf->rd_offset;
@@ -897,6 +1080,13 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 
 	fold_offset = -1;
 	cur_rd_offset = start_offset;
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 5;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
 
 	/* Find the last offset and fold-offset if the buffer is folded */
 	do {
@@ -924,12 +1114,26 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 
 	ppos_data = *ppos + ret_val - bufhdr_size + start_offset;
 
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 6;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	if (fold_offset == -1) {
 		if (ppos_data > end_offset)
 			goto rd_done;
 
 		count = QDF_MIN(rem_len, (end_offset - ppos_data + 1));
 		qdf_spin_unlock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 7;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
 
 		if (copy_to_user(buf + ret_val,
 				 log_buf->log_data + ppos_data, count)) {
@@ -938,11 +1142,27 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 
 		ret_val += count;
 		rem_len -= count;
+
 		qdf_spin_lock_bh(&pl_info->log_lock);
+
+		pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+		pktlog_tx_history[pktlog_tx_hist_idx].event_id = 8;
+		pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+		pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+		if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+			pktlog_tx_hist_idx = 0;
 	} else {
 		if (ppos_data <= fold_offset) {
 			count = QDF_MIN(rem_len, (fold_offset - ppos_data + 1));
 			qdf_spin_unlock_bh(&pl_info->log_lock);
+
+			pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+			pktlog_tx_history[pktlog_tx_hist_idx].event_id = 9;
+			pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+			pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+			if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+				pktlog_tx_hist_idx = 0;
+
 			if (copy_to_user(buf + ret_val,
 					 log_buf->log_data + ppos_data,
 					 count)) {
@@ -950,7 +1170,15 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 			}
 			ret_val += count;
 			rem_len -= count;
+
 			qdf_spin_lock_bh(&pl_info->log_lock);
+
+			pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+			pktlog_tx_history[pktlog_tx_hist_idx].event_id = 10;
+			pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+			pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+			if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+				pktlog_tx_hist_idx = 0;
 		}
 
 		if (rem_len == 0)
@@ -963,6 +1191,14 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 		if (ppos_data <= end_offset) {
 			count = QDF_MIN(rem_len, (end_offset - ppos_data + 1));
 			qdf_spin_unlock_bh(&pl_info->log_lock);
+
+			pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+			pktlog_tx_history[pktlog_tx_hist_idx].event_id = 11;
+			pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+			pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+			if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+				pktlog_tx_hist_idx = 0;
+
 			if (copy_to_user(buf + ret_val,
 					 log_buf->log_data + ppos_data,
 					 count)) {
@@ -970,7 +1206,16 @@ __pktlog_read(struct file *file, char *buf, size_t nbytes, loff_t *ppos)
 			}
 			ret_val += count;
 			rem_len -= count;
+
 			qdf_spin_lock_bh(&pl_info->log_lock);
+
+			pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+			pktlog_tx_history[pktlog_tx_hist_idx].event_id = 12;
+			pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+			pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+			if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+				pktlog_tx_hist_idx = 0;
+
 		}
 	}
 
@@ -982,6 +1227,14 @@ rd_done:
 	*ppos += ret_val;
 
 	qdf_spin_unlock_bh(&pl_info->log_lock);
+
+	pktlog_tx_history[pktlog_tx_hist_idx].cpu_id = qdf_get_cpu();
+	pktlog_tx_history[pktlog_tx_hist_idx].event_id = 13;
+	pktlog_tx_history[pktlog_tx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
+	pktlog_tx_history[pktlog_tx_hist_idx].timestamp = qdf_get_log_timestamp();
+	if (++pktlog_tx_hist_idx == PKTLOG_TX_HISTORY_MAX)
+		pktlog_tx_hist_idx = 0;
+
 	return ret_val;
 }
 
