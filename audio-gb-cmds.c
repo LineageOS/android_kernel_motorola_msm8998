@@ -54,24 +54,30 @@ int gb_i2s_mgmt_activate_port(struct gb_connection *connection,
 				      uint8_t port_type)
 {
 	struct gb_i2s_mgmt_activate_port_request request;
+	int ret;
 
 	memset(&request, 0, sizeof(request));
 	request.port_type = port_type;
 
-	return gb_operation_sync(connection, GB_I2S_MGMT_TYPE_ACTIVATE_PORT,
+	ret = gb_operation_sync(connection, GB_I2S_MGMT_TYPE_ACTIVATE_PORT,
 				 &request, sizeof(request), NULL, 0);
+	pr_info("%s: opcode: 0x0A, ret: %d\n", __func__, ret);
+	return ret;
 }
 
 int gb_i2s_mgmt_deactivate_port(struct gb_connection *connection,
 					uint8_t port_type)
 {
 	struct gb_i2s_mgmt_deactivate_port_request request;
+	int ret;
 
 	memset(&request, 0, sizeof(request));
 	request.port_type = port_type;
 
-	return gb_operation_sync(connection, GB_I2S_MGMT_TYPE_DEACTIVATE_PORT,
+	ret = gb_operation_sync(connection, GB_I2S_MGMT_TYPE_DEACTIVATE_PORT,
 				 &request, sizeof(request), NULL, 0);
+	pr_info("%s: opcode: 0x0B, ret: %d\n", __func__, ret);
+	return ret;
 }
 
 int gb_i2s_mgmt_get_supported_configurations(
@@ -79,18 +85,25 @@ int gb_i2s_mgmt_get_supported_configurations(
 	struct gb_i2s_mgmt_get_supported_configurations_response *get_cfg,
 	size_t size)
 {
-	return gb_operation_sync(connection,
+	int ret;
+	ret = gb_operation_sync(connection,
 				 GB_I2S_MGMT_TYPE_GET_SUPPORTED_CONFIGURATIONS,
 				 NULL, 0, get_cfg, size);
+	pr_info("%s: opcode: 0x02, ret: %d\n", __func__, ret);
+	return ret;
 }
 
 int gb_i2s_mgmt_set_configuration(struct gb_connection *connection,
 			struct gb_i2s_mgmt_set_configuration_request *set_cfg)
 {
-	return gb_operation_sync_timeout(connection,
+	int ret;
+
+	ret = gb_operation_sync_timeout(connection,
 				GB_I2S_MGMT_TYPE_SET_CONFIGURATION, set_cfg,
 				sizeof(*set_cfg), NULL, 0,
 				AUDIO_GB_CMD_TIME_OUT);
+	pr_info("%s: opcode: 0x03, ret: %d\n", __func__, ret);
+	return ret;
 }
 
 int gb_i2s_mgmt_set_samples_per_message(
@@ -148,6 +161,7 @@ int gb_i2s_mgmt_get_cfgs(struct gb_snd_codec *snd_codec,
 			kfree(get_cfg_mask);
 			return ret;
 		}
+		pr_info("get_supported_config, opcode: 0x2 success\n");
 
 		snd_codec->i2s_cfg_masks = get_cfg_mask;
 	} else {
@@ -284,7 +298,7 @@ static int gb_i2s_mgmt_set_cfg_masks(struct gb_snd_codec *snd_codec,
 	int gb_rate = gb_i2s_mgmt_convert_rate_to_gb_i2s(rate);
 	int gb_format = gb_i2s_mgmt_convert_format_to_gb_i2s(format);
 
-	pr_debug("%s gb rate %d gb format %d\n", __func__, gb_rate, gb_format);
+	pr_info("%s gb rate %d gb format %d\n", __func__, gb_rate, gb_format);
 	memset(&set_cfg, 0, sizeof(set_cfg));
 	set_cfg.config.num_channels = chans;
 	set_cfg.config.format = cpu_to_le32(gb_format);
@@ -300,7 +314,9 @@ static int gb_i2s_mgmt_set_cfg_masks(struct gb_snd_codec *snd_codec,
 				&set_cfg, sizeof(set_cfg), NULL, 0,
 				AUDIO_GB_CMD_TIME_OUT);
 	if (ret)
-		pr_err("set_configuration failed: %d\n", ret);
+		pr_err("set_configuration opcode: 0x03 failed: %d\n", ret);
+	else
+		pr_err("set_configuration, opcode: 0x03 success\n");
 
 	return ret;
 }
@@ -389,6 +405,7 @@ int gb_i2s_mgmt_send_start(struct gb_snd_codec *snd_codec, uint32_t port_type,
 		pr_warn("gb i2s start and stop messages not supported by mod\n");
 		return -ENOTSUPP;
 	}
+	pr_info("%s(): port_type: %d, start: %d\n", __func__, port_type, start);
 
 	if (start) {
 		req_start.port_type = port_type;
@@ -397,8 +414,9 @@ int gb_i2s_mgmt_send_start(struct gb_snd_codec *snd_codec, uint32_t port_type,
 					&req_start, sizeof(req_start), NULL, 0,
 					AUDIO_GB_CMD_TIME_OUT);
 		if (ret)
-			pr_err("%s(): gb i2s start failed: %d\n",
-					__func__, ret);
+			pr_err("%s(): opcode: 0x0C failed: %d\n", __func__, ret);
+		else
+			pr_info("%s(): opcode: 0x0C success\n", __func__);
 	} else {
 		req_stop.port_type = port_type;
 		ret = gb_operation_sync_timeout(snd_codec->mgmt_connection,
@@ -521,6 +539,8 @@ int gb_mods_aud_enable_devices(struct gb_connection *connection,
 	request.devices.in_devices = cpu_to_le32(in_devices);
 	request.devices.out_devices = cpu_to_le32(out_devices);
 
+	pr_info("%s: opcode: 0x02, out_dev: %d, in_device: %d\n",
+		__func__, request.devices.out_devices, request.devices.in_devices);
 	return gb_operation_sync(connection, GB_AUDIO_ENABLE_DEVICES,
 				 &request, sizeof(request), NULL, 0);
 }
@@ -532,6 +552,7 @@ int gb_mods_aud_get_speaker_preset_eq(
 	int ret;
 	size_t size = sizeof(*get_preset);
 
+	pr_info("%s: GB_AUDIO_GET_SPEAKER_PRESET_EQ\n", __func__);
 	ret = gb_operation_sync(connection,
 				 GB_AUDIO_GET_SPEAKER_PRESET_EQ,
 				 NULL, 0, get_preset, size);

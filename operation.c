@@ -1097,7 +1097,7 @@ int gb_operation_sync_timeout(struct gb_connection *connection, int type,
 
 	ret = gb_operation_request_send_sync_timeout(operation, timeout);
 	if (ret == -ENOTCONN) {
-		pr_debug("greybus: synchronous op of type 0x%02x failed: %d\n",
+		pr_err("greybus: synchronous op of type 0x%02x failed: %d\n",
 			 type, ret);
 	} else if (ret) {
 		pr_err("greybus: synchronous op of type 0x%02x failed: %d\n",
