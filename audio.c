@@ -360,6 +360,23 @@ static int gb_mods_audio_event_recv(u8 type, struct gb_operation *op)
 			op->request->payload_size, sizeof(*req));
 		return -EINVAL;
 	}
+        /* 3.5mm jack is built into Incipio Car Dock Mod. The Mod reports if
+	   any ext speaker/headphone jack is connected to it.
+	   Mod reports as below
+	   GB_AUDIO_DEVICE_OUT_LOUDSPEAKER-0-If ext spk jack is NOT CONNECTED
+	   GB_AUDIO_DEVICE_OUT_HEADSET -   2-If ext spk jack is CONNECTED
+	   GB_AUDIO_DEVICE_OUT_LINE -      4-(Not sure what this means)
+
+	   Whenever ext Speaker are connected to mod, some times the mod reports
+	   value '4' followed by toggling the value between 4 & 2 continuously.
+	   To avoid toggling neglect GB_AUDIO_DEVICE_OUT_LINE(4) reported by mod.
+	*/
+#ifdef MASK_AUD_DEV_OUT_LINE
+	if ((cpu_to_le32(req->devices.out_devices) == GB_AUDIO_DEVICE_OUT_LINE) &&
+	    (codec->aud_devices->devices.out_devices == GB_AUDIO_DEVICE_OUT_HEADSET)) {
+		return 0;
+	}
+#endif
 	codec->aud_devices->devices.in_devices =
 						cpu_to_le32(req->devices.in_devices);
 	codec->aud_devices->devices.out_devices =

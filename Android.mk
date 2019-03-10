@@ -17,7 +17,11 @@ GB_KERNEL_TOOLS_PREFIX := $(TARGET_KERNEL_CROSS_COMPILE_PREFIX)
 endif
 
 GB_ARCHARG := ARCH=$(TARGET_ARCH)
+ifeq ($(IGNORE_AUD_DEV_OUTLINE),true)
+GB_FLAGARG := EXTRA_CFLAGS+="-fno-pic -DMASK_AUD_DEV_OUT_LINE"
+else
 GB_FLAGARG := EXTRA_CFLAGS+=-fno-pic
+endif
 GB_ARGS := $(GB_KDIRARG) $(GB_ARCHARG) $(GB_FLAGARG)
 
 #Create vendor/lib/modules directory if it doesn't exist
