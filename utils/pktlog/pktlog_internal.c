@@ -47,9 +47,6 @@
 #define TX_DESC_ID_HIGH_MASK    0xffff0000
 #define TX_DESC_ID_HIGH_SHIFT   16
 
-struct pktlog_rx_history pktlog_rx_history[PKTLOG_RX_HISTORY_MAX];
-static uint16_t pktlog_rx_hist_idx = 0;
-
 void pktlog_getbuf_intsafe(struct ath_pktlog_arg *plarg)
 {
 	struct ath_pktlog_buf *log_buf;
@@ -118,13 +115,6 @@ void pktlog_getbuf_intsafe(struct ath_pktlog_arg *plarg)
 #endif
 	cur_wr_offset += sizeof(*log_hdr);
 
-	pktlog_rx_history[pktlog_rx_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_rx_history[pktlog_rx_hist_idx].event_id = 2;
-	pktlog_rx_history[pktlog_rx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_rx_history[pktlog_rx_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_rx_hist_idx == PKTLOG_RX_HISTORY_MAX)
-		pktlog_rx_hist_idx = 0;
-
 	if ((buf_size - cur_wr_offset) < log_size) {
 		while ((cur_wr_offset <= log_buf->rd_offset)
 		       && (log_buf->rd_offset < buf_size)) {
@@ -134,24 +124,10 @@ void pktlog_getbuf_intsafe(struct ath_pktlog_arg *plarg)
 		cur_wr_offset = 0;
 	}
 
-	pktlog_rx_history[pktlog_rx_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_rx_history[pktlog_rx_hist_idx].event_id = 3;
-	pktlog_rx_history[pktlog_rx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_rx_history[pktlog_rx_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_rx_hist_idx == PKTLOG_RX_HISTORY_MAX)
-		pktlog_rx_hist_idx = 0;
-
 	while ((cur_wr_offset <= log_buf->rd_offset)
 	       && (cur_wr_offset + log_size) > log_buf->rd_offset) {
 		PKTLOG_MOV_RD_IDX(log_buf->rd_offset, log_buf, buf_size);
 	}
-
-	pktlog_rx_history[pktlog_rx_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_rx_history[pktlog_rx_hist_idx].event_id = 4;
-	pktlog_rx_history[pktlog_rx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_rx_history[pktlog_rx_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_rx_hist_idx == PKTLOG_RX_HISTORY_MAX)
-		pktlog_rx_hist_idx = 0;
 
 	log_ptr = &(log_buf->log_data[cur_wr_offset]);
 	cur_wr_offset += log_hdr->size;
@@ -192,22 +168,8 @@ char *pktlog_getbuf(struct pktlog_dev_t *pl_dev,
 		pktlog_getbuf_intsafe(&plarg);
 	} else {
 		PKTLOG_LOCK(pl_info);
-
-		pktlog_rx_history[pktlog_rx_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_rx_history[pktlog_rx_hist_idx].event_id = 1;
-		pktlog_rx_history[pktlog_rx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_rx_history[pktlog_rx_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_rx_hist_idx == PKTLOG_RX_HISTORY_MAX)
-			pktlog_rx_hist_idx = 0;
 		pktlog_getbuf_intsafe(&plarg);
 		PKTLOG_UNLOCK(pl_info);
-
-		pktlog_rx_history[pktlog_rx_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_rx_history[pktlog_rx_hist_idx].event_id = 5;
-		pktlog_rx_history[pktlog_rx_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_rx_history[pktlog_rx_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_rx_hist_idx == PKTLOG_RX_HISTORY_MAX)
-			pktlog_rx_hist_idx = 0;
 	}
 
 	return plarg.buf;
@@ -1127,7 +1089,6 @@ A_STATUS process_sw_event(void *pdev, void *data)
 		qdf_assert(0);
 		return A_ERROR;
 	}
-
 	qdf_mem_copy(sw_event.sw_event,
 		     ((char *)fw_data->data + sizeof(struct ath_pktlog_hdr)),
 		     pl_hdr.size);

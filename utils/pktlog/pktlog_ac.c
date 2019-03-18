@@ -51,9 +51,6 @@ wdi_event_subscribe PKTLOG_SW_EVENT_SUBSCRIBER;
 wdi_event_subscribe PKTLOG_LITE_T2H_SUBSCRIBER;
 wdi_event_subscribe PKTLOG_LITE_RX_SUBSCRIBER;
 
-struct pktlog_history pktlog_history[PKTLOG_HISTORY_MAX];
-static uint16_t pktlog_hist_idx = 0;
-
 struct ol_pl_arch_dep_funcs ol_pl_funcs = {
 	.pktlog_init = pktlog_init,
 	.pktlog_enable = pktlog_enable,
@@ -425,13 +422,6 @@ int pktlog_disable(struct hif_opaque_softc *scn)
 	uint8_t save_pktlog_state;
 	struct cdp_pdev *txrx_pdev = get_txrx_context();
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 70;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	pl_dev = get_pktlog_handle();
 
 	if (!pl_dev) {
@@ -451,13 +441,6 @@ int pktlog_disable(struct hif_opaque_softc *scn)
 		return -EINVAL;
 	}
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 71;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	if (pl_info->curr_pkt_state == PKTLOG_OPR_IN_PROGRESS ||
 	    pl_info->curr_pkt_state ==
 			PKTLOG_OPR_IN_PROGRESS_READ_START_PKTLOG_DISABLED ||
@@ -466,26 +449,12 @@ int pktlog_disable(struct hif_opaque_softc *scn)
 			PKTLOG_OPR_IN_PROGRESS_CLEARBUFF_COMPLETE)
 		return -EBUSY;
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 72;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	save_pktlog_state = pl_info->curr_pkt_state;
 	pl_info->curr_pkt_state = PKTLOG_OPR_IN_PROGRESS;
 
 	if (pktlog_wma_post_msg(0, WMI_PDEV_PKTLOG_DISABLE_CMDID, 0, 0)) {
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("Failed to disable pktlog in target\n");
-
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 73;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return -EINVAL;
 	}
 
@@ -493,12 +462,6 @@ int pktlog_disable(struct hif_opaque_softc *scn)
 		wdi_pktlog_unsubscribe(txrx_pdev, pl_info->log_state)) {
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("Cannot unsubscribe pktlog from the WDI\n");
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 74;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return -EINVAL;
 	}
 	pl_dev->is_pktlog_cb_subscribed = false;
@@ -507,14 +470,6 @@ int pktlog_disable(struct hif_opaque_softc *scn)
 			PKTLOG_OPR_IN_PROGRESS_READ_START_PKTLOG_DISABLED;
 	else
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 75;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	return 0;
 }
 
@@ -572,13 +527,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 	struct cdp_pdev *cdp_pdev;
 	int error;
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 2;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	if (!scn) {
 		qdf_print("%s: Invalid scn context\n", __func__);
 		ASSERT(0);
@@ -609,13 +557,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 	if (pl_info->curr_pkt_state < PKTLOG_OPR_IN_PROGRESS_CLEARBUFF_COMPLETE)
 		return -EBUSY;
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 3;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	pl_info->curr_pkt_state = PKTLOG_OPR_IN_PROGRESS;
 	/* is_iwpriv_command : 0 indicates its a vendor command
 	 * log_state: 0 indicates pktlog disable command
@@ -626,14 +567,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 	    pl_dev->vendor_cmd_send == false) {
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: pktlog operation not in progress\n", __func__);
-
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 4;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
-
 		return 0;
 	}
 
@@ -646,13 +579,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 					PKTLOG_OPR_NOT_IN_PROGRESS;
 				qdf_print("%s: pktlog buff alloc failed\n",
 					__func__);
-				pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-				pktlog_history[pktlog_hist_idx].event_id = 5;
-				pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-				pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-				if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-					pktlog_hist_idx = 0;
-
 				return -ENOMEM;
 			}
 
@@ -661,12 +587,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 					PKTLOG_OPR_NOT_IN_PROGRESS;
 				qdf_print("%s: pktlog buf alloc failed\n",
 				       __func__);
-				pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-				pktlog_history[pktlog_hist_idx].event_id = 6;
-				pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-				pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-				if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-					pktlog_hist_idx = 0;
 				ASSERT(0);
 				return -ENOMEM;
 			}
@@ -689,14 +609,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 
 		pl_dev->tgt_pktlog_alloced = true;
 	}
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 7;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	if (log_state != 0) {
 		/* WDI subscribe */
 		if (!pl_dev->is_pktlog_cb_subscribed) {
@@ -708,24 +620,10 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 					__func__);
 				return -EINVAL;
 			}
-			pl_dev->is_pktlog_cb_subscribed = true;
-
-			pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-			pktlog_history[pktlog_hist_idx].event_id = 8;
-			pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-			pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-			if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-				pktlog_hist_idx = 0;
 		} else {
 			pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 			qdf_print("Unable to subscribe %d to the WDI %s\n",
 				  log_state, __func__);
-			pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-			pktlog_history[pktlog_hist_idx].event_id = 9;
-			pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-			pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-			if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-				pktlog_hist_idx = 0;
 			return -EINVAL;
 		}
 		/* WMI command to enable pktlog on the firmware */
@@ -733,26 +631,13 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 				user_triggered)) {
 			pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 			qdf_print("Device cannot be enabled, %s\n", __func__);
-
-			pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-			pktlog_history[pktlog_hist_idx].event_id = 10;
-			pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-			pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-			if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-				pktlog_hist_idx = 0;
 			return -EINVAL;
 		}
+		pl_dev->is_pktlog_cb_subscribed = true;
 
 		if (is_iwpriv_command == 0)
 			pl_dev->vendor_cmd_send = true;
 	} else {
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 11;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
-
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		pl_dev->pl_funcs->pktlog_disable(scn);
 		if (is_iwpriv_command == 0)
@@ -761,14 +646,6 @@ static int __pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 
 	pl_info->log_state = log_state;
 	pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 12;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	return 0;
 }
 
@@ -779,13 +656,6 @@ int pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 	struct pktlog_dev_t *pl_dev;
 	struct ath_pktlog_info *pl_info;
 	int err;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 1;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 
 	pl_dev = get_pktlog_handle();
 
@@ -805,13 +675,6 @@ int pktlog_enable(struct hif_opaque_softc *scn, int32_t log_state,
 	err = __pktlog_enable(scn, log_state, ini_triggered,
 				user_triggered, is_iwpriv_command);
 	mutex_unlock(&pl_info->pktlog_mutex);
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 13;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 	return err;
 }
 
@@ -823,13 +686,6 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 	struct pktlog_dev_t *pl_dev;
 	struct ath_pktlog_info *pl_info;
 	struct cdp_pdev *pdev;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 21;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 
 	pl_dev = get_pktlog_handle();
 
@@ -859,13 +715,6 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 
 	pl_info->curr_pkt_state = PKTLOG_OPR_IN_PROGRESS;
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 22;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	if (size < ONE_MEGABYTE || size > MAX_ALLOWED_PKTLOG_SIZE) {
 		qdf_print("%s: Cannot Set Pktlog Buffer size of %d bytes."
 			"Min required is %d MB and Max allowed is %d MB.\n",
@@ -873,12 +722,6 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 			(MAX_ALLOWED_PKTLOG_SIZE/ONE_MEGABYTE));
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: Invalid requested buff size", __func__);
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 23;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return -EINVAL;
 	}
 
@@ -886,12 +729,6 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: Pktlog Buff Size is already of same size.",
 			  __func__);
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 24;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return 0;
 	}
 
@@ -899,23 +736,10 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: Logging should be disabled before changing"
 			  "buffer size.", __func__);
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 25;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return -EINVAL;
 	}
 
 	qdf_spin_lock_bh(&pl_info->log_lock);
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 26;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	if (pl_info->buf != NULL) {
 		if (pl_dev->is_pktlog_cb_subscribed &&
 			wdi_pktlog_unsubscribe(pdev, pl_info->log_state)) {
@@ -923,24 +747,11 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 				PKTLOG_OPR_NOT_IN_PROGRESS;
 			qdf_spin_unlock_bh(&pl_info->log_lock);
 			qdf_print("Cannot unsubscribe pktlog from the WDI");
-			pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-			pktlog_history[pktlog_hist_idx].event_id = 27;
-			pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-			pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-			if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-				pktlog_hist_idx = 0;
 			return -EFAULT;
 		}
 		pktlog_release_buf(scn);
 		pl_dev->is_pktlog_cb_subscribed = false;
 		pl_dev->tgt_pktlog_alloced = false;
-
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 28;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 	}
 
 	if (size != 0) {
@@ -949,13 +760,6 @@ static int __pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 	}
 	pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 	qdf_spin_unlock_bh(&pl_info->log_lock);
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 29;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 	return 0;
 }
 
@@ -964,13 +768,6 @@ int pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 	struct pktlog_dev_t *pl_dev;
 	struct ath_pktlog_info *pl_info;
 	int status;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 20;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 
 	pl_dev = get_pktlog_handle();
 
@@ -990,13 +787,6 @@ int pktlog_setsize(struct hif_opaque_softc *scn, int32_t size)
 	status = __pktlog_setsize(scn, size);
 	mutex_unlock(&pl_info->pktlog_mutex);
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 30;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	return status;
 }
 
@@ -1005,13 +795,6 @@ int pktlog_clearbuff(struct hif_opaque_softc *scn, bool clear_buff)
 	struct pktlog_dev_t *pl_dev;
 	struct ath_pktlog_info *pl_info;
 	uint8_t save_pktlog_state;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 50;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 
 	pl_dev = get_pktlog_handle();
 
@@ -1035,13 +818,6 @@ int pktlog_clearbuff(struct hif_opaque_softc *scn, bool clear_buff)
 				PKTLOG_OPR_IN_PROGRESS_CLEARBUFF_COMPLETE)
 		return -EBUSY;
 
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 51;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
-
 	save_pktlog_state = pl_info->curr_pkt_state;
 	pl_info->curr_pkt_state = PKTLOG_OPR_IN_PROGRESS;
 
@@ -1049,12 +825,6 @@ int pktlog_clearbuff(struct hif_opaque_softc *scn, bool clear_buff)
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: Logging should be disabled before clearing "
 			  "pktlog buffer.", __func__);
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 52;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return -EINVAL;
 	}
 
@@ -1062,36 +832,19 @@ int pktlog_clearbuff(struct hif_opaque_softc *scn, bool clear_buff)
 		if (pl_info->buf_size > 0) {
 			qdf_debug("pktlog buffer is cleared");
 			memset(pl_info->buf, 0, pl_info->buf_size);
+			pl_dev->is_pktlog_cb_subscribed = false;
 			pl_dev->tgt_pktlog_alloced = false;
 			pl_info->buf->rd_offset = -1;
-			pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-			pktlog_history[pktlog_hist_idx].event_id = 53;
-			pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-			pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-			if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-				pktlog_hist_idx = 0;
 		} else {
 			pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 			qdf_print("%s: pktlog buffer size is not proper. "
 				  "Existing Buf size %d", __func__,
 				  pl_info->buf_size);
-			pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-			pktlog_history[pktlog_hist_idx].event_id = 54;
-			pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-			pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-			if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-				pktlog_hist_idx = 0;
 			return -EFAULT;
 		}
 	} else {
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
 		qdf_print("%s: pktlog buff is NULL", __func__);
-		pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-		pktlog_history[pktlog_hist_idx].event_id = 55;
-		pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-		pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-		if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-			pktlog_hist_idx = 0;
 		return -EFAULT;
 	}
 
@@ -1100,13 +853,6 @@ int pktlog_clearbuff(struct hif_opaque_softc *scn, bool clear_buff)
 			PKTLOG_OPR_IN_PROGRESS_CLEARBUFF_COMPLETE;
 	else
 		pl_info->curr_pkt_state = PKTLOG_OPR_NOT_IN_PROGRESS;
-
-	pktlog_history[pktlog_hist_idx].cpu_id = qdf_get_cpu();
-	pktlog_history[pktlog_hist_idx].event_id = 56;
-	pktlog_history[pktlog_hist_idx].pid = (in_interrupt() ? 0 : current->pid);
-	pktlog_history[pktlog_hist_idx].timestamp = qdf_get_log_timestamp();
-	if (++pktlog_hist_idx == PKTLOG_HISTORY_MAX)
-		pktlog_hist_idx = 0;
 
 	return 0;
 }
