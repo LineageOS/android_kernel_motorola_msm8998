@@ -3,11 +3,19 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_MODULE := v4l2_hal
 LOCAL_MODULE_TAGS := optional
+ifeq ($(call is-platform-version-at-least,P),true)
+LOCAL_REQUIRED_MODULES := build-local
+else
 LOCAL_ADDITIONAL_DEPENDENCIES := build-local
+endif
 include $(BUILD_PHONY_PACKAGE)
 
 LCL_SRC_PATH := $(LOCAL_PATH)
+ifeq ($(call is-platform-version-at-least,Q),true)
+LCL_KDIRARG := KERNELDIR="${PRODUCT_OUT}/obj/KERNEL_OBJ"
+else
 LCL_KDIRARG := KERNELDIR="${ANDROID_PRODUCT_OUT}/obj/KERNEL_OBJ"
+endif
 ifeq ($(TARGET_ARCH),arm64)
   LCL_KERNEL_TOOLS_PREFIX=aarch64-linux-android-
 else
