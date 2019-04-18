@@ -118,7 +118,7 @@ static void gb_usb_ext_connection_exit(struct gb_connection *connection)
 
 	status.active = false;
 	status.proto = USB_EXT_PROTO_UNKNOWN;
-	status.path = USB_EXT_PROTO_UNKNOWN;
+	status.path = USB_EXT_PATH_UNKNOWN;
 	status.type = USB_EXT_REMOTE_UNKNOWN;
 
 	usb_ext_set_state(&status);

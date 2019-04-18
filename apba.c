@@ -212,7 +212,7 @@ static void apba_send_kobj_uevent(const char *event)
 	if (!env)
 		return;
 
-	add_uevent_var(env, event);
+	add_uevent_var(env, "%s", event);
 	kobject_uevent_env(&g_ctrl->dev->kobj, KOBJ_CHANGE, env->envp);
 	kfree(env);
 }

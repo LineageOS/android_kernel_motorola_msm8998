@@ -177,7 +177,7 @@ static void muc_send_uevent(const char *error)
 	if (!env)
 		return;
 
-	add_uevent_var(env, error);
+	add_uevent_var(env, "%s", error);
 	kobject_uevent_env(&muc_misc_data->dev->kobj, KOBJ_CHANGE, env->envp);
 	kfree(env);
 }

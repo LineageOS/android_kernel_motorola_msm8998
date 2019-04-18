@@ -646,14 +646,20 @@ static const struct snd_soc_dai_ops mods_codec_dai_ops = {
 	.shutdown = mods_codec_shutdown,
 };
 
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	//dummy. no dapm_widgets in kernel 4.9
+#else
 static const struct snd_soc_dapm_widget mods_dai_dapm_widgets[] = {
 	SND_SOC_DAPM_AIF_IN("MODS_DAI_RX", "Mods Dai Playback", 0, 0, 0, 0),
 	SND_SOC_DAPM_AIF_OUT("MODS_DAI_TX", "Mods Dai Capture", 0, 0, 0, 0),
 	SND_SOC_DAPM_OUTPUT("MODS_DAI_RX Playback"),
 	SND_SOC_DAPM_INPUT("MODS_DAI_TX Capture"),
 };
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	//dummy. no dapm_widgets in kernel 4.9
+#else
 static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
 	{"MODS_DAI_RX", NULL, "Mods Dai Playback"},
 	{"Mods Dai Capture", NULL, "MODS_DAI_TX"},
@@ -662,6 +668,7 @@ static const struct snd_soc_dapm_route mods_codec_dapm_routes[] = {
 	{"MODS_DAI_TX", NULL, "MODS_DAI_TX Capture"},
 #endif
 };
+#endif
 
 static int mods_codec_probe(struct snd_soc_codec *codec)
 {
