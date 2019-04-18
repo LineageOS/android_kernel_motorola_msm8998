@@ -1,5 +1,13 @@
 LOCAL_PATH := $(call my-dir)
 
+ifeq ($(call is-platform-version-at-least,Q),true)
+DLKM_DIR := $(TOP)/device/qcom/common/dlkm
+include $(CLEAR_VARS)
+LOCAL_MODULE := v4l2-hal.ko
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
+include $(DLKM_DIR)/AndroidKernelModule.mk
+else
 include $(CLEAR_VARS)
 LOCAL_MODULE := v4l2_hal
 LOCAL_MODULE_TAGS := optional
@@ -85,4 +93,5 @@ build-local: $(ACP) $(INSTALLED_KERNEL_TARGET)
 	do $(LCL_KERNEL_TOOLS_PREFIX)strip --strip-unneeded $$i;\
 	$(ACP) -fp $$i $(V4L2_HAL_MODULES_OUT);\
 	done
+endif
 endif
