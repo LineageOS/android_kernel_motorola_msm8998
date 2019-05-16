@@ -1731,6 +1731,7 @@ int wlan_hdd_cfg80211_start_acs(struct hdd_adapter *adapter)
 	tsap_config_t *sap_config;
 	tpWLAN_SAPEventCB acs_event_callback;
 	int status;
+        uint8_t end_ch; //MOT a19110 IKSWP-1069
 
 	if (!adapter) {
 		hdd_err("adapter is NULL");
@@ -1750,6 +1751,17 @@ int wlan_hdd_cfg80211_start_acs(struct hdd_adapter *adapter)
 		sap_config->channel = hdd_ctx->acs_policy.acs_channel;
 	else
 		sap_config->channel = AUTO_CHANNEL_SELECT;
+
+        //BEGIN MOT a19110 IKSWP-1069 Restrict channel 12,13 and 165
+        end_ch = sap_config->acs_cfg.end_ch;
+        if(end_ch >= 12 && end_ch <= 14) {
+                sap_config->acs_cfg.end_ch = 11;
+        }
+        if(end_ch >= 165) {
+                sap_config->acs_cfg.end_ch = 161;
+        }
+        //END IKSWP-1069
+
 	/*
 	 * No DFS SCC is allowed in Auto use case. Hence not
 	 * calling DFS override
