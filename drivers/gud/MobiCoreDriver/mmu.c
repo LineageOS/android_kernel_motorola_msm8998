@@ -348,12 +348,12 @@ struct tee_mmu *tee_mmu_create(struct mm_struct *mm,
 			/* Buffer was allocated in user space */
 			down_read(&mm->mmap_sem);
 			gup_ret = get_user_pages(NULL, mm, (uintptr_t)reader,
-						 pages_nr, 1, 0, pages,
+						 pages_nr, FOLL_WRITE, pages,
 						 NULL);
 			if ((gup_ret == -EFAULT) && !write) {
 				gup_ret = get_user_pages(
 						NULL, mm, (uintptr_t)reader,
-						pages_nr, 0, 0, pages,
+						pages_nr, 0, pages,
 						NULL);
 			}
 			up_read(&mm->mmap_sem);
