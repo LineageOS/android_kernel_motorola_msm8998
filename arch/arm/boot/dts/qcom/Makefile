@@ -340,7 +340,9 @@ dtb-$(CONFIG_ARCH_SDM630) += sdm630-rumi.dtb \
 	sdm630-pm660a-headset-jacktype-no-rcm.dtb \
 	sdm455-mtp.dtb \
 	sdm455-qrd.dtb \
-	sdm455-cdp.dtb
+	sdm455-cdp.dtb \
+	sdm455-rcm.dtb \
+	sdm455-internal-codec-rcm.dtb
 endif # CONFIG_MMI_DEVICE_DTBS
 
 ifeq ($(CONFIG_ARM64),y)
