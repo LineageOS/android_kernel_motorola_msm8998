@@ -586,12 +586,6 @@ static struct v4l2_ctrl_config sync_max_latency = {
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF,
 };
 
-static const s64 control_ae_precapture_trigger_items[] = {
-	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_IDLE,
-	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_START,
-	CAM_EXT_CONTROL_AE_PRECATURE_TRIGGER_CANCEL,
-};
-
 static struct v4l2_ctrl_config control_ae_precapture_trigger = {
 	.id = CAM_EXT_CID_CONTROL_AE_PRECATURE_TRIGGER,
 	.type = V4L2_CTRL_TYPE_INTEGER,
@@ -1250,15 +1244,6 @@ static struct v4l2_ctrl_config hot_pixel_map = {
 	.flags = V4L2_CTRL_FLAG_READ_ONLY
 		| CAMERA_EXT_CTRL_FLAG_NEED_DEF
 		| CAMERA_EXT_CTRL_FLAG_NEED_DIMS,
-};
-
-static const u64 capture_items[] = {
-	CAM_EXT_CID_CAPTURE_STILL_CAPTURE,
-	CAM_EXT_CID_CAPTURE_VIDEO_SNAPSHOT,
-	CAM_EXT_CID_CAPTURE_ZSL_CAPTURE,
-	CAM_EXT_CID_CAPTURE_RAW,
-	CAM_EXT_CID_CAPTURE_JPG,
-	CAM_EXT_CID_CAPTURE_BURST,
 };
 
 static struct v4l2_ctrl_config start_capture = {
