@@ -1014,8 +1014,7 @@ static int gb_lights_light_config(struct gb_lights *glights, u8 id)
 
 static void gb_lights_channel_free(struct gb_channel *channel)
 {
-	if (&channel->work_brightness_set)
-		flush_work(&channel->work_brightness_set);
+	flush_work(&channel->work_brightness_set);
 	kfree(channel->attrs);
 	kfree(channel->attr_group);
 	kfree(channel->attr_groups);
