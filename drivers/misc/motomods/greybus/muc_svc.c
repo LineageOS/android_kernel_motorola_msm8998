@@ -883,7 +883,7 @@ svc_gb_conn_create(struct mods_dl_device *dld, struct gb_message *req,
 	struct gb_svc_conn_create_request *conn = req->payload;
 	int ret;
 
-	dev_info(&dd->pdev->dev, "Create Connection: %hu:%hu to %hu:%hu\n",
+	dev_info(&dd->pdev->dev, "Create Connection: %u:%u to %u:%u\n",
 			conn->intf1_id, conn->cport1_id,
 			conn->intf2_id, conn->cport2_id);
 
@@ -924,7 +924,7 @@ svc_gb_conn_destroy(struct mods_dl_device *dld, struct gb_message *req,
 	struct muc_svc_data *dd = dld_get_dd(dld);
 	struct gb_svc_conn_destroy_request *conn = req->payload;
 
-	dev_info(&dd->pdev->dev, "Destroy Connection: %hu:%hu to %hu:%hu\n",
+	dev_info(&dd->pdev->dev, "Destroy Connection: %u:%u to %u:%u\n",
 			conn->intf1_id, conn->cport1_id,
 			conn->intf2_id, conn->cport2_id);
 
