@@ -335,12 +335,7 @@ static int get_ctrl(struct file *file, void *fh,
 			struct v4l2_control *ctrl)
 {
 	int ret;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
-/*just for compiling, idx without a fixing value*/
 	__u32 idx = 0;
-#else
-	__u32 idx;
-#endif
 	struct v4l2_stream_data *strm = FH_TO_STREAM(fh);
 
 	if (v4l2_hal_is_set_mapping_cid(ctrl->id))
