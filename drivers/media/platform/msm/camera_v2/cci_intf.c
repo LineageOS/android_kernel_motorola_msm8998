@@ -32,7 +32,7 @@ static struct msm_cci_intf_ctrl_t fctrl;
 
 static int32_t cci_intf_xfer(struct v4l2_subdev *sd,
 		struct msm_cci_intf_xfer *xfer,
-		int cmd)
+		unsigned int cmd)
 {
 	int32_t rc, rc2;
 	uint16_t addr;
