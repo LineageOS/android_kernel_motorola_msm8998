@@ -453,7 +453,7 @@ int set_chager_to_tx(void)
 	}
 	pr_info("set_chager_to_tx,vol=%d, s_request_vol=%d,charger type =%d\n",
 			vol, s_request_vol, s_charger_type);
-	if ((s_charger_type == 0x09)) {
+	if (s_charger_type == 0x09) {
 		sp_tx_aux_dpcdread_bytes(DPCD_HIGH_ADDRESS, DPCD_MID_ADDRESS,
 					DPCD_POWER_DELIVERY, 1, &val);
 		pr_info("set_chager_to_tx, 0x72A3, val=%x\n", (int)val);
