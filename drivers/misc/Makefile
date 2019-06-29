@@ -68,7 +68,6 @@ obj-y				+= qcom/
 obj-$(CONFIG_QPNP_MISC) 	+= qpnp-misc.o
 obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
 obj-$(CONFIG_HAPTIC_DRV2624)	+= drv2624.o
-CFLAGS_drv2624.o		+= $(call cc-disable-warning, shift-overflow)
 obj-$(CONFIG_HAPTIC_DRV2625)	+= drv2625.o
 obj-$(CONFIG_ALSA_TO_H2W) += alsa-to-h2w-headset.o
 obj-$(CONFIG_MOT_UTAG) += utag/
