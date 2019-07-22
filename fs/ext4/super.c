@@ -1015,6 +1015,7 @@ void ext4_clear_inode(struct inode *inode)
 	if (EXT4_I(inode)->i_crypt_info)
 		ext4_free_encryption_info(inode, EXT4_I(inode)->i_crypt_info);
 #endif
+	fsverity_cleanup_inode(inode);
 }
 
 static struct inode *ext4_nfs_get_inode(struct super_block *sb,
@@ -3931,6 +3932,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_op = &ext4_sops;
 	sb->s_export_op = &ext4_export_ops;
 	sb->s_xattr = ext4_xattr_handlers;
+#ifdef CONFIG_FS_VERITY
+	sb->s_vop = &ext4_verityops;
+#endif
 #ifdef CONFIG_QUOTA
 	sb->dq_op = &ext4_quota_operations;
 	if (ext4_has_feature_quota(sb))
@@ -4054,6 +4058,11 @@ no_journal:
 	    (blocksize != PAGE_CACHE_SIZE)) {
 		ext4_msg(sb, KERN_ERR,
 			 "Unsupported blocksize for fs encryption");
+		goto failed_mount_wq;
+	}
+
+	if (ext4_has_feature_verity(sb) && blocksize != PAGE_CACHE_SIZE) {
+		ext4_msg(sb, KERN_ERR, "Unsupported blocksize for fs-verity");
 		goto failed_mount_wq;
 	}
 
