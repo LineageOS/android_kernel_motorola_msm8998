@@ -306,7 +306,7 @@ static int init_and_register(struct gb_connection *connection,
 	// FIXME - get a better (i.e. unique) name
 	// FIXME - anything else needs to be set?
 	gb->bat.name		= "gb_battery";
-	gb->bat.type		= POWER_SUPPLY_TYPE_BATTERY;
+	gb->bat.type		= POWER_SUPPLY_TYPE_MAIN;
 	gb->bat.properties	= battery_props;
 	gb->bat.num_properties	= ARRAY_SIZE(battery_props);
 	gb->bat.get_property	= get_property;
@@ -330,7 +330,7 @@ static int init_and_register(struct gb_connection *connection,
 	// FIXME - get a better (i.e. unique) name
 	// FIXME - anything else needs to be set?
 	gb->desc.name		= "gb_battery";
-	gb->desc.type		= POWER_SUPPLY_TYPE_BATTERY;
+	gb->desc.type		= POWER_SUPPLY_TYPE_MAIN;
 	gb->desc.properties	= battery_props;
 	gb->desc.num_properties	= ARRAY_SIZE(battery_props);
 	gb->desc.get_property	= get_property;
