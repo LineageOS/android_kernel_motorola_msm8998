@@ -1892,7 +1892,7 @@ int32_t nvt_mp_proc_init(void)
 				 * Ex. nvt_pid = 500A
 				 *     mpcriteria = "novatek-mp-criteria-500A"
 				 */
-				snprintf(mpcriteria, PAGE_SIZE, "novatek-mp-criteria-%04X", ts->nvt_pid);
+				snprintf(mpcriteria, sizeof(mpcriteria), "novatek-mp-criteria-%04X", ts->nvt_pid);
 
 				nvt_mp_parse_dt(np, mpcriteria);
 			} else {
