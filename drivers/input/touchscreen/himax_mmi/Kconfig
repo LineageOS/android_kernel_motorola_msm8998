@@ -1,0 +1,24 @@
+config TOUCHSCREEN_HIMAX_CHIPSET
+	tristate "Himax touch driver"
+	default n
+	help
+	  Say Y here to enable the Himax touch driver
+
+	  To compile this driver as a module, choose M here. The
+	  module will be called himax_mmi.
+
+config TOUCHSCREEN_HIMAX_INSPECT
+	bool "Himax touchscreen driver insspection"
+	depends on TOUCHSCREEN_HIMAX_CHIPSET
+	help
+	  Say Y here to enable sysfs inspection.
+
+	  If unsure, say N.
+
+config TOUCHSCREEN_HIMAX_DEBUG
+	bool "Himax touchscreen driver debugging options"
+	depends on TOUCHSCREEN_HIMAX_CHIPSET
+	help
+	  Say Y here to enable debugging features.
+
+	  If unsure, say N.
