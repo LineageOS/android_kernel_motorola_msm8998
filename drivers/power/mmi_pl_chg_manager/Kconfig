@@ -1,0 +1,9 @@
+config MMI_PARALLEL_CHARGING
+	tristate "Parallel Charging driver MMI Revision"
+	default n
+	help
+	  Say Y here to enable the Parallel Charging driver.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called mmi_pl_chg_manager.
+
