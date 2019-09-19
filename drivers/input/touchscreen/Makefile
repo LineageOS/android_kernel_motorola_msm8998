@@ -109,3 +109,4 @@ obj-$(CONFIG_TOUCHSCREEN_NT36xxx)	+= nova_mmi/
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM) += synaptics_tcm/
 obj-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET)	+= himax_mmi/
 obj-$(CONFIG_TOUCHSCREEN_NOVATEK_CHIPSET)	+= novatek_mmi/
+obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM_MMI)	+= synaptics_tcm_mmi/
