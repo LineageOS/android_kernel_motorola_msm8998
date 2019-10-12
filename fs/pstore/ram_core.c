@@ -432,7 +432,7 @@ void persistent_ram_save_old(struct persistent_ram_zone *prz)
 
 	if (!prz->old_log) {
 		persistent_ram_ecc_old(prz);
-		prz->old_log = vmalloc(size);
+		prz->old_log = kmalloc(size, GFP_KERNEL);
 	}
 	if (!prz->old_log) {
 		pr_err("failed to allocate buffer\n");
@@ -518,7 +518,7 @@ void *persistent_ram_old(struct persistent_ram_zone *prz)
 
 void persistent_ram_free_old(struct persistent_ram_zone *prz)
 {
-	vfree(prz->old_log);
+	kfree(prz->old_log);
 	prz->old_log = NULL;
 	prz->old_log_size = 0;
 }
