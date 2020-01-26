@@ -17,7 +17,3 @@ obj-$(CONFIG_USB_BAM) += usb_bam.o
 obj-$(CONFIG_MSM_MHI_DEV) += mhi_dev/
 obj-$(CONFIG_MSM_EXT_DISPLAY) += msm_ext_display.o
 obj-$(CONFIG_SDIO_QCN) += qcn/
-
-#TODO: remove me b/62058353
-subdir-ccflags-y += \
-	-Wno-enum-conversion
