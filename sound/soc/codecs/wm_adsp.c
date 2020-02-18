@@ -2051,7 +2051,7 @@ static void wm_adsp_change_device_name(const char *dev_num, char *name)
 			return;
 		}
 	}
-	strlcpy(name, dev_num, strlen(dev_num)+1);
+	strscpy(name, dev_num, sizeof(name));
 }
 
 static int wm_adsp_load(struct wm_adsp *dsp)
