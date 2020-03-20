@@ -1268,12 +1268,6 @@ CLEAN_FILES :=  $(HIF_CLEAN_FILES) \
 
 EXTRA_CFLAGS += $(INCS)
 
-# TODO: remove me b/62058353
-EXTRA_CFLAGS += \
-	-Wno-parentheses-equality \
-	-Wno-logical-not-parentheses \
-	-Wno-enum-conversion \
-
 CDEFINES :=	-DANI_LITTLE_BYTE_ENDIAN \
 		-DANI_LITTLE_BIT_ENDIAN \
 		-DDOT11F_LITTLE_ENDIAN_HOST \
@@ -1961,16 +1955,6 @@ EXTRA_CFLAGS += -Wmissing-prototypes
 
 ifeq ($(call cc-option-yn, -Wheader-guard),y)
 EXTRA_CFLAGS += -Wheader-guard
-endif
-
-ifeq ($(cc-name),clang)
-EXTRA_CFLAGS += -Wno-error-enum-conversion
-EXTRA_CFLAGS += -Wno-error-pointer-bool-conversion
-EXTRA_CFLAGS += -Wno-error-typedef-redefinition
-EXTRA_CFLAGS += $(call cc-option,-Wno-error-address-of-packed-member)
-EXTRA_CFLAGS += $(call cc-option,-Wno-error-logical-not-parentheses)
-EXTRA_CFLAGS += -Wno-parentheses-equality
-EXTRA_CFLAGS += -Wframe-larger-than=3072
 endif
 
 # If the module name is not "wlan", then the define MULTI_IF_NAME to be the
