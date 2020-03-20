@@ -24,6 +24,7 @@
 
 #include <cds_queue.h>          /* TAILQ */
 #ifdef QCA_COMPUTE_TX_DELAY
+#include <linux/ieee80211.h>          /* ieee80211_frame, etc. */
 #include <enet.h>               /* ethernet_hdr_t, etc. */
 #include <ipv6_defs.h>          /* ipv6_traffic_class */
 #endif
@@ -52,7 +53,6 @@
 #include <ol_tx_queue.h>
 #include <ol_txrx.h>
 #include <pktlog_ac_fmt.h>
-#include <cdp_txrx_handle.h>
 
 #ifdef TX_CREDIT_RECLAIM_SUPPORT
 
@@ -105,45 +105,7 @@ ol_tx_target_credit_incr_int(struct ol_txrx_pdev_t *pdev, int delta)
 }
 #endif
 
-#ifdef DESC_TIMESTAMP_DEBUG_INFO
-static inline void ol_tx_desc_update_comp_ts(struct ol_tx_desc_t *tx_desc)
-{
-	tx_desc->desc_debug_info.last_comp_ts = qdf_get_log_timestamp();
-}
-#else
-static inline void ol_tx_desc_update_comp_ts(struct ol_tx_desc_t *tx_desc)
-{
-}
-#endif
-
 #if defined(QCA_LL_LEGACY_TX_FLOW_CONTROL)
-void ol_txrx_flow_control_cb(struct cdp_vdev *pvdev, bool tx_resume)
-{
-	struct ol_txrx_vdev_t *vdev = (struct ol_txrx_vdev_t *)pvdev;
-
-	qdf_spin_lock_bh(&vdev->flow_control_lock);
-	if ((vdev->osif_flow_control_cb) && (vdev->osif_fc_ctx))
-		vdev->osif_flow_control_cb(vdev->osif_fc_ctx, tx_resume);
-	qdf_spin_unlock_bh(&vdev->flow_control_lock);
-
-	return;
-}
-
-/**
- * ol_txrx_flow_control_is_pause() - is osif paused by flow control
- * @vdev: vdev handle
- *
- * Return: true if osif is paused by flow control
- */
-static bool ol_txrx_flow_control_is_pause(ol_txrx_vdev_handle vdev)
-{
-	bool is_pause = false;
-
-	if ((vdev->osif_flow_control_is_pause) && (vdev->osif_fc_ctx))
-		is_pause = vdev->osif_flow_control_is_pause(vdev->osif_fc_ctx);
-
-	return is_pause;
-}
 
 /**
  * ol_tx_flow_ct_unpause_os_q() - Unpause OS Q
@@ -164,8 +126,7 @@ static void ol_tx_flow_ct_unpause_os_q(ol_txrx_pdev_handle pdev)
 			if (pdev->tx_desc.num_free > vdev->tx_fl_hwm) {
 				qdf_atomic_set(&vdev->os_q_paused, 0);
 				qdf_spin_unlock(&pdev->tx_mutex);
-				ol_txrx_flow_control_cb((struct cdp_vdev *)vdev,
-						true);
+				ol_txrx_flow_control_cb(vdev, true);
 			} else {
 				qdf_spin_unlock(&pdev->tx_mutex);
 			}
@@ -256,7 +217,6 @@ ol_tx_send(struct ol_txrx_pdev_t *pdev,
 	id = ol_tx_desc_id(pdev, tx_desc);
 	QDF_NBUF_UPDATE_TX_PKT_COUNT(msdu, QDF_NBUF_TX_PKT_TXRX);
 	DPTRACE(qdf_dp_trace_ptr(msdu, QDF_DP_TRACE_TXRX_PACKET_PTR_RECORD,
-				QDF_TRACE_DEFAULT_PDEV_ID,
 				qdf_nbuf_data_addr(msdu),
 				sizeof(qdf_nbuf_data(msdu)), tx_desc->id,
 				vdev_id));
@@ -328,10 +288,12 @@ ol_tx_download_done_base(struct ol_txrx_pdev_t *pdev,
 	 * call the download callback if registered
 	 */
 	if (tx_desc->pkt_type >= OL_TXRX_MGMT_TYPE_BASE) {
+		int tx_mgmt_index = tx_desc->pkt_type - OL_TXRX_MGMT_TYPE_BASE;
 		ol_txrx_mgmt_tx_cb download_cb =
-			pdev->tx_mgmt_cb.download_cb;
+			pdev->tx_mgmt.callbacks[tx_mgmt_index].download_cb;
+
 		if (download_cb) {
-			download_cb(pdev->tx_mgmt_cb.ctxt,
+			download_cb(pdev->tx_mgmt.callbacks[tx_mgmt_index].ctxt,
 				    tx_desc->netbuf, status != A_OK);
 		}
 	}
@@ -571,7 +533,6 @@ void ol_tx_credit_completion_handler(ol_txrx_pdev_handle pdev, int credits)
 	/* UNPAUSE OS Q */
 	ol_tx_flow_ct_unpause_os_q(pdev);
 }
-
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 /**
  * ol_tx_flow_pool_lock() - take flow pool lock
@@ -607,132 +568,11 @@ static inline
 void ol_tx_flow_pool_lock(struct ol_tx_desc_t *tx_desc)
 {
 }
-
 static inline
 void ol_tx_flow_pool_unlock(struct ol_tx_desc_t *tx_desc)
 {
 }
 #endif
-
-#ifdef WLAN_FEATURE_TSF_PLUS
-static inline struct htt_tx_compl_ind_append_tx_tstamp *ol_tx_get_txtstamps(
-		u_int32_t *msg_word_header, u_int32_t **msg_word_payload,
-		int num_msdus)
-{
-	u_int32_t has_tx_tsf;
-	u_int32_t has_retry;
-
-	struct htt_tx_compl_ind_append_tx_tstamp *txtstamp_list = NULL;
-	struct htt_tx_compl_ind_append_retries *retry_list = NULL;
-	int offset_dwords;
-
-	if (num_msdus <= 0)
-		return NULL;
-
-	has_tx_tsf = HTT_TX_COMPL_IND_APPEND1_GET(*msg_word_header);
-
-	/* skip header and MSDUx ID part*/
-	offset_dwords = ((num_msdus + 1) >> 1);
-	*msg_word_payload += offset_dwords;
-
-	if (!has_tx_tsf)
-		return NULL;
-
-	has_retry = HTT_TX_COMPL_IND_APPEND_GET(*msg_word_header);
-	if (has_retry) {
-		int retry_index = 0;
-		int width_for_each_retry =
-			(sizeof(struct htt_tx_compl_ind_append_retries) +
-			3) >> 2;
-
-		retry_list = (struct htt_tx_compl_ind_append_retries *)
-			(*msg_word_payload + offset_dwords);
-		while (retry_list) {
-			if (retry_list[retry_index++].flag == 0)
-				break;
-		}
-		offset_dwords = retry_index * width_for_each_retry;
-	}
-
-	*msg_word_payload +=  offset_dwords;
-	txtstamp_list = (struct htt_tx_compl_ind_append_tx_tstamp *)
-		(*msg_word_payload);
-	return txtstamp_list;
-}
-
-static inline
-struct htt_tx_compl_ind_append_tx_tsf64 *ol_tx_get_txtstamp64s(
-		u_int32_t *msg_word_header, u_int32_t **msg_word_payload,
-		int num_msdus)
-{
-	u_int32_t has_tx_tstamp64;
-	u_int32_t has_rssi;
-	struct htt_tx_compl_ind_append_tx_tsf64 *txtstamp64_list = NULL;
-
-	int offset_dwords = 0;
-
-	if (num_msdus <= 0)
-		return NULL;
-
-	has_tx_tstamp64 = HTT_TX_COMPL_IND_APPEND3_GET(*msg_word_header);
-	if (!has_tx_tstamp64)
-		return NULL;
-
-	/*skip MSDUx ACK RSSI part*/
-	has_rssi = HTT_TX_COMPL_IND_APPEND2_GET(*msg_word_header);
-	if (has_rssi)
-		offset_dwords = ((num_msdus + 1) >> 1);
-
-	*msg_word_payload = *msg_word_payload + offset_dwords;
-	txtstamp64_list =
-		(struct htt_tx_compl_ind_append_tx_tsf64 *)
-		(*msg_word_payload);
-
-	return txtstamp64_list;
-}
-
-static inline void ol_tx_timestamp(ol_txrx_pdev_handle pdev,
-				   qdf_nbuf_t netbuf, u_int64_t ts)
-{
-	if (!netbuf)
-		return;
-
-	if (pdev->ol_tx_timestamp_cb)
-		pdev->ol_tx_timestamp_cb(netbuf, ts);
-}
-#else
-static inline struct htt_tx_compl_ind_append_tx_tstamp *ol_tx_get_txtstamps(
-		u_int32_t *msg_word_header, u_int32_t **msg_word_payload,
-		int num_msdus)
-{
-	return NULL;
-}
-
-static inline
-struct htt_tx_compl_ind_append_tx_tsf64 *ol_tx_get_txtstamp64s(
-		u_int32_t *msg_word_header, u_int32_t **msg_word_payload,
-		int num_msdus)
-{
-	return NULL;
-}
-
-static inline void ol_tx_timestamp(ol_txrx_pdev_handle pdev,
-				   qdf_nbuf_t netbuf, u_int64_t ts)
-{
-}
-#endif
-
-static void ol_tx_update_ack_count(struct ol_tx_desc_t *tx_desc,
-				   enum htt_tx_status status)
-{
-	if (!tx_desc->vdev)
-		return;
-
-	if (status == htt_tx_status_ok)
-		++tx_desc->vdev->txrx_stats.txack_success;
-	else
-		++tx_desc->vdev->txrx_stats.txack_failed;
-}
 
 /**
  * ol_tx_notify_completion() - Notify tx completion for this desc
@@ -750,9 +590,15 @@ static void ol_tx_notify_completion(struct ol_tx_desc_t *tx_desc,
 	qdf_assert(tx_desc);
 
 	ol_tx_flow_pool_lock(tx_desc);
-
+	/*
+	 * In cases when vdev has gone down and tx completion
+	 * are received, leads to NULL vdev access.
+	 * So, check for NULL before dereferencing it.
+	 */
 	if (!tx_desc->vdev ||
-	    !tx_desc->vdev->osif_dev) {
+	    !tx_desc->vdev->osif_dev ||
+	    !tx_desc->vdev->tx_comp ||
+	    !tx_desc->notify_tx_comp) {
 		ol_tx_flow_pool_unlock(tx_desc);
 		return;
 	}
@@ -760,8 +606,7 @@ static void ol_tx_notify_completion(struct ol_tx_desc_t *tx_desc,
 	tx_compl_cbk = tx_desc->vdev->tx_comp;
 	ol_tx_flow_pool_unlock(tx_desc);
 
-	if (tx_compl_cbk)
-		tx_compl_cbk(netbuf, osif_dev);
+	tx_compl_cbk(netbuf, osif_dev);
 }
 
 /**
@@ -798,9 +643,8 @@ static void ol_tx_update_connectivity_stats(struct ol_tx_desc_t *tx_desc,
 	}
 	osif_dev = tx_desc->vdev->osif_dev;
 	stats_rx = tx_desc->vdev->stats_rx;
-	ol_tx_flow_pool_unlock(tx_desc);
-
 	pkt_type_bitmap = cds_get_connectivity_stats_pkt_bitmap(osif_dev);
+	ol_tx_flow_pool_unlock(tx_desc);
 
 	if (pkt_type_bitmap) {
 		if (status != htt_tx_status_download_fail)
@@ -846,8 +690,67 @@ static void ol_tx_update_arp_stats(struct ol_tx_desc_t *tx_desc,
 	}
 }
 
+#ifdef WLAN_FEATURE_TSF_PLUS
+static inline struct htt_tx_compl_ind_append_tx_tstamp *ol_tx_get_txtstamps(
+		u_int32_t *msg_word, int num_msdus)
+{
+	u_int32_t has_tx_tsf;
+	u_int32_t has_retry;
+	struct htt_tx_compl_ind_append_tx_tstamp *txtstamp_list = NULL;
+	struct htt_tx_compl_ind_append_retries *retry_list = NULL;
+	int offset_dwords;
+
+	has_tx_tsf = HTT_TX_COMPL_IND_APPEND1_GET(*msg_word);
+	if (num_msdus <= 0 || !has_tx_tsf)
+		return NULL;
+
+	offset_dwords = 1 + ((num_msdus + 1) >> 1);
+
+	has_retry = HTT_TX_COMPL_IND_APPEND_GET(*msg_word);
+	if (has_retry) {
+		int retry_index = 0;
+		int width_for_each_retry =
+			(sizeof(struct htt_tx_compl_ind_append_retries) +
+			3) >> 2;
+
+		retry_list = (struct htt_tx_compl_ind_append_retries *)
+			(msg_word + offset_dwords);
+		while (retry_list) {
+			if (retry_list[retry_index++].flag == 0)
+				break;
+		}
+		offset_dwords += retry_index * width_for_each_retry;
+	}
+	txtstamp_list = (struct htt_tx_compl_ind_append_tx_tstamp *)
+		(msg_word + offset_dwords);
+
+	return txtstamp_list;
+}
+
+static inline void ol_tx_timestamp(ol_txrx_pdev_handle pdev,
+				   qdf_nbuf_t netbuf, u_int64_t ts)
+{
+	if (!netbuf)
+		return;
+
+	if (pdev->ol_tx_timestamp_cb)
+		pdev->ol_tx_timestamp_cb(netbuf, ts);
+}
+#else
+static inline struct htt_tx_compl_ind_append_tx_tstamp *ol_tx_get_txtstamps(
+		u_int32_t *msg_word, int num_msdus)
+{
+	return NULL;
+}
+
+static inline void ol_tx_timestamp(ol_txrx_pdev_handle pdev,
+				   qdf_nbuf_t netbuf, u_int64_t ts)
+{
+}
+#endif
+
 /**
- * WARNING: ol_tx_inspect_handler()'s behavior is similar to that of
+ * WARNING: ol_tx_inspect_handler()'s bahavior is similar to that of
  * ol_tx_completion_handler().
  * any change in ol_tx_completion_handler() must be mirrored in
  * ol_tx_inspect_handler().
@@ -865,27 +768,18 @@ ol_tx_completion_handler(ol_txrx_pdev_handle pdev,
 	tp_ol_packetdump_cb packetdump_cb;
 	uint32_t is_tx_desc_freed = 0;
 	struct htt_tx_compl_ind_append_tx_tstamp *txtstamp_list = NULL;
-	struct htt_tx_compl_ind_append_tx_tsf64 *txtstamp64_list = NULL;
-	u_int32_t *msg_word_header = (u_int32_t *)msg;
-	/*msg_word skip header*/
-	u_int32_t *msg_word_payload = msg_word_header + 1;
 	u_int32_t *msg_word = (u_int32_t *)msg;
 	u_int16_t *desc_ids = (u_int16_t *)(msg_word + 1);
+
 	union ol_tx_desc_list_elem_t *lcl_freelist = NULL;
 	union ol_tx_desc_list_elem_t *tx_desc_last = NULL;
 	ol_tx_desc_list tx_descs;
-	uint64_t tx_tsf64;
 
 	TAILQ_INIT(&tx_descs);
 
 	ol_tx_delay_compute(pdev, status, desc_ids, num_msdus);
-	if (status == htt_tx_status_ok) {
-		txtstamp_list = ol_tx_get_txtstamps(
-			msg_word_header, &msg_word_payload, num_msdus);
-		if (pdev->enable_tx_compl_tsf64)
-			txtstamp64_list = ol_tx_get_txtstamp64s(
-				msg_word_header, &msg_word_payload, num_msdus);
-	}
+	if (status == htt_tx_status_ok)
+		txtstamp_list = ol_tx_get_txtstamps(msg_word, num_msdus);
 
 	for (i = 0; i < num_msdus; i++) {
 		tx_desc_id = desc_ids[i];
@@ -897,17 +791,10 @@ ol_tx_completion_handler(ol_txrx_pdev_handle pdev,
 		}
 		tx_desc = ol_tx_desc_find(pdev, tx_desc_id);
 		qdf_assert(tx_desc);
-		ol_tx_desc_update_comp_ts(tx_desc);
 		tx_desc->status = status;
 		netbuf = tx_desc->netbuf;
 
-		if (txtstamp64_list) {
-			tx_tsf64 =
-			(u_int64_t)txtstamp64_list[i].tx_tsf64_high << 32 |
-			txtstamp64_list[i].tx_tsf64_low;
-
-			ol_tx_timestamp(pdev, netbuf, tx_tsf64);
-		} else if (txtstamp_list)
+		if (txtstamp_list)
 			ol_tx_timestamp(pdev, netbuf,
 					(u_int64_t)txtstamp_list->timestamp[i]
 					);
@@ -917,18 +804,15 @@ ol_tx_completion_handler(ol_txrx_pdev_handle pdev,
 		if (QDF_NBUF_CB_GET_PACKET_TYPE(netbuf) ==
 		    QDF_NBUF_CB_PACKET_TYPE_ARP) {
 			if (qdf_nbuf_data_is_arp_req(netbuf))
-				ol_tx_update_arp_stats(tx_desc, netbuf,
-						       status);
+				ol_tx_update_arp_stats(tx_desc, netbuf, status);
 		}
 
 		/* check tx completion notification */
-		if (QDF_NBUF_CB_TX_EXTRA_FRAG_FLAGS_NOTIFY_COMP(netbuf))
-			ol_tx_notify_completion(tx_desc, netbuf);
+		ol_tx_notify_completion(tx_desc, netbuf);
 
 		/* track connectivity stats */
 		ol_tx_update_connectivity_stats(tx_desc, netbuf,
 						status);
-		ol_tx_update_ack_count(tx_desc, status);
 
 		if (tx_desc->pkt_type != OL_TX_FRM_TSO) {
 			packetdump_cb = pdev->ol_tx_packetdump_cb;
@@ -939,7 +823,6 @@ ol_tx_completion_handler(ol_txrx_pdev_handle pdev,
 
 		DPTRACE(qdf_dp_trace_ptr(netbuf,
 			QDF_DP_TRACE_FREE_PACKET_PTR_RECORD,
-			QDF_TRACE_DEFAULT_PDEV_ID,
 			qdf_nbuf_data_addr(netbuf),
 			sizeof(qdf_nbuf_data(netbuf)), tx_desc->id, status));
 		htc_pm_runtime_put(pdev->htt_pdev->htc_pdev);
@@ -1199,7 +1082,7 @@ ol_tx_single_completion_handler(ol_txrx_pdev_handle pdev,
 }
 
 /**
- * WARNING: ol_tx_inspect_handler()'s behavior is similar to that of
+ * WARNING: ol_tx_inspect_handler()'s bahavior is similar to that of
  * ol_tx_completion_handler().
  * any change in ol_tx_completion_handler() must be mirrored here.
  */
@@ -1230,7 +1113,6 @@ ol_tx_inspect_handler(ol_txrx_pdev_handle pdev,
 		}
 		tx_desc = ol_tx_desc_find(pdev, tx_desc_id);
 		qdf_assert(tx_desc);
-		ol_tx_desc_update_comp_ts(tx_desc);
 		netbuf = tx_desc->netbuf;
 
 		/* find the "vdev" this tx_desc belongs to */
@@ -1257,6 +1139,7 @@ ol_tx_inspect_handler(ol_txrx_pdev_handle pdev,
 					    lcl_freelist, tx_desc_last,
 					    htt_tx_status_ok,
 					    is_tx_desc_freed);
+
 #ifdef QCA_SUPPORT_TXDESC_SANITY_CHECKS
 			if (!is_tx_desc_freed) {
 				tx_desc->pkt_type = ol_tx_frm_freed;
@@ -1297,10 +1180,8 @@ ol_tx_inspect_handler(ol_txrx_pdev_handle pdev,
  * @details
  * @param interval - interval for stats computation
  */
-void ol_tx_set_compute_interval(struct cdp_pdev *ppdev, uint32_t interval)
+void ol_tx_set_compute_interval(ol_txrx_pdev_handle pdev, uint32_t interval)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
-
 	pdev->tx_delay.avg_period_ticks = qdf_system_msecs_to_ticks(interval);
 }
 
@@ -1318,11 +1199,10 @@ void ol_tx_set_compute_interval(struct cdp_pdev *ppdev, uint32_t interval)
  * @param out_packet_loss_count - number of packets lost
  */
 void
-ol_tx_packet_count(struct cdp_pdev *ppdev,
+ol_tx_packet_count(ol_txrx_pdev_handle pdev,
 		   uint16_t *out_packet_count,
 		   uint16_t *out_packet_loss_count, int category)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
 	*out_packet_count = pdev->packet_count[category];
 	*out_packet_loss_count = pdev->packet_loss_count[category];
 	pdev->packet_count[category] = 0;
@@ -1347,11 +1227,10 @@ static uint32_t ol_tx_delay_avg(uint64_t sum, uint32_t num)
 }
 
 void
-ol_tx_delay(struct cdp_pdev *ppdev,
+ol_tx_delay(ol_txrx_pdev_handle pdev,
 	    uint32_t *queue_delay_microsec,
 	    uint32_t *tx_delay_microsec, int category)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
 	int index;
 	uint32_t avg_delay_ticks;
 	struct ol_tx_delay_data *data;
@@ -1394,10 +1273,9 @@ ol_tx_delay(struct cdp_pdev *ppdev,
 }
 
 void
-ol_tx_delay_hist(struct cdp_pdev *ppdev,
+ol_tx_delay_hist(ol_txrx_pdev_handle pdev,
 		 uint16_t *report_bin_values, int category)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
 	int index, i, j;
 	struct ol_tx_delay_data *data;
 

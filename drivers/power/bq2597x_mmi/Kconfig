@@ -1,0 +1,7 @@
+config BQ2597X_MMI_CHARGER
+	tristate "TI BQ2597x Charger Driver"
+	help
+	  Say Y here to enable bq2597x charger driver
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called bq2597x_mmi.

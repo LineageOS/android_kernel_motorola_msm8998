@@ -1,0 +1,13 @@
+#
+# Novatek NT36xxx touchscreen driver configuration
+#
+
+config TOUCHSCREEN_NOVATEK_CHIPSET
+	tristate "Novatek Touchscreen Driver MMI Revision"
+	default n
+	help
+	  Say Y here if you have a Novatek NT36xxx touchscreen panel 
+	  connected to your system.
+
+	  To compile this driver as a module, choose M here. This module 
+	  will be called nova_mmi.

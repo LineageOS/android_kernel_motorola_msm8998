@@ -538,3 +538,5 @@ endif # POWER_SUPPLY
 
 source "drivers/power/avs/Kconfig"
 source "drivers/power/qcom/Kconfig"
+source "drivers/power/bq2597x_mmi/Kconfig"
+source "drivers/power/mmi_pl_chg_manager/Kconfig"

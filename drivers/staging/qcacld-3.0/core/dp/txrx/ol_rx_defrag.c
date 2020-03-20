@@ -52,6 +52,7 @@
 #include <ol_ctrl_txrx_api.h>
 #include <ol_txrx_peer_find.h>
 #include <qdf_nbuf.h>
+#include <linux/ieee80211.h>
 #include <qdf_util.h>
 #include <athdefs.h>
 #include <qdf_mem.h>
@@ -289,6 +290,43 @@ void ol_rx_defrag_push_rx_desc(qdf_nbuf_t nbuf,
 }
 #endif /* CONFIG_HL_SUPPORT */
 
+#ifdef WDI_EVENT_ENABLE
+static inline
+void ol_rx_frag_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
+	struct ol_txrx_peer_t *peer, qdf_nbuf_t msdu, uint8_t pktlog_bit)
+{
+	ol_rx_send_pktlog_event(pdev, peer, msdu, pktlog_bit);
+}
+
+#else
+static inline
+void ol_rx_frag_send_pktlog_event(struct ol_txrx_pdev_t *pdev,
+	struct ol_txrx_peer_t *peer, qdf_nbuf_t msdu, uint8_t pktlog_bit)
+{
+}
+
+#endif
+
+#ifndef CONFIG_HL_SUPPORT
+static int ol_rx_frag_get_inord_msdu_cnt(qdf_nbuf_t rx_ind_msg)
+{
+	uint32_t *msg_word;
+	uint8_t *rx_ind_data;
+	uint32_t msdu_cnt;
+
+	rx_ind_data = qdf_nbuf_data(rx_ind_msg);
+	msg_word = (uint32_t *)rx_ind_data;
+	msdu_cnt = HTT_RX_IN_ORD_PADDR_IND_MSDU_CNT_GET(*(msg_word + 1));
+
+	return msdu_cnt;
+}
+#else
+static int ol_rx_frag_get_inord_msdu_cnt(qdf_nbuf_t rx_ind_msg)
+{
+	return 0;
+}
+#endif
+
 /*
  * Process incoming fragments
  */
@@ -327,13 +365,7 @@ ol_rx_frag_indication_handler(ol_txrx_pdev_handle pdev,
 		 */
 		ol_rx_reorder_flush_frag(htt_pdev, peer, tid, seq_num_start);
 	} else {
-		uint32_t *msg_word;
-		uint8_t *rx_ind_data;
-
-		rx_ind_data = qdf_nbuf_data(rx_frag_ind_msg);
-		msg_word = (uint32_t *)rx_ind_data;
-		msdu_count = HTT_RX_IN_ORD_PADDR_IND_MSDU_CNT_GET(*(msg_word +
-								    1));
+		msdu_count = ol_rx_frag_get_inord_msdu_cnt(rx_frag_ind_msg);
 	}
 
 	pktlog_bit =
@@ -358,7 +390,7 @@ ol_rx_frag_indication_handler(ol_txrx_pdev_handle pdev,
 		seq_num = htt_rx_mpdu_desc_seq_num(htt_pdev, rx_mpdu_desc);
 		OL_RX_ERR_STATISTICS_1(pdev, peer->vdev, peer, rx_mpdu_desc,
 				       OL_RX_ERR_NONE_FRAG);
-		ol_rx_send_pktlog_event(pdev, peer, head_msdu, pktlog_bit);
+		ol_rx_frag_send_pktlog_event(pdev, peer, head_msdu, pktlog_bit);
 		ol_rx_reorder_store_frag(pdev, peer, tid, seq_num, head_msdu);
 	} else {
 		/* invalid frame - discard it */
@@ -367,7 +399,7 @@ ol_rx_frag_indication_handler(ol_txrx_pdev_handle pdev,
 		else
 			htt_rx_mpdu_desc_list_next(htt_pdev, rx_frag_ind_msg);
 
-		ol_rx_send_pktlog_event(pdev, peer, head_msdu, pktlog_bit);
+		ol_rx_frag_send_pktlog_event(pdev, peer, head_msdu, pktlog_bit);
 		htt_rx_desc_frame_free(htt_pdev, head_msdu);
 	}
 	/* request HTT to provide new rx MSDU buffers for the target to fill. */
@@ -425,8 +457,8 @@ ol_rx_reorder_store_frag(ol_txrx_pdev_handle pdev,
 	more_frag = mac_hdr->i_fc[1] & IEEE80211_FC1_MORE_FRAG;
 
 	if ((!more_frag) && (!fragno) && (!rx_reorder_array_elem->head)) {
-		rx_reorder_array_elem->head = frag;
-		rx_reorder_array_elem->tail = frag;
+	ol_rx_fraglist_insert(htt_pdev, &rx_reorder_array_elem->head,
+		&rx_reorder_array_elem->tail, frag, &all_frag_present);
 		qdf_nbuf_set_next(frag, NULL);
 		ol_rx_defrag(pdev, peer, tid, rx_reorder_array_elem->head);
 		rx_reorder_array_elem->head = NULL;

@@ -87,3 +87,4 @@ obj-$(CONFIG_INPUT_STMVL53L0)                 += vl53L0/
 obj-$(CONFIG_SENSORS_FPC_1020)          += fpc1020_tee.o
 obj-$(CONFIG_INPUT_EGISTEC_FPS)         += ets_fps.o ets_navi_input.o
 obj-$(CONFIG_STMVL53L1)	+= vl53L1/
+obj-$(CONFIG_INPUT_EGISTEC_FPS_MMI)	+= ets_fps_mmi/

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,21 +26,24 @@
  */
 
 #include "qdf_status.h"
-#include "scheduler_api.h"
+#include "cds_mq.h"
 #include "cds_api.h"
 #include "qdf_types.h"
 #include <wlan_ptt_sock_svc.h>
 
-struct hdd_context;
+//A TLV stream contains a 28-byte stream header, and its payload. It represents
+//a command from host or a response from target.
+#define WLAN_FTM_OPCODE_TX_ON 28
+#define WLAN_FTM_OPCODE_PHY   40
+#define WLAN_FTM_OPCODE_DATA  52
 
+int hdd_update_cds_config_ftm(hdd_context_t *hdd_ctx);
+void hdd_ftm_mc_process_msg(void *message);
+void getHexDump(char *s0, char *s1, int len);
 #if  defined(QCA_WIFI_FTM)
-int wlan_hdd_qcmbr_unified_ioctl(struct hdd_adapter *adapter,
-				 struct ifreq *ifr);
-int hdd_update_cds_config_ftm(struct hdd_context *hdd_ctx);
-#else
-static inline int hdd_update_cds_config_ftm(struct hdd_context *hdd_ctx)
-{
-	return 0;
-}
-#endif /* QCA_WIFI_FTM */
-#endif /* WLAN_HDD_FTM_H */
+QDF_STATUS vos_is_tcmd_data_white_listed(u_int8_t *data, int len);
+QDF_STATUS wlan_hdd_ftm_testmode_cmd(void *data, int len);
+int wlan_hdd_qcmbr_unified_ioctl(hdd_adapter_t *adapter, struct ifreq *ifr);
+#endif
+
+#endif

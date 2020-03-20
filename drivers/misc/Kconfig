@@ -701,4 +701,6 @@ source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/cypress/Kconfig"
 source "drivers/misc/motomods/Kconfig"
+source "drivers/misc/awinic/aw869x/Kconfig"
+source "drivers/misc/mmi_sys_temp/Kconfig"
 endmenu

@@ -36,6 +36,7 @@ endif # platform-sdk-version
 KBUILD_OPTIONS := WLAN_ROOT=$(WLAN_BLD_DIR)/qcacld-3.0
 KBUILD_OPTIONS += WLAN_COMMON_ROOT=../qca-wifi-host-cmn
 KBUILD_OPTIONS += WLAN_COMMON_INC=$(WLAN_BLD_DIR)/qca-wifi-host-cmn
+KBUILD_OPTIONS += WLAN_FW_INC=$(WLAN_BLD_DIR)/fw-api
 
 # We are actually building wlan.ko here, as per the
 # requirement we are specifying <chipset>_wlan.ko as LOCAL_MODULE.
@@ -55,19 +56,23 @@ ifneq ($(filter msm8998 sdm845, $(TARGET_BOARD_PLATFORM)),)
     WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/wlan_proc/build/ms/WLAN_MERGED.elf
 else ifneq ($(filter sdm660, $(TARGET_BOARD_PLATFORM)),)
     WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.1.0.1/wlan_proc/build/ms/WLAN_MERGED.elf
-else ifneq ($(filter sm6150, $(TARGET_BOARD_PLATFORM)),)
-    WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.3.0.1/wlan_proc/build/ms/M6150_WLAN_MERGED.elf
-else ifneq ($(filter trinket, $(TARGET_BOARD_PLATFORM)),)
-    WLAN_ELF_FILE_PATH    := vendor/qcom/nonhlos/WLAN.HL.3.0.2/wlan_proc/build/ms/WLAN_MERGED.elf
 endif
 
 INSTALL_WLAN_UNSTRIPPED_MODULE := mkdir -p $(WLAN_SYMBOLS_OUT); \
    cp -rf $(UNSTRIPPED_FILE_PATH) $(WLAN_SYMBOLS_OUT); \
    cp -rf $(WLAN_ELF_FILE_PATH) $(WLAN_SYMBOLS_OUT)
 
+# IBIS sometimes cannot scan channel one AP,
+# IBIS use epa for NA version and ipa for other version, this issue can be reproduced
+# on NA version because of epa issue.
+ifneq ($(filter payton%,$(TARGET_PRODUCT)),)
+KBUILD_OPTIONS += CONFIG_WLAN_CHANNEL_ONE_SCAN=y
+endif
+
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(WLAN_CHIPSET)_wlan.ko
 LOCAL_MODULE_KBUILD_NAME  := wlan.ko
+LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 ifeq ($(PRODUCT_VENDOR_MOVE_ENABLED),true)
     ifeq ($(WIFI_DRIVER_INSTALL_TO_KERNEL_OUT),true)
@@ -99,10 +104,11 @@ endif
 endif
 
 ifeq ($(PRODUCT_VENDOR_MOVE_ENABLED),true)
-$(shell ln -sf /mnt/vendor/persist/wlan_mac.bin $(TARGET_OUT_VENDOR)/firmware/wlan/qca_cld/wlan_mac.bin)
+$(shell ln -sf /persist/wlan_mac.bin $(TARGET_OUT_VENDOR)/firmware/wlan/qca_cld/wlan_mac.bin)
 else
-$(shell ln -sf /mnt/vendor/persist/wlan_mac.bin $(TARGET_OUT_ETC)/firmware/wlan/qca_cld/wlan_mac.bin)
+$(shell ln -sf /persist/wlan_mac.bin $(TARGET_OUT_ETC)/firmware/wlan/qca_cld/wlan_mac.bin)
 endif
+
 endif # DLKM check
 endif # supported target check
 endif # WLAN enabled check

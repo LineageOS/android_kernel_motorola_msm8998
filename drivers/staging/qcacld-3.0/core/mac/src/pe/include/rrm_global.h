@@ -160,20 +160,6 @@ typedef struct sRRMReq {
 	uint8_t sendEmptyBcnRpt;
 } tRRMReq, *tpRRMReq;
 
-/**
- * rrm_beacon_report_last_beacon_params - Last Beacon Report Indication params
- * @last_beacon_ind: flag for whether last beacon indication is required
- * @report_id: Report ID of the corresponding Beacon Report Request
- * @frag_id: Current fragment's Fragment ID
- * @num_frags: Total number of fragments in the Beacon Report
- */
-struct rrm_beacon_report_last_beacon_params {
-	uint8_t last_beacon_ind;
-	uint8_t report_id;
-	uint8_t frag_id;
-	uint8_t num_frags;
-};
-
 typedef struct sRRMCaps {
 	uint8_t LinkMeasurement:1;
 	uint8_t NeighborRpt:1;
@@ -303,13 +289,6 @@ enum mask_rm_capability_byte3 {
 	RM_CAP_NONOPER_CHAN_MAX_DURATION_1 = (1 << (5)),
 	RM_CAP_NONOPER_CHAN_MAX_DURATION_2 = (1 << (6)),
 	RM_CAP_NONOPER_CHAN_MAX_DURATION_3 = (1 << (7)),
-	RM_CAP_OPER_CHAN_MAX_DURATION = (RM_CAP_OPER_CHAN_MAX_DURATION_1 |
-					 RM_CAP_OPER_CHAN_MAX_DURATION_2 |
-					 RM_CAP_OPER_CHAN_MAX_DURATION_3),
-	RM_CAP_NONOPER_CHAN_MAX_DURATION =
-				(RM_CAP_NONOPER_CHAN_MAX_DURATION_1 |
-				 RM_CAP_NONOPER_CHAN_MAX_DURATION_2 |
-				 RM_CAP_NONOPER_CHAN_MAX_DURATION_3),
 };
 
 /**
@@ -334,9 +313,6 @@ enum mask_rm_capability_byte4 {
 	RM_CAP_RCPI_MEASUREMENT1 = (1 << (5)),
 	RM_CAP_RSNI_MEASUREMENT = (1 << (6)),
 	RM_CAP_BSS_AVG_ACCESS_DELAY = (1 << (7)),
-	RM_CAP_MEASUREMENT_PILOT = (RM_CAP_MEASUREMENT_PILOT_1 |
-				    RM_CAP_MEASUREMENT_PILOT_2 |
-				    RM_CAP_MEASUREMENT_PILOT_3),
 };
 
 /**

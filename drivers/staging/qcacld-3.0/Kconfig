@@ -17,6 +17,10 @@ config PRIMA_WLAN_OKC
 	bool "Enable the Prima WLAN Opportunistic Key Caching feature"
 	default n
 
+config PRIMA_WLAN_11AC_HIGH_TP
+	bool "Enable the Prima WLAN 802.11ac High Throughput option (depends upon kernel support)"
+	default n
+
 config WLAN_FEATURE_11W
 	bool "Enable the WLAN 802.11w Protected Management Frames feature"
 	default n
@@ -120,12 +124,8 @@ config WLAN_FEATURE_DISA
 	bool "Enable DISA certification feature"
 	default n
 
-config WLAN_FEATURE_FIPS
-	bool "Enable FIPS certification feature"
-	default n
-
-config WLAN_FEATURE_11AX
-	bool "Enable 11AX(High Efficiency) feature"
+config WLAN_SPECTRAL_SCAN
+	bool "Enable Spectral Scan feature"
 	default n
 
 config ICMP_DISABLE_PS
@@ -134,22 +134,6 @@ config ICMP_DISABLE_PS
 
 config BUILD_TIMESTAMP
 	bool "Embed timestamp in wlan version"
-	default n
-
-config WLAN_FEATURE_FILS
-	bool "Enable FILS feature"
-	default n
-
-config NAN_CONVERGENCE
-	bool "Enable NAN_CONVERGENCE feature"
-	default n
-
-config WLAN_OBJMGR_DEBUG
-	bool "Enable WLAN Obj Mgr Debug services"
-	default n
-
-config WLAN_FEATURE_DFS_OFFLOAD
-	bool "Enable dfs offload feature"
 	default n
 
 config WLAN_FEATURE_SARV1_TO_SARV2

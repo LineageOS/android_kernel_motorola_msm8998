@@ -1,0 +1,8 @@
+config INPUT_AWINIC_HAPTIC
+	tristate "AW869X Haptic Driver"
+	default n
+	help
+	  Say Y here to enable awinic aw869x haptic driver.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called aw869x.
