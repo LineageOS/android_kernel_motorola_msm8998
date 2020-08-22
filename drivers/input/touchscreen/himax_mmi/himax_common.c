@@ -2581,10 +2581,12 @@ int himax_chip_common_init(void)
 
 	if (IC_HX83102 == ic_data->ic_type_val) {
 		I("[%s][%d]:is hx83102_chip_detect\n", __func__, __LINE__);
-		hx83102_chip_detect();
+		if (hx83102_chip_detect() == false)
+			goto error_ic_detect_failed;
 	} else {
 		I("[%s][%d]:is hx83112_chip_detect\n", __func__, __LINE__);
-		hx83112_chip_detect();
+		if (hx83112_chip_detect() == false)
+			goto error_ic_detect_failed;
 	}
 
 	if (g_core_fp.fp_chip_init != NULL) {
