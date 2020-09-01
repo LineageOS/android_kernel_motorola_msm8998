@@ -1,24 +1,37 @@
-config TOUCHSCREEN_HIMAX_CHIPSET
-	tristate "Himax touch driver"
-	default n
+#
+# Himax Touchscreen MMI driver configuration
+#
+
+config TOUCHSCREEN_HIMAX_I2C
+	tristate "HIMAX chipset i2c touchscreen"
+	depends on TOUCHSCREEN_HIMAX_CHIPSET
 	help
-	  Say Y here to enable the Himax touch driver
+	  Say Y here to enable support for HIMAX CHIPSET over I2C based touchscreens.
+	  If unsure, say N.
 
 	  To compile this driver as a module, choose M here. The
 	  module will be called himax_mmi.
 
 config TOUCHSCREEN_HIMAX_INSPECT
-	bool "Himax touchscreen driver insspection"
-	depends on TOUCHSCREEN_HIMAX_CHIPSET
+	tristate "HIMAX inspect function"
+	depends on TOUCHSCREEN_HIMAX_I2C
 	help
-	  Say Y here to enable sysfs inspection.
+	  Say Y here to enable HIMAX self test function.
 
 	  If unsure, say N.
 
 config TOUCHSCREEN_HIMAX_DEBUG
-	bool "Himax touchscreen driver debugging options"
-	depends on TOUCHSCREEN_HIMAX_CHIPSET
+	tristate "HIMAX debug function"
+	depends on TOUCHSCREEN_HIMAX_I2C
 	help
-	  Say Y here to enable debugging features.
+	  Say Y here to enable support for HIMAX debug function.
+
+	  If unsure, say N.
+
+config HMX_DB
+	tristate "HIMAX driver test over Dragon Board"
+	depends on TOUCHSCREEN_HIMAX_I2C
+	help
+	  Say Y here to enable support for HIMAX driver test over Dragon Board.
 
 	  If unsure, say N.

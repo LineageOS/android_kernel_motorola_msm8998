@@ -15,6 +15,7 @@ source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
 source "drivers/input/touchscreen/synaptics_mmi/Kconfig"
 source "drivers/input/touchscreen/focaltech_mmi/Kconfig"
 source "drivers/input/touchscreen/synaptics_tcm/Kconfig"
+source "drivers/input/touchscreen/synaptics_tcm_mmi/Kconfig"
 source "drivers/input/touchscreen/siw_mmi/Kconfig"
 
 config OF_TOUCHSCREEN
@@ -1239,6 +1240,18 @@ config FT_SECURE_TOUCH
 
 	  If unsure, say N.
 
+config TOUCHSCREEN_HIMAX_CHIPSET
+	bool "Himax touchpanel CHIPSET"
+	depends on I2C
+	help
+	  Say Y here if you have a Himax CHIPSET touchscreen.
+	  HIMAX controllers are multi touch controllers which can
+	  report 10 touches at a time.
+
+	  If unsure, say N.
+
+source "drivers/input/touchscreen/himax_mmi/Kconfig"
+
 config TOUCHSCREEN_IT7260_I2C
 	tristate "IT7260 Touchscreen Driver"
 	depends on I2C
@@ -1262,7 +1275,5 @@ config TOUCHSCREEN_ST
 source "drivers/input/touchscreen/st/Kconfig"
 source "drivers/input/touchscreen/gt9xx_mmi/Kconfig"
 source "drivers/input/touchscreen/nova_mmi/Kconfig"
-source "drivers/input/touchscreen/himax_mmi/Kconfig"
 source "drivers/input/touchscreen/novatek_mmi/Kconfig"
-source "drivers/input/touchscreen/synaptics_tcm_mmi/Kconfig"
 endif
