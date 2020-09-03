@@ -1,13 +1,12 @@
 #
-# Egitec fingerprint driver
+# Egistec fingerprint driver
 #
 
 config INPUT_EGISTEC_FPS_MMI
 	tristate "Egistec Fingerprint Sensor driver MMI Revision"
 	default n
 	help
-	  Say Y here to enable the Egistec Fingerprint sensor
-	  driver, including fingerprint sensor gestures.
+	  Say Y here to enable the Egistec Fingerprint sensor driver.
 
 	  To compile this driver as a module, choose M here. The
 	  module will be called ets_fps_mmi.

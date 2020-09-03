@@ -717,12 +717,19 @@ void uinput_egis_destroy(struct etspi_data *etspi)
 	DEBUG_PRINT("Egis navigation driver, %s\n", __func__);
 
 
+	g_DoubleClickJiffies = 0;
+	g_SingleClickJiffies = 0;
+
+	if (etspi->input_dev != NULL) {
+		input_unregister_device(etspi->input_dev);
+		input_free_device(etspi->input_dev);
+		etspi->input_dev = NULL;
+	}
+
 #if ENABLE_TRANSLATED_LONG_TOUCH
 	del_timer(&long_touch_timer);
 #endif
 
-	if (etspi->input_dev != NULL)
-		input_free_device(etspi->input_dev);
 	if (nav_kthread)
 		kthread_stop(nav_kthread);
 
@@ -756,6 +763,8 @@ void sysfs_egis_init(struct etspi_data *etspi)
 		platform_device_put(etspi->spi);
 		return;
 	}
+
+	kobject_uevent(&etspi->spi->dev.kobj, KOBJ_CHANGE);  // chengql2
 }
 
 void sysfs_egis_destroy(struct etspi_data *etspi)
@@ -763,6 +772,7 @@ void sysfs_egis_destroy(struct etspi_data *etspi)
 	DEBUG_PRINT("Egis navigation driver, %s\n", __func__);
 
 	if (etspi->spi) {
+		sysfs_remove_group(&etspi->spi->dev.kobj, &attribute_group);
 		platform_device_del(etspi->spi);
 		platform_device_put(etspi->spi);
 	}
