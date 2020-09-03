@@ -73,6 +73,10 @@
 #define INT_TRIGGER_ABORT			0xa8
 #define FP_TRANSFER_SYNC			0xAA
 
+#ifdef CONFIG_DISPLAY_SPEED_UP
+#define SET_AUTH_STATUS				0xD1
+#endif
+
 #define DRDY_IRQ_ENABLE				1
 #define DRDY_IRQ_DISABLE			0
 
