@@ -1,8 +1,0 @@
-config MMI_SYSTEM_TEMP
-	tristate "System Temperatures driver MMI Revision"
-	default n
-	help
-	  Say Y here to enable the System Temps driver.
-
-	  To compile this driver as a module, choose M here. The module
-	  will be called mmi_sys_temp.

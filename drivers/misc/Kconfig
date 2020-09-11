@@ -686,6 +686,7 @@ config MODS_2ND_GEN
 	help
 	  This option enables the mods 2nd generation hw designation.
 
+source "drivers/misc/awinic/aw869x/Kconfig"
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
@@ -701,6 +702,4 @@ source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/cypress/Kconfig"
 source "drivers/misc/motomods/Kconfig"
-source "drivers/misc/awinic/aw869x/Kconfig"
-source "drivers/misc/mmi_sys_temp/Kconfig"
 endmenu
