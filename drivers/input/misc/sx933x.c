@@ -22,6 +22,7 @@
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/syscalls.h>
+#include <linux/version.h>
 //#include <linux/wakelock.h>
 #include <linux/uaccess.h>
 #include <linux/sort.h>
@@ -33,7 +34,7 @@
 #include <linux/power_supply.h>
 #include <linux/sensors.h>
 #include <linux/input/sx933x.h> 	/* main struct, interrupt,init,pointers */
-
+#include "../../base/base.h"
 
 #define SX933x_DEBUG 0
 #define LOG_TAG "[sar SX933x]: "
@@ -41,9 +42,9 @@
 #if SX933x_DEBUG
 #define LOG_INFO(fmt, args...)    pr_info(LOG_TAG fmt, ##args)
 #else
-#define LOG_INFO(fmt, args...)
+#define LOG_INFO(fmt, args...)    pr_debug(LOG_TAG fmt, ##args)
 #endif
-#define LOG_DBG(fmt, args...)   pr_info(LOG_TAG fmt, ##args) 
+#define LOG_DBG(fmt, args...)     pr_debug(LOG_TAG fmt, ##args)
 
 #define USE_DTS_REG
 
@@ -74,6 +75,7 @@ typedef struct sx933x
 
 static int irq_gpio_num;
 static psx93XX_t global_sx933x;
+
 static void sx93XX_schedule_work(psx93XX_t this, unsigned long delay);
 static int sx933x_get_nirq_state(void)
 {
@@ -393,19 +395,62 @@ static ssize_t manual_offset_calibration_store(struct class *class,
 
 	return count;
 }
+
+static ssize_t sx933x_int_state_show(struct class *class,
+		struct class_attribute *attr,
+		char *buf)
+{
+	psx93XX_t this = global_sx933x;
+	LOG_DBG("Reading INT line state\n");
+	return sprintf(buf, "%d\n", this->int_state);
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+static struct class_attribute class_attr_reset =
+	__ATTR(reset, 0660, NULL, capsense_reset_store);
+static struct class_attribute class_attr_raw_data =
+	__ATTR(raw_data, 0660, capsense_raw_data_show, NULL);
+static struct class_attribute class_attr_register_write =
+	__ATTR(register_write,  0660, NULL,sx933x_register_write_store);
+static struct class_attribute class_attr_register_read =
+	__ATTR(register_read,0660, NULL,sx933x_register_read_store);
+static struct class_attribute class_attr_manual_calibrate =
+	__ATTR(manual_calibrate, 0660, manual_offset_calibration_show,
+	manual_offset_calibration_store);
+static struct class_attribute class_attr_int_state =
+	__ATTR(int_state, 0440, sx933x_int_state_show, NULL);
+
+
+static struct attribute *capsense_class_attrs[] = {
+	&class_attr_reset.attr,
+	&class_attr_raw_data.attr,
+	&class_attr_register_write.attr,
+	&class_attr_register_read.attr,
+	&class_attr_manual_calibrate.attr,
+	&class_attr_int_state.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(capsense_class);
+#else
 static struct class_attribute capsense_class_attributes[] = {
 	__ATTR(reset, 0660, NULL, capsense_reset_store),
 	__ATTR(raw_data, 0660, capsense_raw_data_show, NULL),
 	__ATTR(register_write,  0660, NULL,sx933x_register_write_store),
 	__ATTR(register_read,0660, NULL,sx933x_register_read_store),
 	__ATTR(manual_calibrate, 0660, manual_offset_calibration_show,manual_offset_calibration_store),
+	__ATTR(int_state, 0440, sx933x_int_state_show, NULL),
 	__ATTR_NULL,
 };
+#endif
 
 struct class capsense_class = {
 	.name                   = "capsense",
 	.owner                  = THIS_MODULE,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	.class_groups           = capsense_class_groups,
+#else
 	.class_attrs		= capsense_class_attributes,
+#endif
 };
 
 /**************************************/
@@ -546,7 +591,7 @@ static void touchProcess(psx93XX_t this)
 				LOG_INFO("touchProcess %s unused, ignor this\n", buttons[counter].name);
 				continue;
 			}
-			pCurrentButton = &buttons[counter];			
+			pCurrentButton = &buttons[counter];
 			if (pCurrentButton==NULL)
 			{
 				LOG_DBG("ERROR!! current button at index: %d NULL!!!\n", counter);
@@ -597,15 +642,40 @@ static int sx933x_parse_dt(struct sx933x_platform_data *pdata, struct device *de
 {
 	struct device_node *dNode = dev->of_node;
 	enum of_gpio_flags flags;
+	int rc;
 
 	if (dNode == NULL)
 		return -ENODEV;
 
+	rc = of_property_read_u32(dNode,"Semtech,power-supply-type",&pdata->power_supply_type);
+	if(rc < 0){
+		pdata->power_supply_type = SX933X_POWER_SUPPLY_TYPE_PMIC_LDO;
+		LOG_INFO("%s :pmic ldo is the default if not set power-supply-type in dt\n",
+					__func__);
+	}
+
+	switch(pdata->power_supply_type){
+		case SX933X_POWER_SUPPLY_TYPE_PMIC_LDO:
+			/* using regulator_get() to fetch power_supply in sx933x_probe()*/
+			break;
+		case SX933X_POWER_SUPPLY_TYPE_ALWAYS_ON:
+			/* power supply always on: no need fetch others control  in drivers */
+			break;
+		case SX933X_POWER_SUPPLY_TYPE_EXTERNAL_LDO:
+			/* parse the gpio number for external LDO enable pin*/
+			pdata->eldo_gpio = of_get_named_gpio_flags(dNode,
+					"Semtech,eldo-gpio",0,&flags);
+			LOG_INFO("%s -  used eLDO_gpio 0x%x \n", __func__, pdata->eldo_gpio);
+			break;
+		default:
+			LOG_INFO("%s -  Error power_supply_type: 0x%x \n", __func__, pdata->power_supply_type);
+			break;
+	}
+
 	pdata->irq_gpio= of_get_named_gpio_flags(dNode,
 			"Semtech,nirq-gpio", 0, &flags);
 	irq_gpio_num = pdata->irq_gpio;
-	if (pdata->irq_gpio < 0)
-	{
+	if (pdata->irq_gpio < 0){
 		LOG_DBG("%s - get irq_gpio error\n", __func__);
 		return -ENODEV;
 	}
@@ -749,6 +819,7 @@ static int capsensor_set_enable(struct sensors_classdev *sensors_cdev,
 	return 0;
 }
 
+#ifdef CONFIG_CAPSENSE_USB_CAL
 static void ps_notify_callback_work(struct work_struct *work)
 {
 	u32 temp = 0;
@@ -785,7 +856,11 @@ static int ps_notify_callback(struct notifier_block *self,
 	bool present;
 	int retval;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	if (event == PSY_EVENT_PROP_CHANGED
+#else
 	if ((event == PSY_EVENT_PROP_ADDED || event == PSY_EVENT_PROP_CHANGED)
+#endif
 			&& psy && psy->desc->get_property && psy->desc->name &&
 			!strncmp(psy->desc->name, "usb", sizeof("usb")) && data) {
 		LOG_INFO("ps notification: event = %lu\n", event);
@@ -804,8 +879,45 @@ static int ps_notify_callback(struct notifier_block *self,
 		schedule_work(&data->ps_notify_work);
 	}
 
+#ifdef CONFIG_CAPSENSE_ATTACH_CAL
+	if (event == PSY_EVENT_PROP_CHANGED
+			&& psy && psy->desc->get_property && psy->desc->name &&
+			!strncmp(psy->desc->name, "phone", sizeof("phone")) && data) {
+		LOG_INFO("phone ps notification: event = %lu\n", event);
+
+		retval = ps_get_state(psy, &present);
+		if (retval)
+			return retval;
+
+		if (data->phone_is_present != present) {
+			data->phone_is_present = present;
+			schedule_work(&data->ps_notify_work);
+		}
+	}
+#endif
+
 	return 0;
 }
+
+#ifdef CONFIG_CAPSENSE_FLIP_CAL
+static int flip_notify_callback(struct notifier_block *self,
+		unsigned long state, void *p)
+{
+	struct sx933x_platform_data *data =
+		container_of(self, struct sx933x_platform_data, flip_notif);
+	struct extcon_dev *edev = p;
+
+	if(data->ext_flip_det == edev) {
+		if(data->phone_flip_state != state) {
+			data->phone_flip_state = state;
+			schedule_work(&data->ps_notify_work);
+		}
+	}
+
+	return 0;
+}
+#endif
+#endif
 
 /*! \fn static int sx933x_probe(struct i2c_client *client, const struct i2c_device_id *id)
  * \brief Probe function
@@ -821,7 +933,9 @@ static int sx933x_probe(struct i2c_client *client, const struct i2c_device_id *i
 	psx93XX_t this = 0;
 	psx933x_t pDevice = 0;
 	psx933x_platform_data_t pplatData = 0;
+#ifdef CONFIG_CAPSENSE_USB_CAL
 	struct power_supply *psy = NULL;
+#endif
 	struct totalButtonInformation *pButtonInformationData = NULL;
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 
@@ -916,6 +1030,9 @@ static int sx933x_probe(struct i2c_client *client, const struct i2c_device_id *i
 				return err;
 			}
 
+			/*restore sys/class/capsense label*/
+			kobject_uevent(&capsense_class.p->subsys.kobj, KOBJ_CHANGE);
+
 			/* Add Pointer to main platform data struct */
 			pDevice->hw = pplatData;
 
@@ -967,28 +1084,52 @@ static int sx933x_probe(struct i2c_client *client, const struct i2c_device_id *i
 			}
 		}
 
-		pplatData->cap_vdd = regulator_get(&client->dev, "cap_vdd");
-		if (IS_ERR(pplatData->cap_vdd)) {
-			if (PTR_ERR(pplatData->cap_vdd) == -EPROBE_DEFER) {
-				err = PTR_ERR(pplatData->cap_vdd);
-				return err;
-			}    
-			LOG_DBG("%s: Failed to get regulator\n",
-					__func__);
-		} else {
-			err = regulator_enable(pplatData->cap_vdd);
-			if (err) {
-				regulator_put(pplatData->cap_vdd);
-				LOG_DBG("%s: Error %d enable regulator\n",
-						__func__, err);
-				return err;
-			}
-			pplatData->cap_vdd_en = true;
-			LOG_DBG("cap_vdd regulator is %s\n",
+		switch(pplatData->power_supply_type){
+			case SX933X_POWER_SUPPLY_TYPE_PMIC_LDO:
+				pplatData->cap_vdd = regulator_get(&client->dev, "cap_vdd");
+				if (IS_ERR(pplatData->cap_vdd)) {
+					if (PTR_ERR(pplatData->cap_vdd) == -EPROBE_DEFER) {
+						err = PTR_ERR(pplatData->cap_vdd);
+						return err;
+					}
+					LOG_INFO("%s: Failed to get regulator\n", __func__);
+				} else {
+					LOG_INFO("%s: with cap_vdd\n",  __func__);
+					err = regulator_enable(pplatData->cap_vdd);
+					if (err) {
+						regulator_put(pplatData->cap_vdd);
+						LOG_INFO("%s: Error %d enable regulator\n",
+								__func__, err);
+						return err;
+					}
+					pplatData->cap_vdd_en = true;
+					LOG_INFO("cap_vdd regulator is %s\n",
 					regulator_is_enabled(pplatData->cap_vdd) ?
-					"on" : "off");
+									"on" : "off");
+				}
+				break;
+			case SX933X_POWER_SUPPLY_TYPE_ALWAYS_ON:
+				LOG_INFO("%s: using always on power supply\n",  __func__);
+				break;
+			case SX933X_POWER_SUPPLY_TYPE_EXTERNAL_LDO:
+				LOG_INFO("%s: enable external LDO, en_gpio:%d\n",
+						__func__, pplatData->eldo_gpio);
+				err = gpio_request(pplatData->eldo_gpio, "sx933x_eldo_gpio");
+				if (err < 0){
+					LOG_DBG("SX933x Request eLDO gpio. Fail![%d]\n", err);
+					return err;
+				}
+				err = gpio_direction_output(pplatData->eldo_gpio,1);
+				if(err < 0){
+					LOG_INFO("%s:can not enable external LDO,%d",__func__, err);
+					return err;
+				}
+				pplatData->eldo_vdd_en = true;
+				msleep(20);
+				break;
 		}
 
+#ifdef CONFIG_CAPSENSE_USB_CAL
 		/*notify usb state*/
 		INIT_WORK(&pplatData->ps_notify_work, ps_notify_callback_work);
 		pplatData->ps_notif.notifier_call = ps_notify_callback;
@@ -1004,6 +1145,28 @@ static int sx933x_probe(struct i2c_client *client, const struct i2c_device_id *i
 				power_supply_unreg_notifier(&pplatData->ps_notif);
 			}
 		}
+#ifdef CONFIG_CAPSENSE_FLIP_CAL
+		if (of_property_read_bool(client->dev.of_node, "extcon")) {
+			pplatData->flip_notif.notifier_call = flip_notify_callback;
+			pplatData->ext_flip_det =
+				extcon_get_edev_by_phandle(&client->dev, 0);
+			if (IS_ERR(pplatData->ext_flip_det)) {
+				pplatData->ext_flip_det = NULL;
+				pr_err("%s: failed to get extcon flip dev\n", __func__);
+			} else {
+				if(extcon_register_notifier(pplatData->ext_flip_det,
+					EXTCON_MECHANICAL, &pplatData->flip_notif))
+					pr_err("%s: failed to register extcon flip dev notifier\n",
+						__func__);
+				else
+					pplatData->phone_flip_state =
+						extcon_get_state(pplatData->ext_flip_det,
+							EXTCON_MECHANICAL);
+			}
+		} else
+			pr_err("%s: extcon not in dev tree!\n", __func__);
+#endif
+#endif
 
 		sx93XX_IRQ_init(this);
 		/* call init function pointer (this should initialize all registers */
@@ -1038,7 +1201,7 @@ static int sx933x_probe(struct i2c_client *client, const struct i2c_device_id *i
 static int sx933x_remove(struct i2c_client *client)
 {
 	psx933x_platform_data_t pplatData =0;
-	psx933x_t pDevice = 0; 
+	psx933x_t pDevice = 0;
 	struct _buttonInfo *pCurrentbutton;
 	int i = 0;
 	psx93XX_t this = i2c_get_clientdata(client);
@@ -1047,18 +1210,23 @@ static int sx933x_remove(struct i2c_client *client)
 	{
 		pplatData = client->dev.platform_data;
 		free_irq(this->irq, this);
-		cancel_delayed_work_sync(&(this->dworker));	
+		cancel_delayed_work_sync(&(this->dworker));
 
 		class_unregister(&capsense_class);
+#ifdef CONFIG_CAPSENSE_USB_CAL
 		cancel_work_sync(&pplatData->ps_notify_work);
 		power_supply_unreg_notifier(&pplatData->ps_notif);
-
+#endif
 		if (pplatData && pplatData->exit_platform_hw)
 			pplatData->exit_platform_hw(client);
 
 		if (pplatData->cap_vdd_en) {
-			regulator_disable(pplatData->cap_vdd); 
+			regulator_disable(pplatData->cap_vdd);
 			regulator_put(pplatData->cap_vdd);
+		}
+
+		if(pplatData->eldo_vdd_en){
+			gpio_direction_output(pplatData->eldo_gpio,0);
 		}
 		for (i = 0; i <pDevice->pbuttonInformation->buttonSize; i++) {
 			pCurrentbutton = &(pDevice->pbuttonInformation->buttons[i]);
@@ -1079,9 +1247,9 @@ static int sx933x_suspend(struct device *dev)
 {
 	psx93XX_t this = dev_get_drvdata(dev);
 	if (this) {
-          	sx933x_i2c_write_16bit(this,SX933X_CMD_REG,0xD);//make sx933x in Sleep mode
-          	LOG_INFO(LOG_TAG "sx933x suspend:disable irq!\n");
-          	disable_irq(this->irq);
+		sx933x_i2c_write_16bit(this,SX933X_CMD_REG,0xD);//make sx933x in Sleep mode
+		LOG_INFO(LOG_TAG "sx933x suspend:disable irq!\n");
+		disable_irq(this->irq);
 	}
 	return 0;
 }
@@ -1179,6 +1347,7 @@ static irqreturn_t sx93XX_irq(int irq, void *pvoid)
 		{
 			LOG_INFO("sx93XX_irq - call sx93XX_schedule_work\n");
 			sx93XX_schedule_work(this,0);
+			this->int_state = 1;
 		}
 		else
 		{
@@ -1245,6 +1414,7 @@ int sx93XX_IRQ_init(psx93XX_t this)
 	int err = 0;
 	if (this && this->pDevice)
 	{
+		this->int_state = 0;
 		/* initialize spin lock */
 		spin_lock_init(&this->lock);
 		/* initialize worker function */
