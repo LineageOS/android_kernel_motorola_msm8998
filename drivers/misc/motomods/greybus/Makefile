@@ -97,51 +97,11 @@ KERNELDIR 		?= /lib/modules/$(KERNELVER)/build
 INSTALL_MOD_PATH	?= /..
 PWD			:= $(shell pwd)
 
-# kernel config option that shall be enable
-CONFIG_OPTIONS_ENABLE := POWER_SUPPLY PWM SYSFS SPI USB SND_SOC MMC LEDS_CLASS
-
-# kernel config option that shall be disable
-CONFIG_OPTIONS_DISABLE :=
-
-# this only run in kbuild part of the makefile
-ifneq ($(KERNELRELEASE),)
-# This function returns the argument version if current kernel version is minor
-# than the passed version, return 1 if equal or the current kernel version if it
-# is greater than argument version.
-kvers_cmp=$(shell [ "$(KERNELVERSION)" = "$(1)" ] && echo 1 || printf "$(1)\n$(KERNELVERSION)" | sort -V | tail -1)
-
-ifneq ($(call kvers_cmp,"3.19.0"),3.19.0)
-    CONFIG_OPTIONS_ENABLE += LEDS_CLASS_FLASH
-endif
-
-ifneq ($(call kvers_cmp,"4.2.0"),4.2.0)
-    CONFIG_OPTIONS_ENABLE += V4L2_FLASH_LED_CLASS
-endif
-
-#The new mods hw designation has add an gpio for spi/i2c select
-ifeq ($(CONFIG_MODS_2ND_GEN), y)
-CONFIG_OPTIONS_ENABLE += MODS_2ND_GEN
-endif
-
-ifeq ($(CONFIG_MODS_USE_EXTCODEC_MI2S), y)
-CONFIG_OPTIONS_ENABLE += MODS_USE_EXTCODEC_MI2S
-endif
-
-$(foreach opt,$(CONFIG_OPTIONS_ENABLE),$(if $(CONFIG_$(opt)),, \
-     $(error CONFIG_$(opt) is disabled in the kernel configuration and must be enable \
-     to continue compilation)))
-$(foreach opt,$(CONFIG_OPTIONS_DISABLE),$(if $(filter m y, $(CONFIG_$(opt))), \
-     $(error CONFIG_$(opt) is enabled in the kernel configuration and must be disable \
-     to continue compilation),))
-endif
-
 # add -Wall to try to catch everything we can.
 ccflags-y := -Wall
 
 # needed for trace events
 ccflags-y += -I$(src)
-
-$(warning CURRENT KERNEL VER : $(KERNELVERSION))
 
 all: module
 

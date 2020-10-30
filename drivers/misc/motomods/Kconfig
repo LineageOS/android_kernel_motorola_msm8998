@@ -4,9 +4,26 @@
 menu "Moto Mod drivers"
 config MOTOMODS
 	tristate "Motorola Z Moto Mods"
+	depends on POWER_SUPPLY
+	depends on PWM
+	depends on SYSFS
+	depends on SPI
+	depends on USB
+	depends on SND_SOC
+	depends on MMC
+	depends on LEDS_CLASS
 	default n
 	help
 	  This option enables support for Moto Mod peripherals for the
 	  Motorola Z family of handsets.
 
+config MODS_2ND_GEN
+	tristate
+	depends on MOTOMODS
+	default n
+
+config MODS_USE_EXTCODEC_MI2S
+	tristate
+	depends on MOTOMODS
+	default n
 endmenu
