@@ -1199,9 +1199,9 @@ struct gb_svc_intf_reset_request {
 /* interface reset response has no payload */
 
 struct gb_svc_conn_create_request {
-	__u8	intf1_id;
+	__u16	intf1_id;
 	__le16	cport1_id;
-	__u8	intf2_id;
+	__u16	intf2_id;
 	__le16	cport2_id;
 	__u8	tc;
 	__u8	flags;
@@ -1209,9 +1209,9 @@ struct gb_svc_conn_create_request {
 /* connection create response has no payload */
 
 struct gb_svc_conn_destroy_request {
-	__u8	intf1_id;
+	__u16	intf1_id;
 	__le16	cport1_id;
-	__u8	intf2_id;
+	__u16	intf2_id;
 	__le16	cport2_id;
 } __packed;
 /* connection destroy response has no payload */
@@ -1250,16 +1250,16 @@ struct gb_svc_dme_peer_set_response {
 #define DME_TSI_FALLBACK_UNIPRO_BOOT_STARTED	0x09
 
 struct gb_svc_route_create_request {
-	__u8	intf1_id;
-	__u8	dev1_id;
-	__u8	intf2_id;
-	__u8	dev2_id;
+	__u16	intf1_id;
+	__u16	dev1_id;
+	__u16	intf2_id;
+	__u16	dev2_id;
 } __packed;
 /* route create response has no payload */
 
 struct gb_svc_route_destroy_request {
-	__u8	intf1_id;
-	__u8	intf2_id;
+	__u16	intf1_id;
+	__u16	intf2_id;
 } __packed;
 /* route destroy response has no payload */
 
