@@ -54,7 +54,7 @@
 static const uint64_t e9 = 1000uLL * 1000uLL * 1000uLL;
 
 /* Mapping of Greybus sensor types to IIO types */
-static const int const gb_sensor_type_map[] = {
+static const int gb_sensor_type_map[] = {
 	[UNDEFINED]                     = IIO_PROPRIETARY,   /* No match */
 	[ACCELEROMETER]                 = IIO_ACCEL,
 	[GEOMAGNETIC_FIELD]             = IIO_MAGN,
