@@ -55,7 +55,7 @@ struct navi_cmd_struct cmd_list;
  */
 
 #define ENABLE_SWIPE_UP_DOWN	ENABLE
-#define ENABLE_SWIPE_LEFT_RIGHT	ENABLE
+#define ENABLE_SWIPE_LEFT_RIGHT	DISABLE
 #define ENABLE_FINGER_DOWN_UP	DISABLE
 #define KEY_FPS_DOWN   614
 #define KEY_FPS_UP     615
