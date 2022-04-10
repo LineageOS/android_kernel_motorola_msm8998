@@ -20,16 +20,6 @@
 	compatible = "qcom,sdm660-paytonpro", "qcom,sdm660-moto", "qcom,sdm660";
 };
 
-&firmware {
-	android {
-		compatible = "android,firmware";
-		fstab {
-			compatible = "android,fstab";
-			/delete-node/ vendor;
-		};
-	};
-};
-
 &i2c_2 { /* BLSP1 CAP SENSOR */
 	status = "okay";
 	sx9310@28 {
