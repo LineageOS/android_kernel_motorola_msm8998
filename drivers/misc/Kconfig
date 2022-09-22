@@ -681,7 +681,7 @@ config FSUSB42_MUX
 	  2 port High Speed USB/UART Switch.
 
 config MODS_2ND_GEN
-	bool "MODS_2ND_GEN Support"
+	tristate "MODS_2ND_GEN Support"
 	default n
 	help
 	  This option enables the mods 2nd generation hw designation.
