@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "d994e6bd_8a8dc9e4",
+        "filename": "arch/arm64/configs/lineageos_nash_defconfig",
+        "patchSetId": 1
+      },
+      "lineNbr": 55,
+      "author": {
+        "id": 16185
+      },
+      "writtenOn": "2023-01-19T02:15:33Z",
+      "side": 1,
+      "message": "Nash already had BLK_CGROUPS",
+      "range": {
+        "startLine": 55,
+        "startChar": 0,
+        "endLine": 55,
+        "endChar": 18
+      },
+      "revId": "e3419701985423e17230bfba1856db9dbe12440d",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
