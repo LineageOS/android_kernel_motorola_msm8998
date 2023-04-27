@@ -16,6 +16,23 @@
       "message": "nolen told me this might potentially be required?",
       "revId": "04786216e50f7a749324ec52a57ac3390502dbc5",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "8df14c3c_78c2809a",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 5911
+      },
+      "writtenOn": "2023-04-27T19:32:07Z",
+      "side": 1,
+      "message": "prolly not worth the effort to do it per device...",
+      "revId": "04786216e50f7a749324ec52a57ac3390502dbc5",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
