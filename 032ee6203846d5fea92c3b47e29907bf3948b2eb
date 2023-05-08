@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "6ed9ed6f_09c7e4fb",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 16185
+      },
+      "writtenOn": "2023-05-08T23:20:09Z",
+      "side": 1,
+      "message": "this was even in earlier versions: https://review.lineageos.org/c/LineageOS/android_kernel_motorola_msm8998/+/259203",
+      "revId": "032ee6203846d5fea92c3b47e29907bf3948b2eb",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
