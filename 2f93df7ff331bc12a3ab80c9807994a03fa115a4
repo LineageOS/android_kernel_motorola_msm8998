@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "b29c71ad_e5bb85b6",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 2
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 16208
+      },
+      "writtenOn": "2023-05-08T15:28:39Z",
+      "side": 1,
+      "message": "Also see https://github.com/topjohnwu/Magisk/issues/6914.",
+      "revId": "2f93df7ff331bc12a3ab80c9807994a03fa115a4",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
