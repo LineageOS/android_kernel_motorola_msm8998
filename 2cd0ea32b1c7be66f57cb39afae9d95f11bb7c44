@@ -16,6 +16,24 @@
       "message": "We could swap to config fragments?\n\nLike this:\nhttps://review.lineageos.org/c/LineageOS/android_kernel_lenovo_sm8150/+/354260",
       "revId": "2cd0ea32b1c7be66f57cb39afae9d95f11bb7c44",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "724e3753_9760f03f",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 11
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 19252
+      },
+      "writtenOn": "2023-05-17T03:54:52Z",
+      "side": 1,
+      "message": "with device tree commits:\n\nhttps://review.lineageos.org/c/LineageOS/android_device_lenovo_sm8150-common/+/352380\n\nhttps://review.lineageos.org/c/LineageOS/android_device_lenovo_zippo/+/352376",
+      "parentUuid": "376df9c5_bc97fcfe",
+      "revId": "2cd0ea32b1c7be66f57cb39afae9d95f11bb7c44",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ],
   "submitRequirementResults": []
