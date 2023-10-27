@@ -3742,7 +3742,7 @@ void SP_TX_Video_Mute(BYTE enable)
 }
 
 
-void SP_TX_Config_MIPI_Video_Format()
+void SP_TX_Config_MIPI_Video_Format(void)
 {
 	unsigned long  M_vid;
 	//long float lTemp;
