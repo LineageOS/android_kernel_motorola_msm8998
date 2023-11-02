@@ -33,6 +33,23 @@
       "message": "yeah i am not... also the sdm660 based devices. initial bringup is nash-only tho, not going to waste time with the others ;)",
       "revId": "93529cc83541bb8e1f8f6cb69eff7cb767bf63a5",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "74b6a8b1_ed6175cc",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 5911
+      },
+      "writtenOn": "2023-11-02T11:48:53Z",
+      "side": 1,
+      "message": "grrrr... sdm630, actually",
+      "revId": "93529cc83541bb8e1f8f6cb69eff7cb767bf63a5",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
