@@ -780,7 +780,7 @@ static struct v4l2_file_operations v4l2_hal_fops = {
 	.release = v4l2_hal_close,
 };
 
-void *v4l2_hal_init()
+void *v4l2_hal_init(void)
 {
 	int retval;
 	int i, j;
