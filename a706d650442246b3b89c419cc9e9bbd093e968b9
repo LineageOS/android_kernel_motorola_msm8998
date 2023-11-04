@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "080b3df4_e989d8fe",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 6
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 20370
+      },
+      "writtenOn": "2023-11-04T13:50:06Z",
+      "side": 1,
+      "message": "One firmware entry is still present in sdm660-paytonpro.dtsi\nhttps://github.com/LineageOS/android_kernel_motorola_msm8998/blob/lineage-21/arch/arm/boot/dts/qcom/sdm660-paytonpro.dtsi#L23\ncausing a build error on payton:\n\n```\nError: kernel/motorola/msm8998/arch/arm64/boot/dts/qcom/sdm660-paytonpro.dtsi:23.1-10 Label or path firmware not found\n```",
+      "revId": "a706d650442246b3b89c419cc9e9bbd093e968b9",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    }
+  ]
+}
