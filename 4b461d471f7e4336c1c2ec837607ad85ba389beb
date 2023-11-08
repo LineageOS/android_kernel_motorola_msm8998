@@ -16,6 +16,23 @@
       "message": "The wifi is completely broken on chef official builds since months,the device keeps on rebooting if connected to any wifi network.Until the wifi is turned off or disconnected manually from network the device hangs and reboots.\n\nI was able to make it work by reverting the qcacld changes \nhttps://github.com/rushiranpise/android_kernel_motorola_msm8998/commit/bf1de483dea27a6f271cbd8fbea99c8953ce2a77\n\nhttps://gitlab.com/LineageOS/issues/android/-/issues/5950",
       "revId": "4b461d471f7e4336c1c2ec837607ad85ba389beb",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "14fd9f29_36f36ee5",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 5911
+      },
+      "writtenOn": "2023-11-08T16:13:35Z",
+      "side": 1,
+      "message": "@nolen: since we have no active maintainer, we should pull it permanently",
+      "revId": "4b461d471f7e4336c1c2ec837607ad85ba389beb",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ],
   "submitRequirementResults": []
