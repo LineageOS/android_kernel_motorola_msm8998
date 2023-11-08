@@ -150,7 +150,7 @@ int __init fsverity_init_signature(void)
 			     current_cred(), KEY_POS_SEARCH |
 				KEY_USR_VIEW | KEY_USR_READ | KEY_USR_WRITE |
 				KEY_USR_SEARCH | KEY_USR_SETATTR,
-			     KEY_ALLOC_NOT_IN_QUOTA, NULL, NULL);
+			     KEY_ALLOC_NOT_IN_QUOTA, NULL);
 	if (IS_ERR(ring))
 		return PTR_ERR(ring);
 
