@@ -26,16 +26,6 @@
 	compatible = "qcom,sdm636-heart", "qcom,sdm636-moto", "qcom,sdm636";
 };
 
-&firmware {
-	android {
-		fstab {
-			vendor {
-				fsmgr_flags = "wait,slotselect,verify";
-			};
-		};
-	};
-};
-
 &pm660_vadc {
 	chan@4e {
 		label = "chg_therm";

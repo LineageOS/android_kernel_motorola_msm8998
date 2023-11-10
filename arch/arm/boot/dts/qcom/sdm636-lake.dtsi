@@ -145,16 +145,6 @@
 	};
 };
 
-&firmware {
-	android {
-		fstab {
-			vendor {
-				fsmgr_flags = "wait,slotselect,verify";
-			};
-		};
-	};
-};
-
 &red_led {
 	linux,name = "charging";
 	qcom,duty-pcts = [ 00 0E 1C 2A 38 46 54 64 ];

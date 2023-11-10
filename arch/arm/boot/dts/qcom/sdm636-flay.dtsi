@@ -23,16 +23,6 @@
 	compatible = "qcom,sdm636-flay", "qcom,sdm636-moto", "qcom,sdm636";
 };
 
-&firmware {
-	android {
-		fstab {
-			vendor {
-				fsmgr_flags = "wait,slotselect,verify";
-			};
-		};
-	};
-};
-
 &soc{
 	qcom,tz_gpio {
 		compatible = "qcom,tz_gpio";
