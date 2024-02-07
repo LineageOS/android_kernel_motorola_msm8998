@@ -16,6 +16,24 @@
       "message": "ld.lld: error: undefined symbol: gqti_ctrl_update_ipa_pipes\n\u003e\u003e\u003e referenced by u_data_ipa.c\n\u003e\u003e\u003e               drivers/usb/gadget/function/u_data_ipa.o:(ipa_data_connect_work) in archive built-in.o\nmake[1]: *** [/home/themard/android/lineage-21/kernel/motorola/msm8998/Makefile:1062: vmlinux] Error 1\nmake[1]: Leaving directory \u0027/home/themard/android/lineage-21/out/target/product/payton/obj/KERNEL_OBJ\u0027\nmake: *** [Makefile:152: sub-make] Error 2\nmake: Leaving directory \u0027/home/themard/android/lineage-21/kernel/motorola/msm8998\u0027",
       "revId": "b8b0a4528516081889dbfd6c0f2881a51d68448b",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "5928a398_940f8b96",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 5
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 5911
+      },
+      "writtenOn": "2024-02-07T06:11:10Z",
+      "side": 1,
+      "message": "seriously, whatis wrong with this kernel... ugh :(",
+      "parentUuid": "b6b765e3_62d8ba10",
+      "revId": "b8b0a4528516081889dbfd6c0f2881a51d68448b",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
