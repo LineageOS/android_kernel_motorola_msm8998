@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -462,7 +462,7 @@ int dsi_connector_get_modes(struct drm_connector *connector,
 	rc = dsi_display_get_modes(display, NULL, &count);
 	if (rc) {
 		pr_err("failed to get num of modes, rc=%d\n", rc);
-		goto end;
+		goto error;
 	}
 
 	size = count * sizeof(*modes);

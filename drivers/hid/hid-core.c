@@ -1195,7 +1195,6 @@ static void implement(const struct hid_device *hid, __u8 *report,
 	if (value > m)
 		hid_warn(hid, "%s() called with too large value %d! (%s)\n",
 			 __func__, value, current->comm);
-	WARN_ON(value > m);
 	value &= m;
 
 	report += offset >> 3;
@@ -1418,7 +1417,7 @@ u8 *hid_alloc_report_buf(struct hid_report *report, gfp_t flags)
 
 	u32 len = hid_report_len(report) + 7;
 
-	return kmalloc(len, flags);
+	return kzalloc(len, flags);
 }
 EXPORT_SYMBOL_GPL(hid_alloc_report_buf);
 

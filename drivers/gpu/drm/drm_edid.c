@@ -2619,6 +2619,8 @@ static int drm_cvt_modes(struct drm_connector *connector,
 
 		height = (cvt->code[0] + ((cvt->code[1] & 0xf0) << 4) + 1) * 2;
 		switch (cvt->code[1] & 0x0c) {
+		/* default - because compiler doesn't see that we've enumerated all cases */
+		default:
 		case 0x00:
 			width = height * 4 / 3;
 			break;
@@ -4301,6 +4303,8 @@ static void drm_add_display_info(struct edid *edid,
 	if (!(edid->input & DRM_EDID_INPUT_DIGITAL))
 		return;
 
+	info->color_formats |= DRM_COLOR_FORMAT_RGB444;
+
 	/* Get data from CEA blocks if present */
 	edid_ext = drm_find_cea_extension(edid);
 	if (edid_ext) {
@@ -4353,7 +4357,6 @@ static void drm_add_display_info(struct edid *edid,
 	DRM_DEBUG("%s: Assigning EDID-1.4 digital sink color depth as %d bpc.\n",
 			  connector->name, info->bpc);
 
-	info->color_formats |= DRM_COLOR_FORMAT_RGB444;
 	if (edid->features & DRM_EDID_FEATURE_RGB_YCRCB444)
 		info->color_formats |= DRM_COLOR_FORMAT_YCRCB444;
 	if (edid->features & DRM_EDID_FEATURE_RGB_YCRCB422)
