@@ -373,7 +373,10 @@ static int ipvlan_process_v4_outbound(struct sk_buff *skb)
 	}
 	skb_dst_drop(skb);
 	skb_dst_set(skb, &rt->dst);
-	err = ip_local_out(net, skb->sk, skb);
+
+	memset(IPCB(skb), 0, sizeof(*IPCB(skb)));
+
+	err = ip_local_out(net, NULL, skb);
 	if (unlikely(net_xmit_eval(err)))
 		dev->stats.tx_errors++;
 	else
@@ -411,7 +414,10 @@ static int ipvlan_process_v6_outbound(struct sk_buff *skb)
 	}
 	skb_dst_drop(skb);
 	skb_dst_set(skb, dst);
-	err = ip6_local_out(net, skb->sk, skb);
+
+	memset(IP6CB(skb), 0, sizeof(*IP6CB(skb)));
+
+	err = ip6_local_out(net, NULL, skb);
 	if (unlikely(net_xmit_eval(err)))
 		dev->stats.tx_errors++;
 	else
@@ -427,7 +433,6 @@ out:
 static int ipvlan_process_outbound(struct sk_buff *skb,
 				   const struct ipvl_dev *ipvlan)
 {
-	struct ethhdr *ethh = eth_hdr(skb);
 	int ret = NET_XMIT_DROP;
 
 	/* The ipvlan is a pseudo-L2 device, so the packets that we receive
@@ -437,6 +442,8 @@ static int ipvlan_process_outbound(struct sk_buff *skb,
 	if (skb_mac_header_was_set(skb)) {
 		/* In this mode we dont care about
 		 * multicast and broadcast traffic */
+		struct ethhdr *ethh = eth_hdr(skb);
+
 		if (is_multicast_ether_addr(ethh->h_dest)) {
 			pr_debug_ratelimited(
 				"Dropped {multi|broad}cast of type=[%x]\n",
@@ -506,7 +513,7 @@ out:
 static int ipvlan_xmit_mode_l2(struct sk_buff *skb, struct net_device *dev)
 {
 	const struct ipvl_dev *ipvlan = netdev_priv(dev);
-	struct ethhdr *eth = eth_hdr(skb);
+	struct ethhdr *eth = skb_eth_hdr(skb);
 	struct ipvl_addr *addr;
 	void *lyr3h;
 	int addr_type;
@@ -530,6 +537,7 @@ static int ipvlan_xmit_mode_l2(struct sk_buff *skb, struct net_device *dev)
 		return dev_forward_skb(ipvlan->phy_dev, skb);
 
 	} else if (is_multicast_ether_addr(eth->h_dest)) {
+		skb_reset_mac_header(skb);
 		ipvlan_multicast_enqueue(ipvlan->port, skb);
 		return NET_XMIT_SUCCESS;
 	}

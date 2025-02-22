@@ -313,9 +313,11 @@ write_tag_66_packet(char *signature, u8 cipher_code,
 	 *         | Key Identifier Size      | 1 or 2 bytes |
 	 *         | Key Identifier           | arbitrary    |
 	 *         | File Encryption Key Size | 1 or 2 bytes |
+	 *         | Cipher Code              | 1 byte       |
 	 *         | File Encryption Key      | arbitrary    |
+	 *         | Checksum                 | 2 bytes      |
 	 */
-	data_len = (5 + ECRYPTFS_SIG_SIZE_HEX +
+	data_len = (8 + ECRYPTFS_SIG_SIZE_HEX +
 			ecryptfs_get_key_size_to_store_key(crypt_stat));
 	*packet = kmalloc(data_len, GFP_KERNEL);
 	message = *packet;
